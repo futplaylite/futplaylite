@@ -1,28 +1,48 @@
-# ROSÁLIA ESPORTES — Liga de Jogadores de Futebol Amador (MVP v1.0)
+# FUTPLAY LITE / ROSÁLIA ESPORTES — Liga de Futebol Amador
 
-Plataforma digital competitiva para organizar, validar e classificar o desempenho de atletas de futebol amador por meio de duas classificações independentes:
-1. **Ranking de Temporada (Pontos):** $P = 5 + R + 3G + 2A + 3M$
-2. **Rating de Habilidade (Elo Coletivo):** $R_{\text{novo}} = R_{\text{anterior}} + K(S - E)$
+Plataforma digital para organização de peladas, ligas individuais e equipes de futebol amador em **Planalto - BA** e região sudoeste da Bahia.
 
----
-
-## Estrutura de Arquivos Criados
-
-- [`docs/PRD.md`](./docs/PRD.md): Documento de Requisitos do Produto (v1.0) formatado em Markdown com diagramas Mermaid reconstruídos e fórmulas LaTeX.
-- [`docs/PLANO_TECNICO.md`](./docs/PLANO_TECNICO.md): Arquitetura técnica, motor de regras competitivas, governança LGPD e procedimento de recuperação/restauração (CA-040).
-- [`supabase/migrations/001_initial_schema.sql`](./supabase/migrations/001_initial_schema.sql): Esquema relacional PostgreSQL completo (16 tabelas, restrições únicas e controle de versão).
-- [`supabase/migrations/002_rls_policies.sql`](./supabase/migrations/002_rls_policies.sql): Políticas Row-Level Security (RLS) por papel (`player`, `moderator`, `admin`) e visibilidade pública/privada.
-- [`supabase/migrations/003_scoring_and_elo_rpc.sql`](./supabase/migrations/003_scoring_and_elo_rpc.sql): Função transacional idempotente `process_validated_match` em PL/pgSQL.
-- [`supabase/seed.sql`](./supabase/seed.sql): Dados iniciais para o Município de Rosália - SP, divisões e temporada.
-- [`src/`](./src/): Aplicação Web interativa completa com Design System oficial (`#126B46` Verde, `#C9A227` Dourado, `#17231D` Grafite, `#FFFFFF` Branco).
+🌐 **Acesse online em produção:** [https://futplaylite.vercel.app/](https://futplaylite.vercel.app/)
 
 ---
 
-## Como Executar Localmente
+## ⚡ Recursos Principais
+
+- ⚽ **Súmula Digital & Registro de Partidas:** Registro ao vivo de gols, assistências, defesas difíceis, capas e cartões.
+- 📸 **Comprovante de Súmula em Imagem:** Gerador de imagem oficial de alta definição para compartilhamento direto no WhatsApp.
+- 🏆 **Duplo Sistema de Classificação:**
+  1. **Ranking da Temporada (Pontos):** $P = 5 + R + 3G + 2A + 3M$
+  2. **Rating de Habilidade (Elo Coletivo):** $R_{\text{novo}} = R_{\text{anterior}} + K(S - E)$
+- 💰 **Módulo de Mensalidades & PIX:** Gestão financeira de atletas com chave PIX, confirmação de status e lembretes de cobrança via WhatsApp.
+- 📱 **Mobile First & PWA:** Interface leve, estável e otimizada para smartphones (código principal com apenas 96 kB gzipped).
+- 🗄️ **Banco de Dados em Nuvem (Supabase):** PostgreSQL com regras de segurança Row-Level Security (RLS) e servidor no Brasil (São Paulo).
+
+---
+
+## 🛠️ Tecnologias Utilizadas
+
+- **Frontend:** React 18, TypeScript, Tailwind CSS, Lucide Icons
+- **Bundler:** Vite 6 (com Code-Splitting inteligente em chunks)
+- **Hospedagem & CDN:** Vercel (Edge Network São Paulo `gru1`)
+- **Backend & Database:** Supabase (PostgreSQL, RLS, Storage)
+
+---
+
+## 🚀 Como Executar Localmente
 
 ```bash
+# Instalar dependências
 npm install
+
+# Iniciar servidor de desenvolvimento
 npm run dev
 ```
 
 Acesse no navegador: **http://localhost:3000**
+
+---
+
+## 📄 Scripts Supabase
+
+Os scripts completos de banco de dados estão na pasta `supabase/`:
+- `supabase/SETUP_COMPLETO_UNICO.sql`: Script mestre unificado para criação de tabelas, RLS, funções de Elo e dados iniciais de Planalto - BA.
