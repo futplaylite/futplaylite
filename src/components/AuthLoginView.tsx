@@ -484,7 +484,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         {/* Rodapé de Segurança e LGPD */}
         <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 py-2">
           <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
-          <span>Acesso gratuito · Dados protegidos pela LGPD</span>
+          <span>Acesso exclusivo · Dados protegidos pela LGPD</span>
         </div>
       </div>
 
