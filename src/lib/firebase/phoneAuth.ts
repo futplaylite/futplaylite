@@ -33,8 +33,14 @@ export function getOrCreateRecaptcha(containerId = 'recaptcha-container'): Recap
     throw new Error('reCAPTCHA só pode ser inicializado no navegador.');
   }
 
+  // Se já existe um verifier anterior, limpa antes de criar um novo para evitar conflitos de renderização
   if (window.recaptchaVerifier) {
-    return window.recaptchaVerifier;
+    try {
+      window.recaptchaVerifier.clear();
+    } catch {
+      // Ignora erro de limpeza
+    }
+    delete window.recaptchaVerifier;
   }
 
   const verifier = new RecaptchaVerifier(firebaseAuth, containerId, {
