@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Eye,
   EyeOff,
   Loader2,
@@ -25,6 +27,19 @@ import { DominantFoot, PlayerPosition, ProfileVisibility } from '../types/league
 interface AuthLoginViewProps {
   onAuthenticated: () => void;
 }
+
+const POSITION_OPTIONS: { value: PlayerPosition; label: string }[] = [
+  { value: 'atacante', label: 'Atacante' },
+  { value: 'meio-campista', label: 'Meio-campista' },
+  { value: 'defensor', label: 'Defensor' },
+  { value: 'goleiro', label: 'Goleiro' },
+];
+
+const FOOT_OPTIONS: { value: DominantFoot; label: string; sub: string }[] = [
+  { value: 'direito', label: 'Direito', sub: 'Destro' },
+  { value: 'esquerdo', label: 'Esquerdo', sub: 'Canhoto' },
+  { value: 'ambos', label: 'Ambos', sub: 'Ambidestro' },
+];
 
 /**
  * Formata a entrada do usuário: se parecer número, aplica máscara de celular (DDD) 9XXXX-XXXX;
@@ -70,6 +85,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [regNeighborhood, setRegNeighborhood] = useState<string>('Centro');
   const [regPosition, setRegPosition] = useState<PlayerPosition>('atacante');
   const [regFoot, setRegFoot] = useState<DominantFoot>('direito');
+  const [openPositionDropdown, setOpenPositionDropdown] = useState<boolean>(false);
+  const [openFootDropdown, setOpenFootDropdown] = useState<boolean>(false);
 
   // SMS Verification State (Firebase)
   const [showSmsModal, setShowSmsModal] = useState<boolean>(false);
@@ -595,40 +612,127 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
+              <div className="grid grid-cols-2 gap-2.5 relative">
+                {/* Backdrop invisível para fechar menu ao tocar fora */}
+                {(openPositionDropdown || openFootDropdown) && (
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => {
+                      setOpenPositionDropdown(false);
+                      setOpenFootDropdown(false);
+                    }}
+                  />
+                )}
+
+                {/* Seletor Customizado Inline: Posição */}
+                <div className="relative z-20">
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Posição em Campo
                   </label>
-                  <select
-                    value={regPosition}
-                    onChange={(e) =>
-                      setRegPosition(e.target.value as PlayerPosition)
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none transition cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenPositionDropdown((prev) => !prev);
+                      setOpenFootDropdown(false);
+                    }}
+                    className={`w-full flex items-center justify-between rounded-xl border bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 transition cursor-pointer text-left ${
+                      openPositionDropdown
+                        ? 'border-blue-600 bg-white ring-2 ring-blue-100'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
                   >
-                    <option value="atacante">Atacante</option>
-                    <option value="meio-campista">Meio-campista</option>
-                    <option value="defensor">Defensor</option>
-                    <option value="goleiro">Goleiro</option>
-                  </select>
+                    <span className="truncate">
+                      {POSITION_OPTIONS.find((p) => p.value === regPosition)?.label || 'Atacante'}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${
+                        openPositionDropdown ? 'rotate-180 text-blue-600' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {/* Lista inline que surge logo abaixo da caixa sem abrir popup nativo */}
+                  {openPositionDropdown && (
+                    <div className="absolute left-0 top-full mt-1.5 w-full rounded-xl border border-slate-200 bg-white p-1 shadow-xl z-30 animate-in fade-in zoom-in-95 duration-150">
+                      {POSITION_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            setRegPosition(opt.value);
+                            setOpenPositionDropdown(false);
+                          }}
+                          className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition cursor-pointer text-left ${
+                            regPosition === opt.value
+                              ? 'bg-blue-50 text-blue-700 font-bold'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>{opt.label}</span>
+                          {regPosition === opt.value && (
+                            <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div>
+                {/* Seletor Customizado Inline: Pé Dominante */}
+                <div className="relative z-20">
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Pé Dominante
                   </label>
-                  <select
-                    value={regFoot}
-                    onChange={(e) =>
-                      setRegFoot(e.target.value as DominantFoot)
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none transition cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpenFootDropdown((prev) => !prev);
+                      setOpenPositionDropdown(false);
+                    }}
+                    className={`w-full flex items-center justify-between rounded-xl border bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 transition cursor-pointer text-left ${
+                      openFootDropdown
+                        ? 'border-blue-600 bg-white ring-2 ring-blue-100'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
                   >
-                    <option value="direito">Direito</option>
-                    <option value="esquerdo">Esquerdo</option>
-                    <option value="ambos">Ambidestro</option>
-                  </select>
+                    <span className="truncate">
+                      {FOOT_OPTIONS.find((f) => f.value === regFoot)?.label || 'Direito'}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${
+                        openFootDropdown ? 'rotate-180 text-blue-600' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {/* Lista inline que surge logo abaixo da caixa sem abrir popup nativo */}
+                  {openFootDropdown && (
+                    <div className="absolute left-0 top-full mt-1.5 w-full rounded-xl border border-slate-200 bg-white p-1 shadow-xl z-30 animate-in fade-in zoom-in-95 duration-150">
+                      {FOOT_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            setRegFoot(opt.value);
+                            setOpenFootDropdown(false);
+                          }}
+                          className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition cursor-pointer text-left ${
+                            regFoot === opt.value
+                              ? 'bg-blue-50 text-blue-700 font-bold'
+                              : 'text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>{opt.label}</span>
+                            <span className="text-[10px] text-slate-400">({opt.sub})</span>
+                          </div>
+                          {regFoot === opt.value && (
+                            <Check className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
