@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E3A8A"/>
+      <stop offset="50%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  <rect x="20" y="20" width="472" height="472" rx="112" stroke="url(#goldGrad)" stroke-width="8" stroke-opacity="0.6"/>
+  <path d="M256 90 L390 140 C390 280 256 410 256 410 C256 410 122 280 122 140 Z" fill="#FFFFFF"/>
+  <path d="M256 104 L376 150 C376 270 256 390 256 390 C256 390 136 270 136 150 Z" fill="#1D4ED8"/>
+  <circle cx="256" cy="235" r="75" fill="#FFFFFF"/>
+  <polygon points="256,205 285,226 274,258 238,258 227,226" fill="#1E3A8A"/>
+  <line x1="256" y1="205" x2="256" y2="175" stroke="#1E3A8A" stroke-width="6"/>
+  <line x1="285" y1="226" x2="315" y2="216" stroke="#1E3A8A" stroke-width="6"/>
+  <line x1="274" y1="258" x2="295" y2="288" stroke="#1E3A8A" stroke-width="6"/>
+  <line x1="238" y1="258" x2="217" y2="288" stroke="#1E3A8A" stroke-width="6"/>
+  <line x1="227" y1="226" x2="197" y2="216" stroke="#1E3A8A" stroke-width="6"/>
+  <polygon points="256,48 266,74 294,74 271,91 280,116 256,100 232,116 241,91 218,74 246,74" fill="url(#goldGrad)"/>
+</svg>

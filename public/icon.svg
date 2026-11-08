@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E3A8A"/>
+      <stop offset="50%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#0F172A"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+
+  <!-- Golden Border ring -->
+  <rect x="20" y="20" width="472" height="472" rx="112" stroke="url(#goldGrad)" stroke-width="6" stroke-opacity="0.5"/>
+
+  <!-- Mini field markings -->
+  <g stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="4">
+    <circle cx="256" cy="256" r="160"/>
+    <line x1="60" y1="256" x2="452" y2="256"/>
+  </g>
+
+  <!-- Central Soccer Shield -->
+  <path d="M256 90 L390 140 C390 280 256 410 256 410 C256 410 122 280 122 140 Z" fill="#FFFFFF" filter="url(#shadow)"/>
+  <path d="M256 104 L376 150 C376 270 256 390 256 390 C256 390 136 270 136 150 Z" fill="#1D4ED8"/>
+
+  <!-- Soccer Ball in Shield -->
+  <circle cx="256" cy="235" r="75" fill="#FFFFFF"/>
+  <!-- Central Pentagon -->
+  <polygon points="256,205 285,226 274,258 238,258 227,226" fill="#1E3A8A"/>
+  <!-- Radiating seams -->
+  <line x1="256" y1="205" x2="256" y2="175" stroke="#1E3A8A" stroke-width="6"/>
+  <line x1="285" y1="226" x2="315" y2="216" stroke="#1E3A8A" stroke-width="6"/>
+  <line x1="274" y1="258" x2="295" y2="288" stroke="#1E3A8A" stroke-width="6"/>
+  <line x1="238" y1="258" x2="217" y2="288" stroke="#1E3A8A" stroke-width="6"/>
+  <line x1="227" y1="226" x2="197" y2="216" stroke="#1E3A8A" stroke-width="6"/>
+
+  <!-- Star at top -->
+  <polygon points="256,48 266,74 294,74 271,91 280,116 256,100 232,116 241,91 218,74 246,74" fill="url(#goldGrad)" filter="url(#shadow)"/>
+
+  <!-- Brand Typography -->
+  <text x="256" y="350" font-family="'Inter', sans-serif" font-weight="900" font-size="28" fill="#FCD34D" text-anchor="middle" letter-spacing="3">FUTPLAY</text>
+  <text x="256" y="375" font-family="'Inter', sans-serif" font-weight="700" font-size="16" fill="#FFFFFF" text-anchor="middle" letter-spacing="4">LITE</text>
+</svg>

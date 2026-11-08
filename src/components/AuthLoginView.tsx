@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { RosaliaCrest } from './RosaliaCrest';
+import { PWAInstallBanner } from './PWAInstallBanner';
 import { DominantFoot, PlayerPosition } from '../types/league';
 
 interface AuthLoginViewProps {
@@ -161,6 +162,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   return (
     <div className="min-h-screen w-full bg-slate-100 text-slate-900 overflow-y-auto overflow-x-hidden flex flex-col items-center py-6 px-4">
       <div className="w-full max-w-[430px] flex flex-col gap-4 pb-16">
+        {/* Banner de Instalação PWA */}
+        <PWAInstallBanner />
         {/* Cabeçalho Oficial Branco & Azul */}
         <div className="rounded-3xl bg-gradient-to-br from-blue-700 to-blue-900 p-6 text-white shadow-md text-center space-y-3">
           <div className="mx-auto flex items-center justify-center">

@@ -28,6 +28,7 @@ import { SearchView } from './components/SearchView';
 import { SquadView } from './components/SquadView';
 import { AdminAndHomologationView } from './components/AdminAndHomologationView';
 import { MonthlyFeesView } from './components/MonthlyFeesView';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 
 type ActiveTab =
   | 'dashboard'
@@ -581,6 +582,9 @@ const MainMobileShell: React.FC = () => {
           </div>
           )}
         </header>
+
+        {/* Banner de Instalação PWA */}
+        <PWAInstallBanner />
 
         {/* Modal de QR Code para Compartilhar */}
         {showQrModal && (
