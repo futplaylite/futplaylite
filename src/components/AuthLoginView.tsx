@@ -167,11 +167,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         {/* Cabeçalho Oficial Branco & Azul */}
         <div className="rounded-3xl bg-gradient-to-br from-blue-700 to-blue-900 p-6 text-white shadow-md text-center space-y-3">
           <div className="mx-auto flex items-center justify-center">
-            <img
-              src="/images/official-logo.png"
-              alt="FUTPLAY LITE"
-              className="h-28 w-28 object-contain drop-shadow-2xl rounded-2xl"
-            />
+            <RosaliaCrest size={76} wide transparentBg />
           </div>
           <div>
             <span className="inline-block rounded-full bg-white/15 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-blue-100">
