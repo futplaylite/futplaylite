@@ -10,15 +10,10 @@ import {
   Lock,
   Mail,
   MapPin,
-  MessageSquare,
   Phone,
-  RefreshCw,
   ShieldCheck,
   UserPlus,
-  X,
 } from 'lucide-react';
-import { ConfirmationResult } from 'firebase/auth';
-import { sendFirebaseSmsCode, confirmFirebaseSmsCode } from '../lib/firebase/phoneAuth';
 import { useLeague } from '../lib/store/LeagueContext';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PWAInstallBanner } from './PWAInstallBanner';
@@ -87,87 +82,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [regFoot, setRegFoot] = useState<DominantFoot>('direito');
   const [openPositionDropdown, setOpenPositionDropdown] = useState<boolean>(false);
   const [openFootDropdown, setOpenFootDropdown] = useState<boolean>(false);
-
-  // SMS Verification State (Firebase)
-  const [showSmsModal, setShowSmsModal] = useState<boolean>(false);
-  const [smsCode, setSmsCode] = useState<string>('');
-  const [isSendingSms, setIsSendingSms] = useState<boolean>(false);
-  const [isVerifyingSms, setIsVerifyingSms] = useState<boolean>(false);
-  const [smsError, setSmsError] = useState<string>('');
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const [pendingRegistrationData, setPendingRegistrationData] = useState<{
-    displayName: string;
-    email: string;
-    whatsappNumber?: string;
-    cityId: string;
-    neighborhood: string;
-    position: PlayerPosition;
-    dominantFoot: DominantFoot;
-    profileVisibility: ProfileVisibility;
-  } | null>(null);
-
-  const handleVerifySmsCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!confirmationResult) {
-      setSmsError('Sessão de verificação expirada. Tente reenviar o código.');
-      return;
-    }
-    const cleanCode = smsCode.trim();
-    if (cleanCode.length < 6) {
-      setSmsError('Digite o código de 6 dígitos recebido por SMS.');
-      return;
-    }
-
-    setIsVerifyingSms(true);
-    setSmsError('');
-
-    try {
-      await confirmFirebaseSmsCode(confirmationResult, cleanCode);
-      
-      // Código confirmado com sucesso pelo Firebase!
-      if (pendingRegistrationData) {
-        const created = registerNewAthlete(pendingRegistrationData);
-        if (created) {
-          setShowSmsModal(false);
-          notify(
-            'success',
-            'Telefone Confirmado!',
-            'Seu número foi verificado com sucesso via SMS.'
-          );
-          onAuthenticated();
-        }
-      }
-    } catch (err: unknown) {
-      console.error('Erro ao validar código SMS:', err);
-      const errorObj = err as { code?: string; message?: string };
-      if (errorObj?.code === 'auth/invalid-verification-code') {
-        setSmsError('Código incorreto. Verifique o SMS recebido e digite novamente.');
-      } else if (errorObj?.code === 'auth/code-expired') {
-        setSmsError('O código expirou. Clique em "Reenviar SMS" abaixo.');
-      } else {
-        setSmsError('Falha ao validar o código. Tente novamente.');
-      }
-    } finally {
-      setIsVerifyingSms(false);
-    }
-  };
-
-  const handleResendSms = async () => {
-    if (!pendingRegistrationData?.whatsappNumber) return;
-    setIsSendingSms(true);
-    setSmsError('');
-    try {
-      const digits = pendingRegistrationData.whatsappNumber.replace(/\D/g, '');
-      const result = await sendFirebaseSmsCode(digits, 'recaptcha-container');
-      setConfirmationResult(result);
-      notify('info', 'SMS Reenviado', 'Um novo código de 6 dígitos foi enviado para seu celular.');
-    } catch (err: unknown) {
-      console.error('Erro ao reenviar SMS:', err);
-      setSmsError('Não foi possível reenviar o SMS agora. Aguarde um instante.');
-    } finally {
-      setIsSendingSms(false);
-    }
-  };
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   /**
    * Localiza usuário existente comparando por e-mail ou por dígitos de telefone/WhatsApp
@@ -236,6 +151,21 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     const existingUser = findUserByIdentifier(trimmed);
 
     if (existingUser) {
+      // Valida senha se houver cadastrada
+      try {
+        const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
+        const expected =
+          stored[existingUser.id] ||
+          (digits ? stored[digits] : undefined) ||
+          stored[existingUser.email?.toLowerCase()];
+        if (expected && expected !== loginPassword.trim()) {
+          setLoginError('Senha incorreta para este usuário.');
+          return;
+        }
+      } catch {
+        // Ignora falha local
+      }
+
       switchActiveUser(existingUser.id);
       onAuthenticated();
       return;
@@ -302,6 +232,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       return;
     }
 
+    setIsSubmitting(true);
+
     const finalEmail = isEmail
       ? trimmedIdentifier.toLowerCase()
       : `${digits}@celular.futplay.com`;
@@ -310,48 +242,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       ? formatIdentifierInput(digits)
       : undefined;
 
-    // Se informou telefone / celular, envia SMS de confirmação via Firebase
-    if (!isEmail) {
-      setIsSendingSms(true);
-      setSmsError('');
-      setSmsCode('');
-      setPendingRegistrationData({
-        displayName: trimmedName,
-        email: finalEmail,
-        whatsappNumber: finalWhatsapp,
-        cityId: selectedCityId,
-        neighborhood: regNeighborhood.trim() || 'Centro',
-        position: regPosition,
-        dominantFoot: regFoot,
-        profileVisibility: 'publico',
-      });
-
-      sendFirebaseSmsCode(digits, 'recaptcha-container')
-        .then((result) => {
-          setConfirmationResult(result);
-          setShowSmsModal(true);
-          setIsSendingSms(false);
-        })
-        .catch((err: unknown) => {
-          console.error('Erro ao enviar SMS Firebase:', err);
-          setIsSendingSms(false);
-          const errorObj = err as { code?: string; message?: string };
-          let msg = 'Erro ao enviar SMS de verificação.';
-          if (errorObj?.code === 'auth/operation-not-allowed') {
-            msg = 'O provedor de Telefone precisa ser ativado no Firebase Console (Authentication > Sign-in method > Telefone).';
-          } else if (errorObj?.code === 'auth/invalid-phone-number') {
-            msg = 'Número de telefone inválido para envio de SMS.';
-          } else if (errorObj?.code === 'auth/too-many-requests') {
-            msg = 'Muitas tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente.';
-          } else if (errorObj?.message) {
-            msg = errorObj.message;
-          }
-          setLoginError(msg);
-        });
-      return;
-    }
-
-    // Se informou e-mail, registra diretamente
+    // Registra diretamente o novo atleta na liga (com celular ou e-mail)
     const created = registerNewAthlete({
       displayName: trimmedName,
       email: finalEmail,
@@ -364,7 +255,29 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     });
 
     if (created) {
+      // Salva a senha com segurança localmente para próximos logins
+      try {
+        const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
+        stored[created.userId] = regPassword.trim();
+        if (digits) {
+          stored[digits] = regPassword.trim();
+        }
+        if (finalEmail) {
+          stored[finalEmail.toLowerCase()] = regPassword.trim();
+        }
+        localStorage.setItem('futplay_user_passwords', JSON.stringify(stored));
+      } catch {
+        // Ignora falha local
+      }
+
+      notify(
+        'success',
+        'Conta criada com sucesso!',
+        `Bem-vindo à liga, ${trimmedName}! Seu cartão de atleta oficial foi ativado.`
+      );
       onAuthenticated();
+    } else {
+      setIsSubmitting(false);
     }
   };
 
@@ -756,13 +669,13 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
               <button
                 type="submit"
-                disabled={isSendingSms}
+                disabled={isSubmitting}
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer disabled:opacity-60"
               >
-                {isSendingSms ? (
+                {isSubmitting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Enviando SMS de Confirmação...</span>
+                    <span>Criando sua conta...</span>
                   </>
                 ) : (
                   <>
@@ -796,107 +709,6 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           <span>Acesso exclusivo · Dados protegidos pela LGPD</span>
         </div>
       </div>
-
-      {/* Modal de Validação de SMS (Firebase Phone Auth) */}
-      {showSmsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-[390px] rounded-3xl bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5 text-blue-700 font-bold text-sm">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                  <MessageSquare className="h-4 w-4" />
-                </div>
-                <span>Confirmação por SMS</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSmsModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 transition"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="text-center space-y-1">
-              <p className="text-xs text-slate-600">
-                Enviamos um código de verificação para:
-              </p>
-              <p className="text-sm font-extrabold text-blue-900 font-mono">
-                {pendingRegistrationData?.whatsappNumber}
-              </p>
-            </div>
-
-            <form onSubmit={handleVerifySmsCode} className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5 text-center">
-                  Código de 6 Dígitos
-                </label>
-                <input
-                  type="text"
-                  maxLength={6}
-                  autoFocus
-                  required
-                  value={smsCode}
-                  onChange={(e) => {
-                    setSmsError('');
-                    setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6));
-                  }}
-                  placeholder="000000"
-                  className="w-full rounded-2xl border-2 border-blue-200 bg-blue-50/50 py-3 text-center font-mono text-2xl font-black tracking-[0.35em] text-blue-950 focus:border-blue-600 focus:bg-white focus:outline-none transition"
-                />
-              </div>
-
-              {smsError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-medium text-red-700 text-center">
-                  {smsError}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isVerifyingSms || smsCode.length < 6}
-                className="w-full rounded-2xl bg-blue-600 py-3 text-xs font-bold text-white shadow-md hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isVerifyingSms ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Verificando código...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span>Confirmar Código e Entrar</span>
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-              <button
-                type="button"
-                onClick={handleResendSms}
-                disabled={isSendingSms}
-                className="flex items-center gap-1.5 text-blue-600 hover:text-blue-800 font-semibold cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isSendingSms ? 'animate-spin' : ''}`} />
-                <span>Reenviar SMS</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSmsModal(false)}
-                className="text-slate-500 hover:text-slate-800 font-medium cursor-pointer"
-              >
-                Alterar número
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Container invisível para reCAPTCHA do Firebase */}
-      <div id="recaptcha-container" />
-
-
     </div>
   );
 };
