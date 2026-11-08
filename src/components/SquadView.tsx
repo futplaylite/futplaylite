@@ -127,7 +127,10 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
           Voltar para o Elenco Completo
         </button>
 
-        <AthleteProfileAndCardView initialPlayerId={inspectingPlayerId} />
+        <AthleteProfileAndCardView
+          key={inspectingPlayerId}
+          initialPlayerId={inspectingPlayerId}
+        />
       </div>
     );
   }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Award,
@@ -16,6 +16,7 @@ import { getDivisionBadgeStyle } from '../lib/engine/eloEngine';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PlayerRatingModal } from './PlayerRatingModal';
 import { ShareCardModal } from './ShareCardModal';
+import { TeamCrestBadge } from './TeamCrestBadge';
 import { getStoredSumulas } from './SumulaPeladaView';
 import {
   DominantFoot,
@@ -49,6 +50,15 @@ export const AthleteProfileAndCardView: React.FC<
   const [inspectedPlayerId, setInspectedPlayerId] = useState<string>(
     initialPlayerId || currentPlayerProfile?.id || profiles[0].id
   );
+
+  useEffect(() => {
+    if (initialPlayerId) {
+      setInspectedPlayerId(initialPlayerId);
+    } else if (currentPlayerProfile?.id) {
+      setInspectedPlayerId(currentPlayerProfile.id);
+    }
+  }, [initialPlayerId, currentPlayerProfile?.id]);
+
   const [copiedCard, setCopiedCard] = useState<boolean>(false);
   const [showRatingModal, setShowRatingModal] = useState<boolean>(false);
   const [showShareModal, setShowShareModal] = useState<boolean>(false);
@@ -79,6 +89,16 @@ export const AthleteProfileAndCardView: React.FC<
     currentPlayerProfile?.profileVisibility || 'publico'
   );
 
+  useEffect(() => {
+    if (isOwnProfile && currentPlayerProfile) {
+      setEditName(currentPlayerProfile.displayName);
+      setEditNeighborhood(currentPlayerProfile.neighborhood);
+      setEditPos(currentPlayerProfile.position);
+      setEditFoot(currentPlayerProfile.dominantFoot);
+      setEditVis(currentPlayerProfile.profileVisibility);
+    }
+  }, [isOwnProfile, currentPlayerProfile]);
+
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newNeighborhood, setNewNeighborhood] = useState('Vila Rosália');
@@ -91,6 +111,35 @@ export const AthleteProfileAndCardView: React.FC<
     divisions.find((d) => d.id === targetProfile.currentDivisionId) ||
     divisions[0];
   const divStyle = getDivisionBadgeStyle(targetDivision.name);
+
+  const userTeamName =
+    targetProfile.teamName ||
+    (isOwnProfile ? currentUser?.teamName : undefined) ||
+    'Real Planalto FC';
+
+  const userTeamCrest =
+    targetProfile.teamCrestUrl ||
+    (isOwnProfile ? currentUser?.teamCrestUrl : undefined) ||
+    profiles.find((p) => p.teamName === userTeamName && p.teamCrestUrl)?.teamCrestUrl;
+
+  const overallStars =
+    targetProfile.overallStars ??
+    (targetProfile.skills
+      ? (targetProfile.skills.finalizacao +
+          targetProfile.skills.marcacao +
+          targetProfile.skills.passe +
+          targetProfile.skills.raca +
+          targetProfile.skills.drible) /
+        5
+      : 0);
+
+  const skills = targetProfile.skills || {
+    finalizacao: 0,
+    marcacao: 0,
+    passe: 0,
+    raca: 0,
+    drible: 0,
+  };
 
   const targetEntry = seasonEntries.find(
     (se) =>
@@ -399,10 +448,10 @@ export const AthleteProfileAndCardView: React.FC<
         </form>
       )}
 
-      {/* ABA: CARTÃO DIGITAL DE ATLETA (BRANCO E AZUL LIMPO) */}
+      {/* ABA: CARTÃO DIGITAL DE ATLETA (PADRÃO OFICIAL COM ESTÁDIO E TIME) */}
       {activeSubTab === 'card' && (
         <div className="space-y-4">
-          <div className="w-full rounded-3xl border border-blue-200 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-950 p-5 text-white shadow-lg relative overflow-hidden">
+          <div className="w-full rounded-2xl border border-blue-200/80 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-950 p-4 text-white shadow-md relative overflow-hidden">
             {/* Imagem de Fundo Oficial do Estádio com Refletores */}
             <div
               className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none opacity-80"
@@ -411,58 +460,104 @@ export const AthleteProfileAndCardView: React.FC<
               }}
             />
             <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#0a1435]/70 via-[#07112c]/80 to-[#030612]/92 pointer-events-none" />
+            <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-blue-500/20 blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-indigo-500/15 blur-2xl pointer-events-none" />
 
-            <div className="relative z-10 flex items-center justify-between border-b border-white/15 pb-3">
-              <div>
-                <span className="text-xs font-bold uppercase tracking-widest text-blue-100 block">
-                  FutPlay Lite · Cartão Oficial
-                </span>
+            {/* Topo do Cartão: Título e Compartilhar */}
+            <div className="relative z-10 flex items-center justify-between border-b border-white/15 pb-2">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-wider text-blue-100 uppercase">
+                <Award className="h-3.5 w-3.5 text-amber-300" />
+                <span>Cartão Oficial de Atleta</span>
               </div>
-              <img
-                src="/favicon.png"
-                alt="FutPlay Lite"
-                className="h-8 w-8 object-contain rounded-lg drop-shadow-md"
-              />
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(true)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-amber-300 shadow-xs transition active:scale-90 cursor-pointer"
+                  title="Compartilhar Cartão Oficial (Imagem 9:16)"
+                  aria-label="Compartilhar Cartão Oficial"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
-            <div className="mt-4 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white text-xl font-extrabold text-blue-800 shadow font-display">
-                {targetProfile.avatarUrl ? (
-                  <img
-                    src={targetProfile.avatarUrl}
-                    alt={targetProfile.displayName}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  targetProfile.displayName.slice(0, 2).toUpperCase()
-                )}
+            {/* Corpo do Cartão */}
+            <div className="relative z-10 mt-3 text-center">
+              {/* Jogador e Time Lado a Lado (Foto/Brasão e Nomes do Mesmo Tamanho) */}
+              <div className="grid grid-cols-2 gap-3 items-start">
+                {/* Coluna do Atleta */}
+                <div className="flex flex-col items-center">
+                  <div className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl bg-white text-2xl font-black text-blue-900 shadow-md border-2 border-amber-300/80 font-display shrink-0">
+                    {targetProfile.avatarUrl ? (
+                      <img
+                        src={targetProfile.avatarUrl}
+                        alt={targetProfile.displayName}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      targetProfile.displayName.slice(0, 2).toUpperCase()
+                    )}
+                  </div>
+
+                  {/* Nome do Atleta */}
+                  <h1
+                    className="mt-1.5 w-full text-center text-sm sm:text-base font-black tracking-wide text-white uppercase font-display leading-tight line-clamp-2 px-1 min-h-[2.4rem] flex items-center justify-center"
+                    title={targetProfile.displayName}
+                  >
+                    {targetProfile.displayName}
+                  </h1>
+                </div>
+
+                {/* Coluna do Time */}
+                <div className="flex flex-col items-center">
+                  <div
+                    className="relative flex h-16 w-16 items-center justify-center shrink-0"
+                    title={`Time: ${userTeamName}`}
+                  >
+                    <TeamCrestBadge
+                      name={userTeamName}
+                      crestUrl={userTeamCrest}
+                      size={60}
+                      className="drop-shadow-lg"
+                    />
+                  </div>
+
+                  {/* Nome do Time */}
+                  <div
+                    className="mt-1.5 w-full text-center text-sm sm:text-base font-black tracking-wide text-amber-300 uppercase font-display leading-tight line-clamp-2 px-1 min-h-[2.4rem] flex items-center justify-center"
+                    title={userTeamName}
+                  >
+                    {userTeamName}
+                  </div>
+                </div>
               </div>
 
-              <h2 className="mt-2.5 text-xl font-extrabold text-white tracking-wide">
-                {targetProfile.displayName}
-              </h2>
-              <p className="text-xs font-medium text-blue-200 capitalize flex items-center justify-center gap-1.5 flex-wrap">
-                <span className="rounded-md bg-white/15 px-2 py-0.5 text-[11px] font-bold text-white uppercase inline-flex items-center gap-1">
+              {/* Posição, Pé Dominante e Cidade em Linha Compacta */}
+              <div className="mt-1 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-blue-200">
+                <span className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-bold text-white uppercase flex items-center gap-0.5">
                   {targetProfile.position === 'goleiro' ? '🧤 Goleiro' : `🏃 ${targetProfile.position}`}
                 </span>
                 <span>·</span>
                 <span>Pé {targetProfile.dominantFoot}</span>
                 <span>·</span>
-                <span>{targetCity.name}/{targetCity.stateCode}</span>
-              </p>
+                <span className="text-white/90 font-medium">
+                  {targetCity.name}/{targetCity.stateCode}
+                </span>
+              </div>
 
-              <div className="mt-2.5 flex justify-center items-center gap-2 flex-wrap">
-                {/* 🌟 Botão de 5 Estrelas no Cartão */}
+              {/* Avaliação em Estrelas (0 a 5 ⭐) */}
+              <div className="mt-2 flex items-center justify-center">
                 <button
                   type="button"
                   onClick={() => setShowRatingModal(true)}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/20 hover:bg-amber-400/30 border border-amber-300/40 px-3 py-0.5 text-xs font-bold text-amber-200 transition active:scale-95"
-                  title="Clique para avaliar os 5 quesitos de estrelas"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/20 hover:bg-amber-400/30 border border-amber-300/40 px-3 py-1 text-[11px] font-bold text-amber-200 transition active:scale-95 cursor-pointer"
+                  title="Clique para ver ou avaliar habilidades"
                 >
                   <div className="flex items-center gap-0.5">
                     {[1, 2, 3, 4, 5].map((s) => {
-                      const overall = targetProfile.overallStars ?? (targetProfile.skills ? (targetProfile.skills.finalizacao + targetProfile.skills.marcacao + targetProfile.skills.passe + targetProfile.skills.raca + targetProfile.skills.drible) / 5 : 0);
-                      const isFilled = overall > 0 && s <= Math.round(overall);
+                      const isFilled = overallStars > 0 && s <= Math.round(overallStars);
                       return (
                         <Star
                           key={s}
@@ -475,85 +570,91 @@ export const AthleteProfileAndCardView: React.FC<
                       );
                     })}
                   </div>
-                  <span className="font-mono text-amber-300">
-                    {(targetProfile.overallStars ?? 0).toFixed(1)} ⭐
+                  <span className="font-mono text-xs font-black text-amber-300">
+                    {overallStars.toFixed(1)} ⭐
                   </span>
-
-                  {(targetProfile.overallStars ?? 0) > 0 ? (
-                    <span className="inline-flex items-center gap-0.5 font-bold text-emerald-300 bg-emerald-950/60 border border-emerald-400/40 rounded px-1.5 py-0.2 text-[10px]">
-                      <Check className="h-3 w-3 text-emerald-400 stroke-[3]" />
-                      v
+                  {overallStars > 0 && (
+                    <span className="inline-flex items-center gap-0.5 font-bold text-emerald-300 bg-emerald-950/70 border border-emerald-400/40 rounded px-1 py-0.2 text-[9px]">
+                      <Check className="h-2.5 w-2.5 stroke-[3]" />
                     </span>
-                  ) : !isOwnProfile ? (
-                    <span className="text-[10px] text-amber-200 underline font-medium">
-                      classificar
-                    </span>
-                  ) : null}
+                  )}
                 </button>
-
-                {targetProfile.isProvisional && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/20 border border-amber-300/40 px-2.5 py-0.5 text-[10px] font-bold text-amber-200">
-                    <Clock className="h-3 w-3" />
-                    Provisório
-                  </span>
-                )}
               </div>
+
+              {/* Quesitos de Habilidade (Se já avaliado) */}
+              {overallStars > 0 && (
+                <div className="mt-2 grid grid-cols-5 gap-1 text-center text-[9px] font-bold text-blue-100/90 bg-white/10 border border-white/15 rounded-lg p-1.5">
+                  <div>
+                    <span className="block text-[8px] text-blue-300 uppercase">Fin</span>
+                    <span className="font-mono text-amber-300">{skills.finalizacao}★</span>
+                  </div>
+                  <div>
+                    <span className="block text-[8px] text-blue-300 uppercase">Mar</span>
+                    <span className="font-mono text-amber-300">{skills.marcacao}★</span>
+                  </div>
+                  <div>
+                    <span className="block text-[8px] text-blue-300 uppercase">Pas</span>
+                    <span className="font-mono text-amber-300">{skills.passe}★</span>
+                  </div>
+                  <div>
+                    <span className="block text-[8px] text-blue-300 uppercase">Raç</span>
+                    <span className="font-mono text-amber-300">{skills.raca}★</span>
+                  </div>
+                  <div>
+                    <span className="block text-[8px] text-blue-300 uppercase">Dri</span>
+                    <span className="font-mono text-amber-300">{skills.drible}★</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Métricas Oficiais da Planilha no Cartão */}
+              <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-white/10 border border-white/15 p-2.5 text-center font-mono">
+                <div>
+                  <div className="text-[10px] text-blue-200 uppercase">Gols (Média)</div>
+                  <div className="text-sm font-extrabold text-white">
+                    {targetEntry.goals}{' '}
+                    <span className="text-[10px] font-bold text-blue-200">({goalsAvgVal})</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-blue-200 uppercase">Presenças</div>
+                  <div className="text-sm font-extrabold text-white">{targetEntry.matchesPlayed}J</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-blue-200 uppercase">
+                    {targetProfile.position === 'goleiro' ? 'Capas GK' : 'Super Capas'}
+                  </div>
+                  <div className="text-sm font-extrabold text-white">
+                    {targetProfile.position === 'goleiro'
+                      ? gkCapasVal
+                      : `${superCapasVal} (${capaEfficiencyVal}%)`}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cartões Disciplinares */}
+              <div className="mt-2.5 flex items-center justify-center gap-1.5 text-xs font-mono flex-wrap">
+                <span className="rounded-lg bg-amber-400/20 border border-amber-300/40 px-2 py-0.5 text-[11px] font-bold text-amber-100">
+                  🟨 Amarelos: {yellowCardsVal}
+                </span>
+                <span className="rounded-lg bg-blue-400/25 border border-blue-200/40 px-2 py-0.5 text-[11px] font-bold text-white">
+                  🟦 Azul: {blueCardsVal}
+                </span>
+                <span className="rounded-lg bg-red-500/25 border border-red-300/40 px-2 py-0.5 text-[11px] font-bold text-red-200">
+                  🟥 Vermelho: {redCardsVal}
+                </span>
+              </div>
+
+              {/* Botão Compartilhar Imagem 9:16 */}
+              <button
+                type="button"
+                onClick={() => setShowShareModal(true)}
+                className="mt-3.5 w-full flex items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-xs font-extrabold text-blue-900 shadow-sm active:scale-[0.99] transition hover:bg-blue-50 cursor-pointer"
+              >
+                <Share2 className="h-4 w-4 text-blue-600" />
+                <span>Compartilhar Cartão Oficial (Imagem 9:16)</span>
+              </button>
             </div>
-
-            {/* Métricas Oficiais da Planilha no Cartão */}
-            <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-white/10 border border-white/15 p-3 text-center font-mono">
-              <div>
-                <div className="text-[10px] text-blue-200 uppercase">
-                  Gols (Média)
-                </div>
-                <div className="text-base font-extrabold text-white">
-                  {targetEntry.goals}{' '}
-                  <span className="text-[11px] font-bold text-blue-200">
-                    ({goalsAvgVal})
-                  </span>
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-blue-200 uppercase">
-                  Presenças
-                </div>
-                <div className="text-base font-extrabold text-white">
-                  {targetEntry.matchesPlayed}J
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] text-blue-200 uppercase">
-                  {targetProfile.position === 'goleiro'
-                    ? 'Capas GK'
-                    : 'Super Capas'}
-                </div>
-                <div className="text-base font-extrabold text-white">
-                  {targetProfile.position === 'goleiro'
-                    ? gkCapasVal
-                    : `${superCapasVal} (${capaEfficiencyVal}%)`}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-2.5 flex items-center justify-center gap-2 text-xs font-mono flex-wrap">
-              <span className="rounded-lg bg-amber-400/20 border border-amber-300/40 px-2.5 py-1 font-bold text-amber-100">
-                🟨 Amarelos: {yellowCardsVal}
-              </span>
-              <span className="rounded-lg bg-blue-400/25 border border-blue-200/40 px-2.5 py-1 font-bold text-white">
-                🟦 Azul: {blueCardsVal}
-              </span>
-              <span className="rounded-lg bg-red-500/25 border border-red-300/40 px-2.5 py-1 font-bold text-red-200">
-                🟥 Vermelho: {redCardsVal}
-              </span>
-            </div>
-
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-xs font-extrabold text-blue-800 shadow-sm active:scale-[0.99] transition hover:bg-blue-50"
-            >
-              <Share2 className="h-4 w-4 text-blue-600" />
-              <span>Compartilhar Cartão (Imagem 9:16)</span>
-            </button>
           </div>
 
           {/* Conquistas e Nota por Posição */}
@@ -568,7 +669,7 @@ export const AthleteProfileAndCardView: React.FC<
             </div>
 
             <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
-              {targetProfile.badges.map((b) => (
+              {(targetProfile.badges || []).map((b) => (
                 <span
                   key={b}
                   className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-800"
@@ -676,11 +777,11 @@ export const AthleteProfileAndCardView: React.FC<
           position: targetProfile.position,
           dominantFoot: targetProfile.dominantFoot,
           avatarUrl: targetProfile.avatarUrl,
-          teamName: targetProfile.teamName || 'Real Planalto FC',
-          teamCrestUrl: targetProfile.teamCrestUrl,
+          teamName: userTeamName,
+          teamCrestUrl: userTeamCrest,
           cityName: `${targetCity.name}/${targetCity.stateCode}`,
-          overallStars: targetProfile.overallStars ?? 0,
-          skills: targetProfile.skills,
+          overallStars: overallStars,
+          skills: skills,
           goals: targetEntry.goals || 0,
           goalsAvg: goalsAvgVal,
           matchesPlayed: targetEntry.matchesPlayed || 0,
