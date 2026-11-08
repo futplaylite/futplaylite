@@ -56,7 +56,7 @@ export const AdminAndHomologationView: React.FC<
   const selectedMatch =
     matches.find((m) => m.id === targetMatchId) || matches[0];
   const activeVersion = matchResults.find(
-    (r) => r.id === selectedMatch.activeResultVersionId
+    (r) => r.id === selectedMatch?.activeResultVersionId
   );
 
   const handleRunHomologationSuite = () => {
@@ -65,6 +65,7 @@ export const AdminAndHomologationView: React.FC<
 
   const handleExecuteModeration = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedMatch) return;
     moderateMatchResolution({
       matchId: selectedMatch.id,
       action: modAction,

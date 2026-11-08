@@ -202,31 +202,35 @@ export const MatchesAndValidationView: React.FC<
   const selectedMatch =
     matches.find((m) => m.id === selectedMatchId) || matches[0];
 
-  const playersInMatch = matchPlayers.filter(
-    (mp) => mp.matchId === selectedMatch.id
-  );
+  const playersInMatch = selectedMatch
+    ? matchPlayers.filter((mp) => mp.matchId === selectedMatch.id)
+    : [];
   const homeLineup = playersInMatch.filter((mp) => mp.teamSide === 'home');
   const awayLineup = playersInMatch.filter((mp) => mp.teamSide === 'away');
 
-  const versionsForMatch = matchResults
-    .filter((r) => r.matchId === selectedMatch.id)
-    .sort((a, b) => b.versionNumber - a.versionNumber);
+  const versionsForMatch = selectedMatch
+    ? matchResults
+        .filter((r) => r.matchId === selectedMatch.id)
+        .sort((a, b) => b.versionNumber - a.versionNumber)
+    : [];
 
-  const activeResultVersion = versionsForMatch.find(
-    (r) => r.id === selectedMatch.activeResultVersionId
-  );
+  const activeResultVersion = selectedMatch
+    ? versionsForMatch.find(
+        (r) => r.id === selectedMatch.activeResultVersionId
+      )
+    : undefined;
 
   const eventsForActiveVersion = matchEvents.filter(
     (e) => e.resultVersionId === activeResultVersion?.id
   );
 
-  const evidencesForMatch = evidenceFiles.filter(
-    (ev) => ev.matchId === selectedMatch.id
-  );
+  const evidencesForMatch = selectedMatch
+    ? evidenceFiles.filter((ev) => ev.matchId === selectedMatch.id)
+    : [];
 
-  const txForMatch = pointTransactions.filter(
-    (pt) => pt.matchId === selectedMatch.id
-  );
+  const txForMatch = selectedMatch
+    ? pointTransactions.filter((pt) => pt.matchId === selectedMatch.id)
+    : [];
 
   const isParticipantOrStaff =
     currentUser.role === 'admin' ||
@@ -308,6 +312,7 @@ export const MatchesAndValidationView: React.FC<
 
   const handleSubmitScore = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedMatch) return;
     submitMatchScoreAndEvents({
       matchId: selectedMatch.id,
       homeScore: homeScoreInput,
@@ -324,6 +329,7 @@ export const MatchesAndValidationView: React.FC<
 
   const handleContestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedMatch) return;
     contestMatchResult({
       matchId: selectedMatch.id,
       reasonCode: disputeReason,
@@ -332,9 +338,9 @@ export const MatchesAndValidationView: React.FC<
     setShowContestBox(false);
   };
 
-  const awayCaptainProfile = profiles.find(
-    (p) => p.id === selectedMatch.awayCaptainId
-  );
+  const awayCaptainProfile = selectedMatch?.awayCaptainId
+    ? profiles.find((p) => p.id === selectedMatch.awayCaptainId)
+    : undefined;
 
   // Se o usuário clicou na Súmula de Pelada, abre como página dedicada (não popup)
   if (activeSumulaView === 'pelada') {
