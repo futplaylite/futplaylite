@@ -149,7 +149,8 @@ interface LeagueContextValue extends LeagueState {
   ) => void;
   registerNewAthlete: (params: {
     displayName: string;
-    email: string;
+    email?: string;
+    whatsappNumber?: string;
     cityId: string;
     neighborhood: string;
     position: PlayerPosition;
@@ -478,7 +479,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const newUser: User = {
       id: newUserId,
-      email: params.email.trim() || `${trimmedName.toLowerCase().replace(/\s+/g, '')}@futplay.com`,
+      email: params.email?.trim() || `${trimmedName.toLowerCase().replace(/\s+/g, '')}@futplay.com`,
+      whatsappNumber: params.whatsappNumber?.trim() || undefined,
       role: isFirstUser ? 'coach' : 'player',
       isTeamOwner: isFirstUser,
       teamName: isFirstUser ? 'Real Planalto FC' : undefined,
@@ -494,6 +496,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       userId: newUserId,
       displayName: trimmedName,
       fullNamePrivate: trimmedName,
+      whatsappNumber: params.whatsappNumber?.trim() || undefined,
       avatarColor: '#126B46',
       cityId: params.cityId || selectedCityId,
       neighborhood: params.neighborhood.trim() || 'Centro',

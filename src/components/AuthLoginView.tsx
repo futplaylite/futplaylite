@@ -6,6 +6,7 @@ import {
   Lock,
   Mail,
   MapPin,
+  Phone,
   ShieldCheck,
   Sparkles,
   UserPlus,
@@ -17,6 +18,21 @@ import { DominantFoot, PlayerPosition } from '../types/league';
 
 interface AuthLoginViewProps {
   onAuthenticated: () => void;
+}
+
+/**
+ * Formata a entrada do usuário: se parecer número, aplica máscara de celular (DDD) 9XXXX-XXXX;
+ * se contiver letras ou @, mantém texto puro de e-mail.
+ */
+function formatIdentifierInput(raw: string): string {
+  if (/[a-zA-Z@]/.test(raw)) {
+    return raw;
+  }
+  const digits = raw.replace(/\D/g, '').slice(0, 11);
+  if (digits.length === 0) return '';
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
 export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
@@ -32,28 +48,75 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
-  // Login states
-  const [loginEmail, setLoginEmail] = useState<string>('');
+  // Login states (E-mail ou Telefone)
+  const [loginIdentifier, setLoginIdentifier] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string>('');
 
-
-
   // Register states
   const [regName, setRegName] = useState<string>('');
-  const [regEmail, setRegEmail] = useState<string>('');
+  const [regIdentifier, setRegIdentifier] = useState<string>('');
   const [regPassword, setRegPassword] = useState<string>('');
   const [regNeighborhood, setRegNeighborhood] = useState<string>('Centro');
   const [regPosition, setRegPosition] = useState<PlayerPosition>('atacante');
   const [regFoot, setRegFoot] = useState<DominantFoot>('direito');
 
-  const handleEmailLogin = (e: React.FormEvent) => {
+  /**
+   * Localiza usuário existente comparando por e-mail ou por dígitos de telefone/WhatsApp
+   */
+  const findUserByIdentifier = (input: string) => {
+    const trimmed = input.trim();
+    const digits = trimmed.replace(/\D/g, '');
+    const isEmail = trimmed.includes('@');
+
+    return users.find((u) => {
+      // 1. Match exato por e-mail
+      if (isEmail && u.email.toLowerCase() === trimmed.toLowerCase()) {
+        return true;
+      }
+
+      // 2. Match por telefone/WhatsApp
+      if (digits.length >= 8) {
+        const userPhoneDigits = (u.whatsappNumber || '').replace(/\D/g, '');
+        if (userPhoneDigits) {
+          if (
+            userPhoneDigits === digits ||
+            userPhoneDigits.endsWith(digits) ||
+            digits.endsWith(userPhoneDigits)
+          ) {
+            return true;
+          }
+        }
+
+        // Se cadastrou com celular direto
+        if (u.email.toLowerCase().startsWith(digits)) {
+          return true;
+        }
+      }
+
+      // 3. Fallback genérico de e-mail
+      if (u.email.toLowerCase() === trimmed.toLowerCase()) {
+        return true;
+      }
+
+      return false;
+    });
+  };
+
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
-    const normalizedEmail = loginEmail.trim().toLowerCase();
-    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+    const trimmed = loginIdentifier.trim();
+    const digits = trimmed.replace(/\D/g, '');
+    const isEmail = trimmed.includes('@');
+
+    if (!isEmail && digits.length < 8) {
+      setLoginError('Informe um e-mail válido ou seu telefone celular com DDD.');
+      return;
+    }
+    if (isEmail && (!trimmed.includes('.') || trimmed.length < 5)) {
       setLoginError('Informe um endereço de e-mail válido.');
       return;
     }
@@ -62,10 +125,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       return;
     }
 
-    // Procura usuário cadastrado pelo e-mail
-    const existingUser = users.find(
-      (u) => u.email.toLowerCase() === normalizedEmail
-    );
+    // Procura usuário cadastrado por e-mail ou telefone
+    const existingUser = findUserByIdentifier(trimmed);
 
     if (existingUser) {
       switchActiveUser(existingUser.id);
@@ -74,9 +135,9 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     }
 
     setLoginError(
-      'E-mail ainda não cadastrado. Toque na aba "Criar Conta" acima para se cadastrar em segundos!'
+      'Conta ainda não cadastrada com este e-mail ou telefone. Toque na aba "Criar Conta" acima para se cadastrar em segundos!'
     );
-    setRegEmail(normalizedEmail);
+    setRegIdentifier(trimmed);
   };
 
   const handleCreateAccount = (e: React.FormEvent) => {
@@ -84,14 +145,20 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     setLoginError('');
 
     const trimmedName = regName.trim();
-    const trimmedEmail = regEmail.trim().toLowerCase();
+    const trimmedIdentifier = regIdentifier.trim();
+    const digits = trimmedIdentifier.replace(/\D/g, '');
+    const isEmail = trimmedIdentifier.includes('@');
 
     if (trimmedName.length < 2) {
       setLoginError('Informe seu nome ou apelido esportivo (mín. 2 letras).');
       return;
     }
-    if (!trimmedEmail || !trimmedEmail.includes('@')) {
-      setLoginError('Informe um e-mail válido para criar sua conta.');
+    if (!isEmail && digits.length < 8) {
+      setLoginError('Informe um e-mail válido ou telefone celular com DDD.');
+      return;
+    }
+    if (isEmail && (!trimmedIdentifier.includes('.') || trimmedIdentifier.length < 5)) {
+      setLoginError('Informe um endereço de e-mail válido para criar sua conta.');
       return;
     }
     if (regPassword.trim().length < 4) {
@@ -99,24 +166,31 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       return;
     }
 
-    // Verifica se o e-mail já existe
-    const existing = users.find(
-      (u) => u.email.toLowerCase() === trimmedEmail
-    );
+    // Verifica se já existe uma conta cadastrada com esse e-mail ou telefone
+    const existing = findUserByIdentifier(trimmedIdentifier);
     if (existing) {
       switchActiveUser(existing.id);
       notify(
         'info',
         'Conta já existente!',
-        'Identificamos seu e-mail e conectamos você diretamente à sua conta.'
+        'Identificamos seu cadastro e conectamos você diretamente à sua conta.'
       );
       onAuthenticated();
       return;
     }
 
+    const finalEmail = isEmail
+      ? trimmedIdentifier.toLowerCase()
+      : `${digits}@celular.futplay.com`;
+
+    const finalWhatsapp = !isEmail
+      ? formatIdentifierInput(digits)
+      : undefined;
+
     const created = registerNewAthlete({
       displayName: trimmedName,
-      email: trimmedEmail,
+      email: finalEmail,
+      whatsappNumber: finalWhatsapp,
       cityId: selectedCityId,
       neighborhood: regNeighborhood.trim() || 'Centro',
       position: regPosition,
@@ -197,20 +271,24 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           )}
 
           {mode === 'login' ? (
-            /* FORMULÁRIO DE LOGIN COM E-MAIL E SENHA */
-            <form onSubmit={handleEmailLogin} className="space-y-3.5">
+            /* FORMULÁRIO DE LOGIN COM E-MAIL OU TELEFONE E SENHA */
+            <form onSubmit={handleLogin} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  E-mail
+                  E-mail ou Celular (WhatsApp)
                 </label>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  {loginIdentifier && !loginIdentifier.includes('@') && loginIdentifier.replace(/\D/g, '').length > 0 ? (
+                    <Phone className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-600" />
+                  ) : (
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  )}
                   <input
-                    type="email"
+                    type="text"
                     required
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="seuemail@exemplo.com"
+                    value={loginIdentifier}
+                    onChange={(e) => setLoginIdentifier(formatIdentifierInput(e.target.value))}
+                    placeholder="seuemail@exemplo.com ou (77) 99999-8888"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>
@@ -264,7 +342,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                   }}
                   className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                 >
-                  Criar minha conta grátis
+                  Criar minha conta
                 </button>
               </div>
             </form>
@@ -287,19 +365,26 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Seu E-mail
+                  E-mail ou Celular (WhatsApp)
                 </label>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  {regIdentifier && !regIdentifier.includes('@') && regIdentifier.replace(/\D/g, '').length > 0 ? (
+                    <Phone className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-600" />
+                  ) : (
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  )}
                   <input
-                    type="email"
+                    type="text"
                     required
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="seuemail@exemplo.com"
+                    value={regIdentifier}
+                    onChange={(e) => setRegIdentifier(formatIdentifierInput(e.target.value))}
+                    placeholder="seuemail@exemplo.com ou (77) 99999-8888"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  Você usará este e-mail ou número de telefone para entrar na sua conta.
+                </p>
               </div>
 
               <div>
