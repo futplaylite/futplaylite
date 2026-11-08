@@ -12,9 +12,12 @@ import {
   MatchFormat,
   MatchPlayer,
   MatchResultVersion,
+  MonthlyPaymentRecord,
+  PeladaMonthlyConfig,
   PlayerPosition,
   PlayerProfile,
   PlayerRatingLog,
+  PeerEvaluation,
   PointTransaction,
   ProfileVisibility,
   ResultConfirmation,
@@ -92,6 +95,20 @@ export interface NotificationBanner {
   message: string;
 }
 
+export interface SumulaStopwatchState {
+  isActive: boolean;
+  seconds: number;
+  isRunning: boolean;
+  title: string;
+  start: () => void;
+  pause: () => void;
+  toggle: () => void;
+  reset: () => void;
+  open: (title?: string, initialSeconds?: number) => void;
+  close: () => void;
+  setSeconds: (secs: number) => void;
+}
+
 interface LeagueState {
   users: User[];
   cities: City[];
@@ -109,6 +126,9 @@ interface LeagueState {
   pointTransactions: PointTransaction[];
   ratingLogs: PlayerRatingLog[];
   auditLogs: AuditLog[];
+  peerEvaluations: PeerEvaluation[];
+  monthlyPayments: MonthlyPaymentRecord[];
+  monthlyConfig: PeladaMonthlyConfig;
 }
 
 interface LeagueContextValue extends LeagueState {
@@ -150,7 +170,8 @@ interface LeagueContextValue extends LeagueState {
       passe: number;
       raca: number;
       drible: number;
-    }
+    },
+    evaluatorId?: string
   ) => boolean;
   saveUserWhatsapp: (whatsappNumber: string) => boolean;
   saveOnboardingStep1: (params: {
@@ -207,9 +228,25 @@ interface LeagueContextValue extends LeagueState {
   }) => boolean;
   attemptDirectManipulationAttack: () => void;
   resetDemoDatabase: () => void;
+  sumulaStopwatch: SumulaStopwatchState;
+  toggleMonthlyPayment: (
+    playerId: string,
+    yearMonth: string,
+    isPaid: boolean,
+    amount?: number
+  ) => boolean;
+  updateMonthlyConfig: (config: Partial<PeladaMonthlyConfig>) => boolean;
 }
 
 const LeagueContext = createContext<LeagueContextValue | null>(null);
+
+export const DEFAULT_MONTHLY_CONFIG: PeladaMonthlyConfig = {
+  monthlyAmount: 30,
+  dueDay: 10,
+  pixKey: '77988001122',
+  pixKeyType: 'Celular',
+  pixReceiverName: 'Rosália Esportes / Real Planalto FC',
+};
 
 function getInitialState(): LeagueState {
   try {
@@ -236,10 +273,21 @@ function getInitialState(): LeagueState {
             }
           : p
       );
+      // Garante que novos jogos em INITIAL_MATCHES sejam mesclados se não existirem no localStorage
+      const existingMatchIds = new Set((parsed.matches || []).map((m) => m.id));
+      const mergedMatches = [
+        ...(parsed.matches || []),
+        ...INITIAL_MATCHES.filter((im) => !existingMatchIds.has(im.id)),
+      ];
+
       return {
         ...parsed,
         users: updatedUsers,
         profiles: updatedProfiles,
+        matches: mergedMatches,
+        peerEvaluations: parsed.peerEvaluations || [],
+        monthlyPayments: parsed.monthlyPayments || [],
+        monthlyConfig: parsed.monthlyConfig || DEFAULT_MONTHLY_CONFIG,
       };
     }
   } catch (e) {
@@ -262,6 +310,9 @@ function getInitialState(): LeagueState {
     pointTransactions: INITIAL_POINT_TRANSACTIONS,
     ratingLogs: INITIAL_RATING_LOGS,
     auditLogs: INITIAL_AUDIT_LOGS,
+    peerEvaluations: [],
+    monthlyPayments: [],
+    monthlyConfig: DEFAULT_MONTHLY_CONFIG,
   };
 }
 
@@ -285,6 +336,59 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   const [notification, setNotification] = useState<NotificationBanner | null>(
     null
   );
+
+  // Cronômetro da Súmula integrado ao Cabeçalho do App
+  const [isStopwatchActive, setIsStopwatchActive] = useState<boolean>(false);
+  const [stopwatchSeconds, setStopwatchSeconds] = useState<number>(0);
+  const [isStopwatchRunning, setIsStopwatchRunning] = useState<boolean>(false);
+  const [stopwatchTitle, setStopwatchTitle] = useState<string>('Tempo de Jogo');
+
+  useEffect(() => {
+    let interval: any = null;
+    if (isStopwatchActive && isStopwatchRunning) {
+      interval = setInterval(() => {
+        setStopwatchSeconds((prev) => prev + 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isStopwatchActive, isStopwatchRunning]);
+
+  const toggleStopwatch = () => {
+    setIsStopwatchRunning((prev) => !prev);
+  };
+
+  const resetStopwatch = () => {
+    setIsStopwatchRunning(false);
+    setStopwatchSeconds(0);
+  };
+
+  const openSumulaStopwatch = (title = 'Tempo de Jogo', initialSeconds = 0) => {
+    setIsStopwatchActive(true);
+    setStopwatchTitle(title);
+    if (initialSeconds > 0 && stopwatchSeconds === 0) {
+      setStopwatchSeconds(initialSeconds);
+    }
+  };
+
+  const closeSumulaStopwatch = () => {
+    setIsStopwatchActive(false);
+  };
+
+  const sumulaStopwatch: SumulaStopwatchState = {
+    isActive: isStopwatchActive,
+    seconds: stopwatchSeconds,
+    isRunning: isStopwatchRunning,
+    title: stopwatchTitle,
+    start: () => setIsStopwatchRunning(true),
+    pause: () => setIsStopwatchRunning(false),
+    toggle: toggleStopwatch,
+    reset: resetStopwatch,
+    open: openSumulaStopwatch,
+    close: closeSumulaStopwatch,
+    setSeconds: setStopwatchSeconds,
+  };
 
   useEffect(() => {
     try {
@@ -495,10 +599,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     return true;
   };
 
-  // Avaliação multicritério de estrelas (5 quesitos)
+  // Avaliação multicritério de estrelas (5 quesitos) calculada a partir da MÉDIA de todas as avaliações
   const updatePlayerSkills: LeagueContextValue['updatePlayerSkills'] = (
     playerId,
-    skills
+    skills,
+    evaluatorId
   ) => {
     const p = state.profiles.find((prof) => prof.id === playerId);
     if (!p) {
@@ -511,32 +616,92 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     const rac = Math.max(0, Math.min(5, skills.raca ?? 0));
     const dri = Math.max(0, Math.min(5, skills.drible ?? 0));
 
-    const ratedValues = [fin, mar, pas, rac, dri].filter((v) => v > 0);
-    // Se nenhum quesito foi avaliado ainda, média é 0; se alguns foram avaliados, média deles ou dos 5
-    const overallStars = Number(((fin + mar + pas + rac + dri) / 5).toFixed(1));
+    const activeEvaluatorId =
+      evaluatorId || currentUserId || currentPlayerProfile?.id || 'evaluator-anonymous';
     const now = new Date().toISOString();
 
-    setState((prev) => ({
-      ...prev,
-      profiles: prev.profiles.map((prof) =>
-        prof.id === playerId
-          ? {
-              ...prof,
-              skills: {
-                finalizacao: fin,
-                marcacao: mar,
-                passe: pas,
-                raca: rac,
-                drible: dri,
-                totalVotes: (prof.skills?.totalVotes || 0) + 1,
-                lastRatedAt: now,
-              },
-              overallStars,
-              updatedAt: now,
-            }
-          : prof
-      ),
-    }));
+    setState((prev) => {
+      const currentEvals = prev.peerEvaluations || [];
+      const existingIdx = currentEvals.findIndex(
+        (e) => e.evaluatorId === activeEvaluatorId && e.targetPlayerId === playerId
+      );
+
+      const evaluationRecord: PeerEvaluation = {
+        id:
+          existingIdx >= 0
+            ? currentEvals[existingIdx].id
+            : `pe-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        evaluatorId: activeEvaluatorId,
+        targetPlayerId: playerId,
+        finalizacao: fin,
+        marcacao: mar,
+        passe: pas,
+        raca: rac,
+        drible: dri,
+        createdAt: existingIdx >= 0 ? currentEvals[existingIdx].createdAt : now,
+        updatedAt: now,
+      };
+
+      const updatedEvals =
+        existingIdx >= 0
+          ? currentEvals.map((e, idx) => (idx === existingIdx ? evaluationRecord : e))
+          : [...currentEvals, evaluationRecord];
+
+      // Filtra todas as avaliações feitas para este jogador específico
+      const targetEvals = updatedEvals.filter((e) => e.targetPlayerId === playerId);
+      const totalVotes = targetEvals.length;
+
+      // Calcula a média exata de cada quesito entre todos os avaliadores
+      const avgFin = Number(
+        (targetEvals.reduce((acc, cur) => acc + cur.finalizacao, 0) / totalVotes).toFixed(1)
+      );
+      const avgMar = Number(
+        (targetEvals.reduce((acc, cur) => acc + cur.marcacao, 0) / totalVotes).toFixed(1)
+      );
+      const avgPas = Number(
+        (targetEvals.reduce((acc, cur) => acc + cur.passe, 0) / totalVotes).toFixed(1)
+      );
+      const avgRac = Number(
+        (targetEvals.reduce((acc, cur) => acc + cur.raca, 0) / totalVotes).toFixed(1)
+      );
+      const avgDri = Number(
+        (targetEvals.reduce((acc, cur) => acc + cur.drible, 0) / totalVotes).toFixed(1)
+      );
+
+      // A média das 5 notas médias resulta na nota geral em estrelas
+      const overallStars = Number(
+        ((avgFin + avgMar + avgPas + avgRac + avgDri) / 5).toFixed(1)
+      );
+
+      return {
+        ...prev,
+        peerEvaluations: updatedEvals,
+        profiles: prev.profiles.map((prof) =>
+          prof.id === playerId
+            ? {
+                ...prof,
+                skills: {
+                  finalizacao: avgFin,
+                  marcacao: avgMar,
+                  passe: avgPas,
+                  raca: avgRac,
+                  drible: avgDri,
+                  totalVotes,
+                  lastRatedAt: now,
+                },
+                overallStars,
+                updatedAt: now,
+              }
+            : prof
+        ),
+      };
+    });
+
+    notify(
+      'success',
+      'Classificação computada!',
+      `Sua avaliação para ${p.displayName} foi registrada e integrada à média geral do atleta.`
+    );
 
     return true;
   };
@@ -1607,6 +1772,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       pointTransactions: INITIAL_POINT_TRANSACTIONS,
       ratingLogs: INITIAL_RATING_LOGS,
       auditLogs: INITIAL_AUDIT_LOGS,
+      peerEvaluations: [],
+      monthlyPayments: [],
+      monthlyConfig: DEFAULT_MONTHLY_CONFIG,
     });
     setCurrentUserId('user-lukinha');
     notify(
@@ -1614,6 +1782,68 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       'Banco de demonstração restaurado',
       'Todos os dados iniciais da Liga Municipal de Planalto - BA foram recarregados.'
     );
+  };
+
+  const toggleMonthlyPayment: LeagueContextValue['toggleMonthlyPayment'] = (
+    playerId,
+    yearMonth,
+    isPaid,
+    amount
+  ) => {
+    const p = state.profiles.find((prof) => prof.id === playerId);
+    const playerDisplayName = p?.displayName || 'Jogador';
+    const now = new Date().toISOString();
+    const paymentId = `${playerId}_${yearMonth}`;
+    const feeAmount = amount ?? state.monthlyConfig?.monthlyAmount ?? 30;
+
+    setState((prev) => {
+      const currentList = prev.monthlyPayments || [];
+      const existingIdx = currentList.findIndex(
+        (m) => m.playerId === playerId && m.yearMonth === yearMonth
+      );
+
+      const record: MonthlyPaymentRecord = {
+        id: paymentId,
+        playerId,
+        yearMonth,
+        isPaid,
+        paidAt: isPaid ? now : undefined,
+        amount: feeAmount,
+        confirmedBy: currentUserId || 'admin-pelada',
+      };
+
+      const updatedPayments =
+        existingIdx >= 0
+          ? currentList.map((item, idx) => (idx === existingIdx ? record : item))
+          : [...currentList, record];
+
+      return {
+        ...prev,
+        monthlyPayments: updatedPayments,
+      };
+    });
+
+    notify(
+      'success',
+      isPaid ? 'Pagamento Confirmado! 🟢' : 'Status Alterado para Pendente 🔴',
+      isPaid
+        ? `Mensalidade de ${playerDisplayName} (${yearMonth}) marcada como PAGA!`
+        : `Mensalidade de ${playerDisplayName} (${yearMonth}) marcada como PENDENTE.`
+    );
+
+    return true;
+  };
+
+  const updateMonthlyConfig: LeagueContextValue['updateMonthlyConfig'] = (config) => {
+    setState((prev) => ({
+      ...prev,
+      monthlyConfig: {
+        ...(prev.monthlyConfig || DEFAULT_MONTHLY_CONFIG),
+        ...config,
+      },
+    }));
+    notify('success', 'Configuração Salva', 'Dados da mensalidade e PIX atualizados com sucesso.');
+    return true;
   };
 
   const saveUserWhatsapp: LeagueContextValue['saveUserWhatsapp'] = (
@@ -1836,6 +2066,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         moderateMatchResolution,
         attemptDirectManipulationAttack,
         resetDemoDatabase,
+        sumulaStopwatch,
+        toggleMonthlyPayment,
+        updateMonthlyConfig,
       }}
     >
       {children}

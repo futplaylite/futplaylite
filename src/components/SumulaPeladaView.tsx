@@ -1,11 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   ArrowLeft,
   Calendar,
   CheckCircle2,
   Clock,
+  Pause,
+  Play,
+  Plus,
   RotateCcw,
   Save,
+  Share2,
   Trash2,
   AlertTriangle,
   UserCheck,
@@ -13,6 +17,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
+import { ShareSumulaReceiptModal } from './ShareSumulaReceiptModal';
 
 export interface SumulaData {
   id: string;
@@ -20,6 +25,8 @@ export interface SumulaData {
   matchDate: string;
   startTime: string;
   lastUpdated: string;
+  timerSeconds?: number;
+  isTimerRunning?: boolean;
   arrivalList: {
     order: number;
     playerName: string;
@@ -146,12 +153,14 @@ export const buildDefaultArrivalList = (): SumulaData['arrivalList'] => {
 
 const defaultArrivals = buildDefaultArrivalList();
 
-const DEFAULT_INITIAL_SUMULA: SumulaData = {
+export const DEFAULT_INITIAL_SUMULA: SumulaData = {
   id: 'pelada-rodada-atual',
   status: 'em_andamento',
   matchDate: new Date().toLocaleDateString('pt-BR'),
   startTime: '20:15',
   lastUpdated: new Date().toISOString(),
+  timerSeconds: 0,
+  isTimerRunning: false,
   arrivalList: defaultArrivals,
   yellowCards: [
     'YAGO',
@@ -283,11 +292,29 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   sumulaId,
   isNew,
 }) => {
-  const { currentUser } = useLeague();
+  const { currentUser, sumulaStopwatch } = useLeague();
   const isCoachOrAdmin =
     currentUser.role === 'admin' ||
     currentUser.role === 'coach' ||
     currentUser.isTeamOwner === true;
+
+  // Ativa o cronômetro no cabeçalho do app enquanto a súmula estiver aberta
+  useEffect(() => {
+    sumulaStopwatch.open('Súmula de Treino', sumula.timerSeconds || 0);
+    return () => {
+      sumulaStopwatch.close();
+    };
+  }, []);
+
+  const handleExit = () => {
+    setSumula((s) => ({
+      ...s,
+      timerSeconds: sumulaStopwatch.seconds,
+      isTimerRunning: sumulaStopwatch.isRunning,
+    }));
+    sumulaStopwatch.close();
+    onBack();
+  };
 
   // Carrega a súmula específica ou cria uma nova com id único
   const [sumula, setSumula] = useState<SumulaData>(() => {
@@ -394,6 +421,35 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   >('amarelo');
   const [newHighlightPlayer, setNewHighlightPlayer] = useState('');
   const [newHighlightTime, setNewHighlightTime] = useState('');
+  const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false);
+
+  // Estado para adicionar jogador aos times (Time 01, Time 02, etc.)
+  const [activeAddTeam, setActiveAddTeam] = useState<string | null>(null);
+  const [newTeamPlayerName, setNewTeamPlayerName] = useState('');
+  const [newTeamPlayerIsSub, setNewTeamPlayerIsSub] = useState(false);
+
+  // Lista unificada de sugestões para os times (Presenças confirmadas + Elenco oficial + Goleiros)
+  const availableTeamPlayerSuggestions = useMemo(() => {
+    const list: string[] = [];
+    // 1. Presenças confirmadas na súmula
+    sumula.arrivalList
+      .filter((a) => a.confirmed && a.playerName)
+      .forEach((a) => {
+        const up = a.playerName.trim().toUpperCase();
+        if (!list.includes(up)) list.push(up);
+      });
+    // 2. Elenco oficial
+    OFFICIAL_ELENCO_PLAYERS.forEach((name) => {
+      const up = name.trim().toUpperCase();
+      if (!list.includes(up)) list.push(up);
+    });
+    // 3. Goleiros
+    OFFICIAL_GOALKEEPER_NAMES.forEach((name) => {
+      const up = name.trim().toUpperCase();
+      if (!list.includes(up)) list.push(up);
+    });
+    return list;
+  }, [sumula.arrivalList]);
 
   // 1. Lista de Presença
   const handleAddArrival = () => {
@@ -618,6 +674,71 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     });
   };
 
+  // Adicionar jogador a um Time da súmula
+  const handleAddPlayerToTeam = (teamKey: string) => {
+    const name = newTeamPlayerName.trim().toUpperCase();
+    if (!name) return;
+
+    setSumula((prev) => {
+      const currentList = prev.teamLineups[teamKey] || [];
+      const alreadyExists = currentList.some(
+        (p) => p.player.trim().toUpperCase() === name
+      );
+
+      if (alreadyExists) {
+        alert(`${name} já está escalado no ${teamKey}!`);
+        return prev;
+      }
+
+      const updatedTeam = [
+        ...currentList,
+        {
+          player: name,
+          goals: 0,
+          isSub: newTeamPlayerIsSub,
+        },
+      ];
+
+      return {
+        ...prev,
+        teamLineups: {
+          ...prev.teamLineups,
+          [teamKey]: updatedTeam,
+        },
+      };
+    });
+
+    setNewTeamPlayerName('');
+    setNewTeamPlayerIsSub(false);
+    setActiveAddTeam(null);
+  };
+
+  // Remover jogador de um Time da súmula
+  const handleRemovePlayerFromTeam = (teamKey: string, pIdx: number) => {
+    const playerToRemove = sumula.teamLineups[teamKey]?.[pIdx];
+    if (!playerToRemove) return;
+
+    const goals = Number(playerToRemove.goals) || 0;
+    if (goals > 0) {
+      const confirmRemove = window.confirm(
+        `O jogador ${playerToRemove.player} possui ${goals} gol(s) registrado(s). Deseja realmente removê-lo do ${teamKey}?`
+      );
+      if (!confirmRemove) return;
+    }
+
+    setSumula((prev) => {
+      const list = [...(prev.teamLineups[teamKey] || [])];
+      list.splice(pIdx, 1);
+      return {
+        ...prev,
+        teamLineups: {
+          ...prev.teamLineups,
+          [teamKey]: list,
+        },
+      };
+    });
+  };
+
   // 6. Gols Destaque
   const handleAddHighlightGoal = () => {
     if (!newHighlightPlayer.trim()) return;
@@ -653,24 +774,50 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     <div className="-mx-2.5 sm:mx-0 space-y-3 pb-8 relative">
       {/* Prancheta Física Estilizada com laterais expandidas */}
       <div className="rounded-xl sm:rounded-2xl bg-white shadow-md border border-slate-300 text-slate-800 overflow-hidden">
-        {/* Barra de Data e Início Compacta */}
-        <div className="bg-amber-50/90 border-b border-amber-200 px-2 py-1.5 flex items-center justify-between text-xs gap-1.5">
-          <div className="flex items-center gap-1 font-bold text-slate-800 min-w-0">
-            <Calendar className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-            <input
-              type="text"
-              value={sumula.matchDate}
-              onChange={(e) =>
-                setSumula((prev) => ({ ...prev, matchDate: e.target.value }))
-              }
-              className="w-20 rounded border border-slate-300 bg-white px-1 py-0.5 text-center font-mono text-[11px] font-bold text-blue-900 focus:outline-blue-500"
-              title="Data do jogo"
-            />
+        {/* CABEÇALHO DO CARD: EXCLUIR ANTES DO TÍTULO + SÚMULA DE TREINO + DATA/HORA */}
+        <div className="bg-slate-900 text-white px-3 sm:px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2">
+          {/* Lado Esquerdo: Botão Excluir Súmula + Título Oficial */}
+          <div className="flex items-center gap-2 min-w-0">
+            {isCoachOrAdmin && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-950/60 hover:bg-red-900/80 text-red-300 px-2 py-1 text-[10px] font-bold transition active:scale-95 shrink-0"
+                title="Excluir Súmula"
+              >
+                <Trash2 className="h-3 w-3 text-red-400" />
+                <span>Excluir</span>
+              </button>
+            )}
+
+            <span className="text-xs font-black uppercase tracking-wider text-slate-200 truncate">
+              Data e Horário:
+            </span>
+
+            {!isCoachOrAdmin && (
+              <span className="rounded bg-blue-900/80 border border-blue-500/30 px-1.5 py-0.2 text-[8px] font-extrabold text-blue-200 shrink-0">
+                Leitura
+              </span>
+            )}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
-              <Clock className="h-3 w-3 text-slate-500 shrink-0" />
+          {/* Lado Direito: Data e Início */}
+          <div className="flex items-center gap-2 text-xs text-slate-300 shrink-0">
+            <span className="flex items-center gap-1">
+              <Calendar className="h-3 w-3 text-blue-400 shrink-0" />
+              <input
+                type="text"
+                value={sumula.matchDate}
+                onChange={(e) =>
+                  setSumula((prev) => ({ ...prev, matchDate: e.target.value }))
+                }
+                className="bg-transparent border-b border-slate-700 text-white font-mono text-[11px] font-bold w-20 focus:outline-none focus:border-blue-400 text-center"
+                title="Data do jogo"
+              />
+            </span>
+            <span className="text-slate-600">•</span>
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3 text-blue-400 shrink-0" />
               <input
                 type="text"
                 disabled={!isCoachOrAdmin}
@@ -678,26 +825,10 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                 onChange={(e) =>
                   setSumula((prev) => ({ ...prev, startTime: e.target.value }))
                 }
-                className="w-12 rounded border border-slate-300 bg-white px-1 py-0.5 text-center font-mono text-[11px] font-bold disabled:bg-slate-100 disabled:text-slate-500"
+                className="bg-transparent border-b border-slate-700 text-white font-mono text-[11px] font-bold w-12 focus:outline-none focus:border-blue-400 disabled:opacity-75 text-center"
                 title="Horário de início"
               />
-            </div>
-            {isCoachOrAdmin && (
-              <button
-                type="button"
-                onClick={() => setShowDeleteModal(true)}
-                className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-600 hover:bg-red-100 active:scale-95 transition"
-                title="Excluir Súmula"
-              >
-                <Trash2 className="h-3 w-3" />
-                <span>Excluir</span>
-              </button>
-            )}
-            {!isCoachOrAdmin && (
-              <span className="rounded bg-blue-100 border border-blue-200 px-2 py-0.5 text-[9px] font-extrabold text-blue-800">
-                Modo Leitura
-              </span>
-            )}
+            </span>
           </div>
         </div>
 
@@ -999,8 +1130,17 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                           className="py-1 flex items-center justify-between text-xs gap-1"
                         >
                           <div className="flex items-center gap-1 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePlayerFromTeam(tName, pIdx)}
+                              className="h-4 w-4 -ml-0.5 shrink-0 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition active:scale-90"
+                              title={`Excluir ${item.player} do time`}
+                            >
+                              <Trash2 className="h-2.5 w-2.5" />
+                            </button>
+
                             {item.isSub && (
-                              <span className="text-[8px] font-extrabold text-amber-600 bg-amber-50 rounded px-0.5">
+                              <span className="text-[8px] font-extrabold text-amber-600 bg-amber-50 rounded px-0.5 shrink-0">
                                 S
                               </span>
                             )}
@@ -1031,7 +1171,87 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                         </div>
                       ))}
                     </div>
+
+                    {players.length === 0 && (
+                      <div className="py-2 text-center text-[9px] text-slate-400 italic">
+                        Nenhum jogador escalado
+                      </div>
+                    )}
                   </div>
+
+                  {/* Formulário / Botão para Adicionar Jogador ao Time */}
+                  {activeAddTeam === tName ? (
+                    <div className="mt-2 pt-1.5 border-t border-slate-100 space-y-1.5 bg-slate-50 p-1.5 rounded-lg">
+                      <div>
+                        <input
+                          type="text"
+                          list={`team-suggestions-${tName}`}
+                          value={newTeamPlayerName}
+                          onChange={(e) => setNewTeamPlayerName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddPlayerToTeam(tName);
+                            }
+                          }}
+                          placeholder="Nome do atleta..."
+                          className="w-full text-[10px] uppercase font-bold px-1.5 py-1 rounded border border-slate-300 bg-white text-slate-800 placeholder:normal-case placeholder:font-normal focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                          autoFocus
+                        />
+                        <datalist id={`team-suggestions-${tName}`}>
+                          {availableTeamPlayerSuggestions.map((name) => (
+                            <option key={name} value={name} />
+                          ))}
+                        </datalist>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-1">
+                        <label className="flex items-center gap-1 text-[9px] font-semibold text-slate-600 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={newTeamPlayerIsSub}
+                            onChange={(e) => setNewTeamPlayerIsSub(e.target.checked)}
+                            className="rounded border-slate-300 text-blue-600 h-3 w-3 focus:ring-0"
+                          />
+                          <span>Reserva (S)</span>
+                        </label>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveAddTeam(null);
+                              setNewTeamPlayerName('');
+                              setNewTeamPlayerIsSub(false);
+                            }}
+                            className="px-1.5 py-0.5 text-[9px] font-medium text-slate-500 hover:text-slate-800 rounded hover:bg-slate-200 transition"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddPlayerToTeam(tName)}
+                            className="px-2 py-0.5 text-[9px] font-bold bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded transition shadow-2xs"
+                          >
+                            Adicionar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveAddTeam(tName);
+                        setNewTeamPlayerName('');
+                        setNewTeamPlayerIsSub(false);
+                      }}
+                      className="mt-2 w-full py-1 rounded-lg border border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 text-blue-700 text-[10px] font-bold flex items-center justify-center gap-1 transition active:scale-95"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>Adicionar Jogador</span>
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -1287,38 +1507,45 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
         {/* Rodapé de Ações */}
         <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
           <button
-            onClick={onBack}
-            className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition"
+            type="button"
+            onClick={handleExit}
+            className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition cursor-pointer"
           >
             ← Voltar
           </button>
 
-          {isCoachOrAdmin && (
-            <>
-              <button
-                type="button"
-                onClick={() => setShowDeleteModal(true)}
-                className="rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-700 hover:bg-red-100 active:scale-95 transition inline-flex items-center gap-1.5"
-                title="Excluir Súmula"
-              >
-                <Trash2 className="h-4 w-4 text-red-600" />
-                <span className="hidden xs:inline">Excluir</span>
-              </button>
+          {/* Botão para Gerar e Compartilhar Imagem do Comprovante da Súmula */}
+          <button
+            type="button"
+            onClick={() => setShowReceiptModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400 bg-emerald-50 px-3 py-2.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 active:scale-95 transition cursor-pointer shadow-2xs"
+            title="Gerar e compartilhar comprovante visual da súmula"
+          >
+            <Share2 className="h-4 w-4 text-emerald-600" />
+            <span>Comprovante</span>
+          </button>
 
-              <button
-                onClick={() => {
-                  if (onFinish) {
-                    onFinish(sumula);
-                  }
-                  alert('Súmula salva com sucesso e em andamento!');
-                  onBack();
-                }}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-blue-700 active:scale-95 transition"
-              >
-                <Save className="h-4 w-4" />
-                Salvar e Manter
-              </button>
-            </>
+          {isCoachOrAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                const finalSumula: SumulaData = {
+                  ...sumula,
+                  timerSeconds: sumulaStopwatch.seconds,
+                  isTimerRunning: sumulaStopwatch.isRunning,
+                  lastUpdated: new Date().toISOString(),
+                };
+                saveSumulaToList(finalSumula);
+                if (onFinish) {
+                  onFinish(finalSumula);
+                }
+                setShowReceiptModal(true);
+              }}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-xs font-black text-white shadow-md hover:from-emerald-500 hover:to-teal-500 active:scale-95 transition cursor-pointer"
+            >
+              <Save className="h-4 w-4" />
+              <span>Gravar & Compartilhar</span>
+            </button>
           )}
         </div>
       </div>
@@ -1372,6 +1599,21 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
           <CheckCircle2 className="h-4 w-4" />
           <span>Salvo</span>
         </div>
+      )}
+
+      {/* Modal de Compartilhamento da Imagem do Comprovante da Súmula */}
+      {showReceiptModal && (
+        <ShareSumulaReceiptModal
+          isOpen={true}
+          onClose={() => {
+            setShowReceiptModal(false);
+          }}
+          data={{
+            sumula,
+            teamName: 'Real Planalto FC',
+            venueName: 'Arena Planalto Society',
+          }}
+        />
       )}
     </div>
   );

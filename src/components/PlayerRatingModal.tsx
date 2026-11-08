@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   Star,
@@ -18,6 +18,7 @@ interface PlayerRatingModalProps {
   onClose: () => void;
   readOnly?: boolean;
   readOnlyMessage?: string;
+  initialSkills?: PlayerSkillRatings;
   onSave: (
     playerId: string,
     skills: {
@@ -36,9 +37,10 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
   onClose,
   readOnly = false,
   readOnlyMessage,
+  initialSkills,
   onSave,
 }) => {
-  const currentSkills: PlayerSkillRatings = player.skills || {
+  const currentSkills: PlayerSkillRatings = initialSkills || player.skills || {
     finalizacao: 0,
     marcacao: 0,
     passe: 0,
@@ -59,6 +61,23 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
     raca: currentSkills.raca ?? 0,
     drible: currentSkills.drible ?? 0,
   });
+
+  useEffect(() => {
+    const s = initialSkills || player.skills || {
+      finalizacao: 0,
+      marcacao: 0,
+      passe: 0,
+      raca: 0,
+      drible: 0,
+    };
+    setRatings({
+      finalizacao: s.finalizacao ?? 0,
+      marcacao: s.marcacao ?? 0,
+      passe: s.passe ?? 0,
+      raca: s.raca ?? 0,
+      drible: s.drible ?? 0,
+    });
+  }, [player.id, initialSkills]);
 
   const [savedFeedback, setSavedFeedback] = useState(false);
 
@@ -217,6 +236,12 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
                   : 'Ainda não avaliado'}
               </div>
             </div>
+          </div>
+
+          {/* Indicativo de Média Coletiva */}
+          <div className="mt-2 flex items-center justify-between text-[10px] text-blue-200/90 px-1">
+            <span>👥 {player.skills?.totalVotes ? `${player.skills.totalVotes} avaliação(ões) computadas` : 'Primeira avaliação deste atleta'}</span>
+            <span className="text-amber-300 font-bold bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-300/30">Média Coletiva</span>
           </div>
         </div>
 

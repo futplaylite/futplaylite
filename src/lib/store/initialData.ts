@@ -936,6 +936,50 @@ export const INITIAL_MATCHES: Match[] = [
     createdAt: '2026-10-23T09:00:00Z',
     updatedAt: '2026-10-24T08:30:00Z',
   },
+
+  // PARTIDA 5: PRÓXIMO JOGO OFICIAL AGENDADO (Sexta-feira 30/10)
+  {
+    id: 'match-105',
+    cityId: 'city-rosalia',
+    seasonId: 'season-2026-2',
+    createdBy: 'user-paredao',
+    scheduledAt: '2026-10-30T19:30:00-03:00',
+    venueName: 'Arena Society Planalto - BA',
+    neighborhood: 'Vila Rosália',
+    format: '7v7',
+    homeTeamName: 'Real Planalto FC',
+    awayTeamName: 'Falcões do Sudoeste',
+    homeCaptainId: 'player-paredao',
+    awayCaptainId: 'player-flecha',
+    status: 'partida_cadastrada',
+    rulesetVersion: 'v1.0.0',
+    fraudHold: false,
+    fraudSignals: [],
+    createdAt: '2026-10-26T10:00:00Z',
+    updatedAt: '2026-10-26T10:00:00Z',
+  },
+
+  // PARTIDA 6: JOGO OFICIAL CLÁSSICO DA CIDADE (Quarta-feira 04/11)
+  {
+    id: 'match-106',
+    cityId: 'city-rosalia',
+    seasonId: 'season-2026-2',
+    createdBy: 'user-lukinha',
+    scheduledAt: '2026-11-04T20:00:00-03:00',
+    venueName: 'Estádio Distrital de Planalto',
+    neighborhood: 'Centro',
+    format: '11v11',
+    homeTeamName: 'Unidos da Vila',
+    awayTeamName: 'Real Planalto FC',
+    homeCaptainId: 'player-lukinha',
+    awayCaptainId: 'player-paredao',
+    status: 'partida_cadastrada',
+    rulesetVersion: 'v1.0.0',
+    fraudHold: false,
+    fraudSignals: [],
+    createdAt: '2026-10-27T14:00:00Z',
+    updatedAt: '2026-10-27T14:00:00Z',
+  },
 ];
 
 export const INITIAL_MATCH_PLAYERS: MatchPlayer[] = [

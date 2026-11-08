@@ -107,7 +107,19 @@ function roundRect(
 }
 
 /**
- * Gera uma imagem 9:16 (1080x1920) em alta resolução do Cartão Oficial do Atleta.
+ * Gera uma imagem 9:16 (1080x1920) do Cartão Oficial do Atleta
+ * 100% idêntica ao card exibido na tela do app:
+ * - Fundo oficial do estádio com refletores (/images/stadium-super-capas.jpg)
+ * - Moldura neon azul com glow nos cantos
+ * - Topo do card com "CARTÃO OFICIAL DE ATLETA" e brasão oficial do time
+ * - Foto de perfil em squircle (retângulo arredondado) com borda dourada
+ * - Nome do atleta em destaque
+ * - Posição, pé dominante e time em linha compacta
+ * - Badge central de Overall Stars (estrelas douradas + nota + check de avaliado)
+ * - Grid de 5 quesitos de habilidade (Fin, Mar, Pas, Raç, Dri) com notas em estrelas
+ * - Painel de 3 métricas da liga: Gols (Média), Presenças e Super Capas
+ * - Badges disciplinares: Amarelos, Azuis e Vermelhos
+ * - Rodapé oficial de autenticação da liga
  */
 export async function generateCard9x16(data: CardImageData): Promise<{
   dataUrl: string;
@@ -127,468 +139,555 @@ export async function generateCard9x16(data: CardImageData): Promise<{
   }
 
   // Pré-carrega imagens se disponíveis
-  const [avatarImg, crestImg] = await Promise.all([
+  const [avatarImg, crestImg, stadiumImg] = await Promise.all([
     loadImageSafe(data.avatarUrl),
     loadImageSafe(data.teamCrestUrl),
+    loadImageSafe('/images/stadium-super-capas.jpg'),
   ]);
 
-  // 1. FUNDO GERAL (Gradiente Profundo 9:16)
-  const bgGrad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-  bgGrad.addColorStop(0, '#060B1E');
-  bgGrad.addColorStop(0.25, '#0F1D40');
-  bgGrad.addColorStop(0.5, '#172B5E');
-  bgGrad.addColorStop(0.75, '#0D1B3E');
-  bgGrad.addColorStop(1, '#050A1A');
-  ctx.fillStyle = bgGrad;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  // 1. FUNDO GERAL COM A IMAGEM OFICIAL DO ESTÁDIO (9:16)
+  if (stadiumImg) {
+    ctx.drawImage(stadiumImg, 0, 0, WIDTH, HEIGHT);
+    const bgOverlay = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+    bgOverlay.addColorStop(0, 'rgba(10, 20, 53, 0.70)');
+    bgOverlay.addColorStop(0.3, 'rgba(7, 17, 44, 0.80)');
+    bgOverlay.addColorStop(0.7, 'rgba(5, 12, 32, 0.88)');
+    bgOverlay.addColorStop(1, 'rgba(3, 6, 18, 0.95)');
+    ctx.fillStyle = bgOverlay;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  } else {
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+    bgGrad.addColorStop(0, '#0a1435');
+    bgGrad.addColorStop(0.3, '#07112c');
+    bgGrad.addColorStop(0.7, '#050c20');
+    bgGrad.addColorStop(1, '#030612');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  }
 
-  // Efeitos de Iluminação Radial no Fundo
-  const radialAura1 = ctx.createRadialGradient(WIDTH / 2, 350, 40, WIDTH / 2, 350, 600);
-  radialAura1.addColorStop(0, 'rgba(59, 130, 246, 0.28)');
-  radialAura1.addColorStop(1, 'rgba(59, 130, 246, 0)');
-  ctx.fillStyle = radialAura1;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-  const radialAura2 = ctx.createRadialGradient(WIDTH / 2, 1100, 50, WIDTH / 2, 1100, 700);
-  radialAura2.addColorStop(0, 'rgba(99, 102, 241, 0.22)');
-  radialAura2.addColorStop(1, 'rgba(99, 102, 241, 0)');
-  ctx.fillStyle = radialAura2;
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-  // Marca d'água elegante de campo de futebol no fundo
+  // Glows neon nos cantos
   ctx.save();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  const topGlow = ctx.createRadialGradient(WIDTH / 2, 80, 20, WIDTH / 2, 80, 500);
+  topGlow.addColorStop(0, 'rgba(37, 99, 235, 0.35)');
+  topGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = topGlow;
+  ctx.fillRect(0, 0, WIDTH, 600);
+
+  const starGlow = ctx.createRadialGradient(WIDTH - 120, 90, 5, WIDTH - 120, 90, 220);
+  starGlow.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
+  starGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = starGlow;
+  ctx.fillRect(WIDTH - 300, 0, 300, 300);
+
+  ctx.fillStyle = '#BAE6FD';
+  ctx.font = '24px system-ui, sans-serif';
+  ctx.fillText('✦', WIDTH - 120, 90);
+  ctx.font = '16px system-ui, sans-serif';
+  ctx.fillText('✦', WIDTH - 80, 70);
+  ctx.restore();
+
+  // 2. MOLDURA EXTERNA ELEGANTE EM AZUL NEON
+  const frameMargin = 36;
+  const frameW = WIDTH - frameMargin * 2;
+  const frameH = HEIGHT - frameMargin * 2;
+  const frameRadius = 40;
+
+  ctx.save();
+  roundRect(ctx, frameMargin, frameMargin, frameW, frameH, frameRadius);
+  ctx.strokeStyle = 'rgba(59, 130, 246, 0.85)';
   ctx.lineWidth = 4;
-  // Círculo central
-  ctx.beginPath();
-  ctx.arc(WIDTH / 2, HEIGHT / 2, 380, 0, Math.PI * 2);
-  ctx.stroke();
-  // Linha do meio campo
-  ctx.beginPath();
-  ctx.moveTo(0, HEIGHT / 2);
-  ctx.lineTo(WIDTH, HEIGHT / 2);
+  ctx.shadowColor = 'rgba(37, 99, 235, 0.7)';
+  ctx.shadowBlur = 24;
   ctx.stroke();
   ctx.restore();
 
-  // 2. CABEÇALHO DO STATUS / STORY (Acima do Cartão)
+  // 3. IDENTIDADE DA LIGA NO TOPO
   ctx.save();
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#FACC15';
-  ctx.font = '900 42px "Oswald", "Montserrat", system-ui, sans-serif';
-  ctx.fillText('FUTPLAY LITE', WIDTH / 2, 95);
-
-  ctx.fillStyle = '#93C5FD';
-  ctx.font = '700 22px system-ui, sans-serif';
-  ctx.letterSpacing = '2px';
-  ctx.fillText('LIGA DE FUTEBOL AMADOR · STATUS OFICIAL', WIDTH / 2, 135);
-  ctx.restore();
-
-  // 3. O CARD CENTRAL DO ATLETA (Hero Player Card)
-  const cardX = 70;
-  const cardY = 175;
-  const cardW = 940;
-  const cardH = 1580;
-  const cardR = 48;
-
-  // Sombra suave do cartão
-  ctx.save();
-  ctx.shadowColor = 'rgba(30, 58, 138, 0.7)';
-  ctx.shadowBlur = 45;
-  ctx.shadowOffsetY = 15;
-  roundRect(ctx, cardX, cardY, cardW, cardH, cardR);
-  const cardFill = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH);
-  cardFill.addColorStop(0, '#1E40AF');
-  cardFill.addColorStop(0.3, '#1E3A8A');
-  cardFill.addColorStop(0.7, '#172554');
-  cardFill.addColorStop(1, '#0B132B');
-  ctx.fillStyle = cardFill;
-  ctx.fill();
-  ctx.restore();
-
-  // Borda Dourada com Gradiente do Cartão
-  ctx.save();
-  roundRect(ctx, cardX, cardY, cardW, cardH, cardR);
-  const goldBorder = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY + cardH);
-  goldBorder.addColorStop(0, '#FDE047');
-  goldBorder.addColorStop(0.4, '#EAB308');
-  goldBorder.addColorStop(0.7, '#CA8A04');
-  goldBorder.addColorStop(1, '#FDE047');
-  ctx.strokeStyle = goldBorder;
-  ctx.lineWidth = 6;
-  ctx.stroke();
-  ctx.restore();
-
-  // Linha interna suave
-  ctx.save();
-  roundRect(ctx, cardX + 10, cardY + 10, cardW - 20, cardH - 20, cardR - 8);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.restore();
-
-  // 4. TOPO INTERNO DO CARTÃO
-  ctx.save();
-  // Selo "Cartão Oficial"
-  ctx.fillStyle = '#DBEAFE';
-  ctx.font = '800 24px system-ui, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('⭐ CARTÃO OFICIAL DE ATLETA', cardX + 50, cardY + 70);
+  ctx.font = '800 20px system-ui, sans-serif';
+  ctx.fillStyle = '#BFDBFE';
+  ctx.fillText('⚽ FUTPLAY LITE   |   LIGA SOCIETY PLANALTO - BA', 64, 85);
 
-  ctx.fillStyle = '#93C5FD';
-  ctx.font = '600 20px system-ui, sans-serif';
-  ctx.fillText('TEMPORADA 2026', cardX + 50, cardY + 105);
+  ctx.textAlign = 'right';
+  ctx.font = '700 16px system-ui, sans-serif';
+  ctx.fillStyle = '#FACC15';
+  ctx.fillText('PASSAPORTE OFICIAL DO ATLETA', WIDTH - 64, 85);
+  ctx.restore();
 
-  // Brasão do Time no Topo Direito do Cartão
-  const crestSize = 95;
-  const crestX = cardX + cardW - 50 - crestSize;
-  const crestY = cardY + 35;
+  // 4. O CARD CENTRAL DO ATLETA (IDÊNTICO AO CARD DA TELA)
+  const cardX = 64;
+  const cardY = 120;
+  const cardW = WIDTH - cardX * 2; // 952px
+  const cardH = 1680;
+  const cardRadius = 36;
+
+  // Fundo do Card com estádio e gradiente azul profundo
+  ctx.save();
+  roundRect(ctx, cardX, cardY, cardW, cardH, cardRadius);
+  ctx.clip();
+
+  if (stadiumImg) {
+    ctx.drawImage(stadiumImg, cardX, cardY, cardW, cardH);
+    const cardOverlay = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH);
+    cardOverlay.addColorStop(0, 'rgba(10, 20, 53, 0.75)');
+    cardOverlay.addColorStop(0.3, 'rgba(7, 17, 44, 0.82)');
+    cardOverlay.addColorStop(0.7, 'rgba(5, 12, 32, 0.88)');
+    cardOverlay.addColorStop(1, 'rgba(3, 6, 18, 0.94)');
+    ctx.fillStyle = cardOverlay;
+    ctx.fillRect(cardX, cardY, cardW, cardH);
+  } else {
+    const cardBg = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardH);
+    cardBg.addColorStop(0, '#0a1435');
+    cardBg.addColorStop(0.3, '#07112c');
+    cardBg.addColorStop(0.7, '#050c20');
+    cardBg.addColorStop(1, '#030612');
+    ctx.fillStyle = cardBg;
+    ctx.fillRect(cardX, cardY, cardW, cardH);
+  }
+  ctx.restore();
+
+  // Borda elegante do Cartão (Azul luminoso)
+  ctx.save();
+  roundRect(ctx, cardX, cardY, cardW, cardH, cardRadius);
+  ctx.strokeStyle = 'rgba(147, 197, 253, 0.75)';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = 'rgba(59, 130, 246, 0.5)';
+  ctx.shadowBlur = 20;
+  ctx.stroke();
+  ctx.restore();
+
+  // 5. TOPO DO CARD: TÍTULO "CARTÃO OFICIAL DE ATLETA" E SELO DA LIGA
+  ctx.save();
+  // Ícone de Medalha / Award
+  ctx.font = '26px system-ui, sans-serif';
+  ctx.fillText('🎖️', cardX + 36, cardY + 54);
+
+  ctx.textAlign = 'left';
+  ctx.font = '900 22px system-ui, sans-serif';
+  ctx.fillStyle = '#DBEAFE';
+  ctx.fillText('CARTÃO OFICIAL DE ATLETA', cardX + 74, cardY + 54);
+
+  ctx.textAlign = 'right';
+  ctx.font = '800 18px system-ui, sans-serif';
+  ctx.fillStyle = '#FACC15';
+  ctx.fillText('TEMPORADA OFICIAL', cardX + cardW - 36, cardY + 54);
+
+  // Linha divisória horizontal superior
+  ctx.beginPath();
+  ctx.moveTo(cardX + 30, cardY + 95);
+  ctx.lineTo(cardX + cardW - 30, cardY + 95);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+
+  // 6. ATLETA E TIME LADO A LADO (FOTO/BRASÃO E NOMES DO MESMO TAMANHO)
+  const col1CenterX = cardX + cardW * 0.28;
+  const col2CenterX = cardX + cardW * 0.72;
+  const itemSize = 210;
+  const itemY = cardY + 135;
+  const itemRadius = 36;
+  const maxColWidth = cardW * 0.44;
+
+  // --- COLUNA 1: ATLETA (FOTO EM SQUIRCLE + NOME) ---
+  const avatarX = col1CenterX - itemSize / 2;
+  ctx.save();
+  roundRect(ctx, avatarX, itemY, itemSize, itemSize, itemRadius);
+  ctx.shadowColor = 'rgba(245, 158, 11, 0.7)';
+  ctx.shadowBlur = 22;
+  ctx.strokeStyle = '#FACC15';
+  ctx.lineWidth = 4.5;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  roundRect(ctx, avatarX, itemY, itemSize, itemSize, itemRadius);
+  ctx.clip();
+  if (avatarImg) {
+    ctx.drawImage(avatarImg, avatarX, itemY, itemSize, itemSize);
+  } else {
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(avatarX, itemY, itemSize, itemSize);
+    ctx.fillStyle = '#1E3A8A';
+    ctx.textAlign = 'center';
+    ctx.font = '900 90px "Oswald", system-ui, sans-serif';
+    ctx.fillText(
+      data.displayName.slice(0, 2).toUpperCase(),
+      col1CenterX,
+      itemY + itemSize / 2 + 32
+    );
+  }
+  ctx.restore();
+
+  // --- COLUNA 2: TIME (APENAS O BRASÃO OFICIAL + NOME) ---
+  const crestW = itemSize;
+  const crestH = itemSize;
+  const crestX = col2CenterX - crestW / 2;
+  const crestY = itemY;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+  ctx.shadowBlur = 18;
 
   if (crestImg) {
-    ctx.drawImage(crestImg, crestX, crestY, crestSize, crestSize);
+    ctx.drawImage(crestImg, crestX, crestY, crestW, crestH);
   } else {
-    // Desenha escudo vetorial elegante do time
-    ctx.save();
-    ctx.fillStyle = '#2563EB';
+    // Escudo SVG idêntico ao TeamCrestBadge sem quadrado ao redor
+    const scale = crestW / 100;
+    ctx.translate(crestX, crestY);
+    ctx.scale(scale, scale);
+
+    // Escudo externo
     ctx.beginPath();
-    ctx.arc(crestX + crestSize / 2, crestY + crestSize / 2, crestSize / 2, 0, Math.PI * 2);
+    ctx.moveTo(50, 4);
+    ctx.lineTo(92, 19.5);
+    ctx.lineTo(92, 54);
+    ctx.bezierCurveTo(92, 81, 73.5, 100.5, 50, 108);
+    ctx.bezierCurveTo(26.5, 100.5, 8, 81, 8, 54);
+    ctx.lineTo(8, 19.5);
+    ctx.closePath();
+    ctx.fillStyle = '#1D4ED8';
     ctx.fill();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#FACC15';
+    ctx.strokeStyle = '#3B82F6';
+    ctx.lineWidth = 3.5;
     ctx.stroke();
 
-    const teamInitials = (data.teamName || 'FC')
-      .trim()
+    // Brilho interno do escudo
+    ctx.beginPath();
+    ctx.moveTo(50, 12);
+    ctx.lineTo(84, 24.5);
+    ctx.lineTo(84, 53.5);
+    ctx.bezierCurveTo(84, 75, 68.5, 91.5, 50, 98.5);
+    ctx.bezierCurveTo(31.5, 91.5, 16, 75, 16, 53.5);
+    ctx.lineTo(16, 24.5);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.fill();
+
+    // Círculo central com iniciais
+    ctx.beginPath();
+    ctx.arc(50, 48, 21, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#1D4ED8';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    const initials = (data.teamName || 'FP')
       .split(/\s+/)
       .map((w) => w[0])
       .slice(0, 2)
       .join('')
       .toUpperCase();
 
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = '#1D4ED8';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '900 34px "Oswald", system-ui, sans-serif';
-    ctx.fillText(teamInitials, crestX + crestSize / 2, crestY + crestSize / 2);
-    ctx.restore();
+    ctx.font = '900 18px system-ui, sans-serif';
+    ctx.fillText(initials, 50, 55);
+
+    // Estrela dourada do escudo
+    drawStar(ctx, 50, 83, 5, 8, 3.8);
+    ctx.fillStyle = '#FACC15';
+    ctx.fill();
   }
   ctx.restore();
 
-  // Linha divisória interna superior
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cardX + 45, cardY + 150);
-  ctx.lineTo(cardX + cardW - 45, cardY + 150);
-  ctx.stroke();
-  ctx.restore();
+  // --- NOMES DO MESMO TAMANHO EM DESTAQUE ---
+  const namesY = itemY + itemSize + 55;
 
-  // 5. FOTO DO ATLETA (Hero Avatar em Moldura Grande)
-  const avatarCenterX = WIDTH / 2;
-  const avatarCenterY = cardY + 340;
-  const avatarRadius = 145;
-
-  // Sombra e anel dourado do avatar
-  ctx.save();
-  ctx.shadowColor = 'rgba(250, 204, 21, 0.45)';
-  ctx.shadowBlur = 30;
-  ctx.beginPath();
-  ctx.arc(avatarCenterX, avatarCenterY, avatarRadius + 6, 0, Math.PI * 2);
-  const ringGrad = ctx.createLinearGradient(
-    avatarCenterX - avatarRadius,
-    avatarCenterY - avatarRadius,
-    avatarCenterX + avatarRadius,
-    avatarCenterY + avatarRadius
-  );
-  ringGrad.addColorStop(0, '#FDE047');
-  ringGrad.addColorStop(0.5, '#EAB308');
-  ringGrad.addColorStop(1, '#CA8A04');
-  ctx.fillStyle = ringGrad;
-  ctx.fill();
-  ctx.restore();
-
-  // Foto recortada ou iniciais
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(avatarCenterX, avatarCenterY, avatarRadius, 0, Math.PI * 2);
-  ctx.clip();
-
-  if (avatarImg) {
-    ctx.drawImage(
-      avatarImg,
-      avatarCenterX - avatarRadius,
-      avatarCenterY - avatarRadius,
-      avatarRadius * 2,
-      avatarRadius * 2
-    );
-  } else {
-    // Fundo branco com iniciais
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(
-      avatarCenterX - avatarRadius,
-      avatarCenterY - avatarRadius,
-      avatarRadius * 2,
-      avatarRadius * 2
-    );
-    ctx.fillStyle = '#1E3A8A';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '900 95px "Oswald", system-ui, sans-serif';
-    ctx.fillText(
-      data.displayName.slice(0, 2).toUpperCase(),
-      avatarCenterX,
-      avatarCenterY
-    );
-  }
-  ctx.restore();
-
-  // 6. NOME DO ATLETA & INFORMAÇÕES
+  // Nome do Atleta (Coluna 1)
   ctx.save();
   ctx.textAlign = 'center';
   ctx.fillStyle = '#FFFFFF';
-  ctx.font = '900 64px "Oswald", system-ui, sans-serif';
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetY = 4;
-  ctx.fillText(data.displayName.toUpperCase(), WIDTH / 2, cardY + 560);
-
-  // Badge da Posição e Pé Dominante
-  ctx.font = '700 26px system-ui, sans-serif';
-  ctx.fillStyle = '#93C5FD';
-  const positionText =
-    data.position === 'goleiro'
-      ? '🧤 GOLEIRO'
-      : `🏃 ${data.position.toUpperCase()}`;
-  ctx.fillText(
-    `${positionText}  ·  PÉ ${data.dominantFoot.toUpperCase()}`,
-    WIDTH / 2,
-    cardY + 615
-  );
-
-  // Nome do Time & Município
-  ctx.font = '800 30px system-ui, sans-serif';
-  ctx.fillStyle = '#FDE047';
-  ctx.fillText(data.teamName.toUpperCase(), WIDTH / 2, cardY + 665);
-
-  ctx.font = '500 22px system-ui, sans-serif';
-  ctx.fillStyle = '#E2E8F0';
-  ctx.fillText(data.cityName, WIDTH / 2, cardY + 705);
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+  ctx.shadowBlur = 12;
+  let athleteFontSize = 44;
+  ctx.font = `900 ${athleteFontSize}px "Oswald", system-ui, sans-serif`;
+  while (ctx.measureText(data.displayName.toUpperCase()).width > maxColWidth && athleteFontSize > 24) {
+    athleteFontSize -= 2;
+    ctx.font = `900 ${athleteFontSize}px "Oswald", system-ui, sans-serif`;
+  }
+  ctx.fillText(data.displayName.toUpperCase(), col1CenterX, namesY);
   ctx.restore();
 
-  // 7. AVALIAÇÃO EM ESTRELAS & NOTA OVERALL
+  // Nome do Time (Coluna 2 - do mesmo tamanho base)
   ctx.save();
-  const starsY = cardY + 775;
-  const starSize = 24;
-  const starGap = 56;
-  const totalStarsW = 5 * starGap;
-  const startStarX = WIDTH / 2 - totalStarsW / 2 + starSize;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FACC15';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+  ctx.shadowBlur = 12;
+  let teamFontSize = 44;
+  ctx.font = `900 ${teamFontSize}px "Oswald", system-ui, sans-serif`;
+  while (ctx.measureText(data.teamName.toUpperCase()).width > maxColWidth && teamFontSize > 24) {
+    teamFontSize -= 2;
+    ctx.font = `900 ${teamFontSize}px "Oswald", system-ui, sans-serif`;
+  }
+  ctx.fillText(data.teamName.toUpperCase(), col2CenterX, namesY);
+  ctx.restore();
+
+  // 7. POSIÇÃO, PÉ DOMINANTE E CIDADE EM LINHA COMPACTA
+  ctx.save();
+  const infoY = namesY + 48;
+  ctx.textAlign = 'center';
+  ctx.font = '700 24px system-ui, sans-serif';
+  ctx.fillStyle = '#93C5FD';
+
+  const positionLabel =
+    data.position === 'goleiro'
+      ? '🧤 Goleiro'
+      : `🏃 ${data.position.charAt(0).toUpperCase() + data.position.slice(1)}`;
+  const footLabel = `Pé ${data.dominantFoot.charAt(0).toUpperCase() + data.dominantFoot.slice(1)}`;
+  const cityLabel = data.cityName;
+
+  ctx.fillText(`${positionLabel}   ·   ${footLabel}   ·   ${cityLabel}`, WIDTH / 2, infoY);
+  ctx.restore();
+
+  // 9. AVALIAÇÃO EM ESTRELAS (PILL CENTRAL IDÊNTICO AO APP)
+  ctx.save();
+  const starsPillY = infoY + 45;
+  const starsPillW = 380;
+  const starsPillH = 64;
+  const starsPillX = (WIDTH - starsPillW) / 2;
+
+  // Fundo âmbar translúcido
+  roundRect(ctx, starsPillX, starsPillY, starsPillW, starsPillH, 32);
+  ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(253, 224, 71, 0.55)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 5 Estrelas
+  const starSize = 18;
+  const starGap = 34;
+  const starsStartX = starsPillX + 28;
+  const starsCenterY = starsPillY + starsPillH / 2;
 
   for (let s = 1; s <= 5; s++) {
     const isFilled = data.overallStars > 0 && s <= Math.round(data.overallStars);
-    const starX = startStarX + (s - 1) * starGap;
+    const sx = starsStartX + (s - 1) * starGap;
 
     ctx.save();
     if (isFilled) {
       ctx.fillStyle = '#FACC15';
       ctx.shadowColor = 'rgba(250, 204, 21, 0.8)';
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = 10;
     } else {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
     }
-    drawStar(ctx, starX, starsY, 5, starSize, starSize / 2.3);
+    drawStar(ctx, sx, starsCenterY, 5, starSize, starSize / 2.3);
     ctx.fill();
     ctx.restore();
   }
 
-  // Nota numérica ao lado das estrelas
+  // Nota Overall
+  ctx.textAlign = 'left';
+  ctx.font = '900 28px font-mono, monospace';
   ctx.fillStyle = '#FDE047';
-  ctx.font = '900 36px font-mono, system-ui, monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText(
-    `${(data.overallStars || 0).toFixed(1)} ⭐`,
-    WIDTH / 2,
-    starsY + 60
-  );
+  ctx.fillText(`${(data.overallStars || 0).toFixed(1)} ⭐`, starsStartX + 5 * starGap + 12, starsCenterY + 9);
+
+  // Selo de verificado com check
+  if (data.overallStars > 0) {
+    const checkBadgeX = starsPillX + starsPillW - 54;
+    const checkBadgeY = starsCenterY - 16;
+    roundRect(ctx, checkBadgeX, checkBadgeY, 34, 32, 10);
+    ctx.fillStyle = 'rgba(6, 78, 59, 0.85)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.font = '900 18px system-ui, sans-serif';
+    ctx.fillStyle = '#34D399';
+    ctx.fillText('✓', checkBadgeX + 17, checkBadgeY + 22);
+  }
   ctx.restore();
 
-  // 8. QUESITOS DE HABILIDADE (Fin, Mar, Pas, Raç, Dri)
+  // 10. QUESITOS DE HABILIDADE EM 5 COLUNAS (IDÊNTICO AO APP)
+  let nextSectionY = starsPillY + starsPillH + 35;
+
   if (data.overallStars > 0 && data.skills) {
     ctx.save();
-    const skillsY = cardY + 890;
-    const skillsList = [
+    const skillsBoxX = cardX + 40;
+    const skillsBoxW = cardW - 80;
+    const skillsBoxH = 96;
+
+    roundRect(ctx, skillsBoxX, nextSectionY, skillsBoxW, skillsBoxH, 20);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    const skillsItems = [
       { label: 'FIN', val: data.skills.finalizacao },
       { label: 'MAR', val: data.skills.marcacao },
       { label: 'PAS', val: data.skills.passe },
       { label: 'RAÇ', val: data.skills.raca },
       { label: 'DRI', val: data.skills.drible },
     ];
-    const skillW = 145;
-    const skillGap = 18;
-    const totalSkillsW = 5 * skillW + 4 * skillGap;
-    const startSkillX = (WIDTH - totalSkillsW) / 2;
 
-    skillsList.forEach((sk, idx) => {
-      const sx = startSkillX + idx * (skillW + skillGap);
-      // Fundo do pill
-      roundRect(ctx, sx, skillsY, skillW, 70, 16);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+    const colW = skillsBoxW / 5;
+    skillsItems.forEach((sk, idx) => {
+      const cx = skillsBoxX + idx * colW + colW / 2;
 
-      // Texto
       ctx.textAlign = 'center';
-      ctx.font = '700 18px system-ui, sans-serif';
+      ctx.font = '800 16px system-ui, sans-serif';
       ctx.fillStyle = '#93C5FD';
-      ctx.fillText(sk.label, sx + skillW / 2, skillsY + 28);
+      ctx.fillText(sk.label, cx, nextSectionY + 36);
 
-      ctx.font = '900 24px font-mono, system-ui, monospace';
+      ctx.font = '900 28px font-mono, monospace';
       ctx.fillStyle = '#FACC15';
-      ctx.fillText(`${sk.val}★`, sx + skillW / 2, skillsY + 56);
+      ctx.fillText(`${sk.val}★`, cx, nextSectionY + 76);
+
+      // Divisória vertical
+      if (idx < 4) {
+        ctx.beginPath();
+        ctx.moveTo(skillsBoxX + (idx + 1) * colW, nextSectionY + 16);
+        ctx.lineTo(skillsBoxX + (idx + 1) * colW, nextSectionY + skillsBoxH - 16);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     });
+
     ctx.restore();
+    nextSectionY += skillsBoxH + 35;
   }
 
-  // 9. PAINEL DE ESTATÍSTICAS OFICIAIS (Grade 3 Colunas)
-  const statsBoxX = cardX + 45;
-  const statsBoxY = cardY + 995;
-  const statsBoxW = cardW - 90;
-  const statsBoxH = 260;
+  // 11. PAINEL DE MÉTRICAS OFICIAIS (GRADE 3 COLUNAS IDÊNTICA AO APP)
+  const metricsBoxX = cardX + 40;
+  const metricsBoxW = cardW - 80;
+  const metricsBoxH = 210;
 
   ctx.save();
-  roundRect(ctx, statsBoxX, statsBoxY, statsBoxW, statsBoxH, 28);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+  roundRect(ctx, metricsBoxX, nextSectionY, metricsBoxW, metricsBoxH, 24);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.09)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
   // Linhas divisórias verticais
+  ctx.beginPath();
+  ctx.moveTo(metricsBoxX + metricsBoxW / 3, nextSectionY + 25);
+  ctx.lineTo(metricsBoxX + metricsBoxW / 3, nextSectionY + metricsBoxH - 25);
+  ctx.moveTo(metricsBoxX + (metricsBoxW / 3) * 2, nextSectionY + 25);
+  ctx.lineTo(metricsBoxX + (metricsBoxW / 3) * 2, nextSectionY + metricsBoxH - 25);
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
   ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(statsBoxX + statsBoxW / 3, statsBoxY + 25);
-  ctx.lineTo(statsBoxX + statsBoxW / 3, statsBoxY + statsBoxH - 25);
-  ctx.moveTo(statsBoxX + (statsBoxW / 3) * 2, statsBoxY + 25);
-  ctx.lineTo(statsBoxX + (statsBoxW / 3) * 2, statsBoxY + statsBoxH - 25);
   ctx.stroke();
 
   ctx.textAlign = 'center';
 
-  // Coluna 1: GOLS
-  const col1X = statsBoxX + statsBoxW / 6;
-  ctx.font = '700 20px system-ui, sans-serif';
+  // Coluna 1: GOLS (MÉDIA)
+  const mCol1X = metricsBoxX + metricsBoxW / 6;
+  ctx.font = '800 18px system-ui, sans-serif';
   ctx.fillStyle = '#93C5FD';
-  ctx.fillText('GOLS (MÉDIA)', col1X, statsBoxY + 60);
+  ctx.fillText('GOLS (MÉDIA)', mCol1X, nextSectionY + 52);
 
-  ctx.font = '900 64px font-mono, system-ui, monospace';
+  ctx.font = '900 italic 56px font-mono, sans-serif';
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(`${data.goals}`, col1X, statsBoxY + 145);
+  ctx.fillText(`${data.goals}`, mCol1X, nextSectionY + 125);
 
-  ctx.font = '700 22px system-ui, sans-serif';
+  ctx.font = '700 20px font-mono, sans-serif';
   ctx.fillStyle = '#FACC15';
-  ctx.fillText(`${data.goalsAvg} / jogo`, col1X, statsBoxY + 205);
+  ctx.fillText(`(${data.goalsAvg} média)`, mCol1X, nextSectionY + 172);
 
   // Coluna 2: PRESENÇAS
-  const col2X = statsBoxX + statsBoxW / 2;
-  ctx.font = '700 20px system-ui, sans-serif';
+  const mCol2X = metricsBoxX + metricsBoxW / 2;
+  ctx.font = '800 18px system-ui, sans-serif';
   ctx.fillStyle = '#93C5FD';
-  ctx.fillText('PRESENÇAS', col2X, statsBoxY + 60);
+  ctx.fillText('PRESENÇAS', mCol2X, nextSectionY + 52);
 
-  ctx.font = '900 64px font-mono, system-ui, monospace';
+  ctx.font = '900 italic 56px font-mono, sans-serif';
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(`${data.matchesPlayed}J`, col2X, statsBoxY + 145);
+  ctx.fillText(`${data.matchesPlayed}J`, mCol2X, nextSectionY + 125);
 
-  ctx.font = '700 22px system-ui, sans-serif';
+  ctx.font = '700 20px font-mono, sans-serif';
   ctx.fillStyle = '#FACC15';
-  ctx.fillText('Na Temporada', col2X, statsBoxY + 205);
+  ctx.fillText('Na Temporada', mCol2X, nextSectionY + 172);
 
-  // Coluna 3: SUPER CAPAS
-  const col3X = statsBoxX + (statsBoxW / 6) * 5;
-  ctx.font = '700 20px system-ui, sans-serif';
+  // Coluna 3: SUPER CAPAS (ou CAPAS GK)
+  const mCol3X = metricsBoxX + (metricsBoxW / 6) * 5;
+  ctx.font = '800 18px system-ui, sans-serif';
   ctx.fillStyle = '#93C5FD';
-  ctx.fillText(data.capaLabel.toUpperCase(), col3X, statsBoxY + 60);
+  ctx.fillText((data.capaLabel || 'Super Capas').toUpperCase(), mCol3X, nextSectionY + 52);
 
-  ctx.font = '900 64px font-mono, system-ui, monospace';
+  ctx.font = '900 italic 56px font-mono, sans-serif';
   ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(`${data.superCapas}`, col3X, statsBoxY + 145);
+  ctx.fillText(`${data.superCapas}`, mCol3X, nextSectionY + 125);
 
-  ctx.font = '700 22px system-ui, sans-serif';
+  ctx.font = '700 20px font-mono, sans-serif';
   ctx.fillStyle = '#FACC15';
-  ctx.fillText(`${data.capaPct}% aprov.`, col3X, statsBoxY + 205);
+  ctx.fillText(`(${data.capaPct}% aprov.)`, mCol3X, nextSectionY + 172);
   ctx.restore();
 
-  // 10. DISCIPLINA (Amarelos, Azuis e Vermelhos)
-  ctx.save();
-  const discY = cardY + 1295;
-  const badgeW = 260;
-  const badgeH = 65;
+  // 12. BADGES DISCIPLINARES (AMARELOS, AZUIS E VERMELHOS IDÊNTICOS AO APP)
+  const discY = nextSectionY + metricsBoxH + 35;
+  const badgeW = 265;
+  const badgeH = 68;
   const badgeGap = 20;
-  const totalBadgesW = 3 * badgeW + 2 * badgeGap; // 780 + 40 = 820px
-  const startDiscX = WIDTH / 2 - totalBadgesW / 2;
+  const totalBadgesW = 3 * badgeW + 2 * badgeGap;
+  const startDiscX = (WIDTH - totalBadgesW) / 2;
 
   // Badge Amarelos
-  const discX1 = startDiscX;
-  roundRect(ctx, discX1, discY, badgeW, badgeH, 18);
-  ctx.fillStyle = 'rgba(245, 158, 11, 0.2)';
+  ctx.save();
+  const dX1 = startDiscX;
+  roundRect(ctx, dX1, discY, badgeW, badgeH, 20);
+  ctx.fillStyle = 'rgba(245, 158, 11, 0.22)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(251, 191, 36, 0.5)';
+  ctx.strokeStyle = 'rgba(253, 224, 71, 0.55)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  ctx.font = '800 20px system-ui, sans-serif';
-  ctx.fillStyle = '#FEF3C7';
   ctx.textAlign = 'center';
-  ctx.fillText(`🟨 ${data.yellowCards} AMARELOS`, discX1 + badgeW / 2, discY + 41);
+  ctx.font = '900 22px font-mono, monospace';
+  ctx.fillStyle = '#FEF3C7';
+  ctx.fillText(`🟨 ${data.yellowCards} AMARELOS`, dX1 + badgeW / 2, discY + 43);
 
   // Badge Azuis
-  const discX2 = startDiscX + badgeW + badgeGap;
-  roundRect(ctx, discX2, discY, badgeW, badgeH, 18);
-  ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+  const dX2 = startDiscX + badgeW + badgeGap;
+  roundRect(ctx, dX2, discY, badgeW, badgeH, 20);
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.22)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(96, 165, 250, 0.5)';
+  ctx.strokeStyle = 'rgba(96, 165, 250, 0.55)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  ctx.font = '800 20px system-ui, sans-serif';
+  ctx.font = '900 22px font-mono, monospace';
   ctx.fillStyle = '#DBEAFE';
-  ctx.textAlign = 'center';
-  ctx.fillText(`🟦 ${data.blueCards} AZUIS`, discX2 + badgeW / 2, discY + 41);
+  ctx.fillText(`🟦 ${data.blueCards} AZUIS`, dX2 + badgeW / 2, discY + 43);
 
   // Badge Vermelhos
-  const discX3 = startDiscX + (badgeW + badgeGap) * 2;
-  roundRect(ctx, discX3, discY, badgeW, badgeH, 18);
-  ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+  const dX3 = startDiscX + (badgeW + badgeGap) * 2;
+  roundRect(ctx, dX3, discY, badgeW, badgeH, 20);
+  ctx.fillStyle = 'rgba(239, 68, 68, 0.22)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(248, 113, 113, 0.55)';
+  ctx.strokeStyle = 'rgba(248, 113, 113, 0.6)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  ctx.font = '800 20px system-ui, sans-serif';
+  ctx.font = '900 22px font-mono, monospace';
   ctx.fillStyle = '#FEE2E2';
-  ctx.textAlign = 'center';
-  ctx.fillText(`🟥 ${data.redCards ?? 0} VERMELHOS`, discX3 + badgeW / 2, discY + 41);
+  ctx.fillText(`🟥 ${data.redCards ?? 0} VERMELHOS`, dX3 + badgeW / 2, discY + 43);
   ctx.restore();
 
-  // 11. SELO DE AUTENTICIDADE NO RODAPÉ DO CARTÃO
+  // 13. SELO DE AUTENTICIDADE NO RODAPÉ DO CARD
   ctx.save();
   ctx.textAlign = 'center';
   ctx.font = '700 20px system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
-  ctx.fillText('⚽ IDENTIDADE DIGITAL OFICIAL · FUTPLAY LITE', WIDTH / 2, cardY + 1480);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.fillText('⚽ IDENTIDADE DIGITAL OFICIAL · FUTPLAY LITE', WIDTH / 2, cardY + cardH - 45);
   ctx.restore();
 
-  // 12. RODAPÉ INFERIOR DO STATUS / STORY (9:16)
+  // 14. RODAPÉ INFERIOR DO STATUS / STORY (9:16)
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.font = '700 26px system-ui, sans-serif';
+  ctx.font = '700 22px system-ui, sans-serif';
   ctx.fillStyle = '#FACC15';
-  ctx.fillText('📱 COMPARTILHADO VIA FUTPLAY LITE', WIDTH / 2, HEIGHT - 95);
-
-  ctx.font = '500 20px system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
-  ctx.fillText('WhatsApp Status · Instagram Stories · Redes Sociais', WIDTH / 2, HEIGHT - 55);
+  ctx.fillText('📱 COMPARTILHADO VIA FUTPLAY LITE', WIDTH / 2, HEIGHT - 55);
   ctx.restore();
 
   // Exporta como Data URL e como Blob/File

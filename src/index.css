@@ -10,6 +10,18 @@
     overscroll-behavior-y: none;
     -webkit-tap-highlight-color: transparent;
   }
+
+  /* Oculta as barras de rolagem em todas as páginas mantendo a funcionalidade de rolagem 100% ativa */
+  * {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+
+  *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
 }
 
 .no-scrollbar::-webkit-scrollbar {

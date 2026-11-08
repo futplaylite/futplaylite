@@ -379,8 +379,17 @@ export const AthleteProfileAndCardView: React.FC<
       {/* ABA: CARTÃO DIGITAL DE ATLETA (BRANCO E AZUL LIMPO) */}
       {activeSubTab === 'card' && (
         <div className="space-y-4">
-          <div className="w-full rounded-3xl border border-blue-200 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-950 p-5 text-white shadow-lg">
-            <div className="flex items-center justify-between border-b border-white/15 pb-3">
+          <div className="w-full rounded-3xl border border-blue-200 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-950 p-5 text-white shadow-lg relative overflow-hidden">
+            {/* Imagem de Fundo Oficial do Estádio com Refletores */}
+            <div
+              className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none opacity-80"
+              style={{
+                backgroundImage: "url('/images/stadium-super-capas.jpg')",
+              }}
+            />
+            <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#0a1435]/70 via-[#07112c]/80 to-[#030612]/92 pointer-events-none" />
+
+            <div className="relative z-10 flex items-center justify-between border-b border-white/15 pb-3">
               <div>
                 <span className="text-xs font-bold uppercase tracking-widest text-blue-100 block">
                   FutPlay Lite · Cartão Oficial

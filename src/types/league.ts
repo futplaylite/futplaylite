@@ -134,6 +134,19 @@ export interface PlayerSkillRatings {
   lastRatedAt?: string;
 }
 
+export interface PeerEvaluation {
+  id: string;
+  evaluatorId: string;
+  targetPlayerId: string;
+  finalizacao: number;
+  marcacao: number;
+  passe: number;
+  raca: number;
+  drible: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Season {
   id: string;
   cityId: string;
@@ -359,4 +372,22 @@ export interface HomologationTestResult {
   details: string;
   formulaCheck?: string;
   executedAt: string;
+}
+
+export interface MonthlyPaymentRecord {
+  id: string; // `${playerId}_${yearMonth}`
+  playerId: string;
+  yearMonth: string; // "2026-11"
+  isPaid: boolean;
+  paidAt?: string;
+  amount?: number;
+  confirmedBy?: string;
+}
+
+export interface PeladaMonthlyConfig {
+  monthlyAmount: number;
+  dueDay: number;
+  pixKey: string;
+  pixKeyType: string;
+  pixReceiverName: string;
 }
