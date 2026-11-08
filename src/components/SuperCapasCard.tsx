@@ -208,21 +208,8 @@ export const SuperCapasCard: React.FC<SuperCapasCardProps> = ({
       <div className="absolute inset-0 z-0 bg-gradient-to-b from-[#0a1435]/70 via-[#07112c]/80 to-[#030612]/92 pointer-events-none" />
 
       {/* Efeitos de Luz Estelar / Glow de Fundo */}
-      <div className="absolute top-2 right-4 text-cyan-300 opacity-60 text-xs pointer-events-none">
-        ✦ ✦
-      </div>
       <div className="absolute -top-12 -left-12 h-44 w-44 rounded-full bg-blue-500/20 blur-3xl pointer-events-none" />
       <div className="absolute top-1/3 -right-12 h-44 w-44 rounded-full bg-indigo-500/20 blur-3xl pointer-events-none" />
-
-      {/* 1. TOPO: Identidade da Liga à Esquerda */}
-      <div className="relative z-10 flex items-center justify-between pb-1">
-        <div className="inline-flex items-center gap-1.5 text-[10px] sm:text-xs font-bold uppercase tracking-widest text-blue-200">
-          <span>⚽</span>
-          <span className="font-mono text-white">FUTPLAY LITE</span>
-          <span className="text-blue-400">|</span>
-          <span>LIGA SOCIETY PLANALTO - BA</span>
-        </div>
-      </div>
 
       {/* 2. CABEÇALHO PRINCIPAL: Troféu 3D + "SUPER CAPAS DA SEMANA" À ESQUERDA */}
       <div className="relative z-10 flex items-center justify-start gap-3 sm:gap-4 my-1.5">
