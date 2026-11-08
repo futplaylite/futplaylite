@@ -57,7 +57,10 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   // Register states
   const [regName, setRegName] = useState<string>('');
   const [regIdentifier, setRegIdentifier] = useState<string>('');
+  const [regConfirmIdentifier, setRegConfirmIdentifier] = useState<string>('');
   const [regPassword, setRegPassword] = useState<string>('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState<string>('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [regNeighborhood, setRegNeighborhood] = useState<string>('Centro');
   const [regPosition, setRegPosition] = useState<PlayerPosition>('atacante');
   const [regFoot, setRegFoot] = useState<DominantFoot>('direito');
@@ -138,6 +141,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       'Conta ainda não cadastrada com este e-mail ou telefone. Toque na aba "Criar Conta" acima para se cadastrar em segundos!'
     );
     setRegIdentifier(trimmed);
+    setRegConfirmIdentifier(trimmed);
   };
 
   const handleCreateAccount = (e: React.FormEvent) => {
@@ -161,8 +165,23 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       setLoginError('Informe um endereço de e-mail válido para criar sua conta.');
       return;
     }
+
+    const trimmedConfirmIdentifier = regConfirmIdentifier.trim();
+    if (!trimmedConfirmIdentifier) {
+      setLoginError('Confirme seu e-mail ou telefone redigitando-o no campo de confirmação.');
+      return;
+    }
+    if (trimmedIdentifier.toLowerCase() !== trimmedConfirmIdentifier.toLowerCase()) {
+      setLoginError('A confirmação do e-mail/celular não confere com o que foi digitado.');
+      return;
+    }
+
     if (regPassword.trim().length < 4) {
       setLoginError('Crie uma senha com pelo menos 4 caracteres.');
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      setLoginError('A confirmação da senha não confere com a senha digitada.');
       return;
     }
 
@@ -382,6 +401,27 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Confirmar E-mail ou Celular
+                </label>
+                <div className="relative">
+                  {regConfirmIdentifier && !regConfirmIdentifier.includes('@') && regConfirmIdentifier.replace(/\D/g, '').length > 0 ? (
+                    <Phone className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-blue-600" />
+                  ) : (
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  )}
+                  <input
+                    type="text"
+                    required
+                    value={regConfirmIdentifier}
+                    onChange={(e) => setRegConfirmIdentifier(formatIdentifierInput(e.target.value))}
+                    placeholder="Redigite seu e-mail ou telefone"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                </div>
                 <p className="mt-1 text-[10px] text-slate-500">
                   Você usará este e-mail ou número de telefone para entrar na sua conta.
                 </p>
@@ -407,6 +447,34 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
                   >
                     {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Confirmar Senha
+                </label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    required
+                    value={regConfirmPassword}
+                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    placeholder="Redigite sua senha"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    {showConfirmPassword ? (
                       <EyeOff className="h-4 w-4" />
                     ) : (
                       <Eye className="h-4 w-4" />
