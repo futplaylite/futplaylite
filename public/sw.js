@@ -1,14 +1,15 @@
 // FUTPLAY LITE — Service Worker Oficial PWA
-const CACHE_NAME = 'futplay-lite-v1';
+const CACHE_NAME = 'futplay-lite-v2';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icon.svg',
+  '/favicon.png',
   '/icon-192.png',
   '/icon-512.png',
+  '/icon-maskable-512.png',
   '/apple-touch-icon.png',
-  '/favicon.svg'
+  '/images/official-logo.png'
 ];
 
 // Instalação: pré-carrega assets essenciais

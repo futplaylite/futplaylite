@@ -843,7 +843,11 @@ export const AthleteOnboardingWizard: React.FC<
               <Sparkles className="h-3.5 w-3.5 text-white" />
               Passo {activeStep} de 3 · Primeiro Acesso
             </span>
-            <RosaliaCrest size={34} transparentBg />
+            <img
+              src="/favicon.png"
+              alt="FutPlay Lite"
+              className="h-8 w-8 object-contain rounded-lg drop-shadow-md"
+            />
           </div>
 
           <div>

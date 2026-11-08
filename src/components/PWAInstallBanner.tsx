@@ -76,8 +76,8 @@ export const PWAInstallBanner: React.FC = () => {
       {/* Banner Superior Discreto e Moderno */}
       <div className="mx-4 mt-2 mb-1 flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-blue-700 to-indigo-800 p-3 text-white shadow-md">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20 text-white backdrop-blur-xs">
-            <Smartphone className="h-5 w-5" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 p-0.5 text-white backdrop-blur-xs overflow-hidden shadow-xs border border-white/20">
+            <img src="/favicon.png" alt="FutPlay Lite" className="h-full w-full object-cover rounded-lg" />
           </div>
           <div className="min-w-0">
             <h4 className="text-xs font-bold leading-tight truncate">

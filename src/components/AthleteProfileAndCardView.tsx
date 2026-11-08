@@ -395,7 +395,11 @@ export const AthleteProfileAndCardView: React.FC<
                   FutPlay Lite · Cartão Oficial
                 </span>
               </div>
-              <RosaliaCrest size={40} transparentBg />
+              <img
+                src="/favicon.png"
+                alt="FutPlay Lite"
+                className="h-8 w-8 object-contain rounded-lg drop-shadow-md"
+              />
             </div>
 
             <div className="mt-4 text-center">
