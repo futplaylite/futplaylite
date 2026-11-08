@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
   Award,
   Check,
   Clock,
+  Edit2,
   Lock,
   Share2,
   Star,
   Trash2,
   UserCheck,
-  UserPlus,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { getDivisionBadgeStyle } from '../lib/engine/eloEngine';
@@ -26,11 +27,12 @@ import {
 
 interface AthleteProfileAndCardViewProps {
   initialPlayerId?: string;
+  onBack?: () => void;
 }
 
 export const AthleteProfileAndCardView: React.FC<
   AthleteProfileAndCardViewProps
-> = ({ initialPlayerId }) => {
+> = ({ initialPlayerId, onBack }) => {
   const {
     profiles,
     seasonEntries,
@@ -41,7 +43,6 @@ export const AthleteProfileAndCardView: React.FC<
     currentPlayerProfile,
     selectedSeasonId,
     selectedCityId,
-    registerNewAthlete,
     updateOwnProfile,
     deleteUserAccount,
     updatePlayerSkills,
@@ -64,9 +65,7 @@ export const AthleteProfileAndCardView: React.FC<
   const [showShareModal, setShowShareModal] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
-  const [activeSubTab, setActiveSubTab] = useState<
-    'card' | 'edit_self' | 'onboarding'
-  >('card');
+  const [activeSubTab, setActiveSubTab] = useState<'card' | 'edit_self'>('card');
 
   const targetProfile =
     profiles.find((p) => p.id === inspectedPlayerId) || profiles[0];
@@ -98,12 +97,6 @@ export const AthleteProfileAndCardView: React.FC<
       setEditVis(currentPlayerProfile.profileVisibility);
     }
   }, [isOwnProfile, currentPlayerProfile]);
-
-  const [newDisplayName, setNewDisplayName] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newNeighborhood, setNewNeighborhood] = useState('Vila Rosália');
-  const [newPos, setNewPos] = useState<PlayerPosition>('atacante');
-  const [newFoot, setNewFoot] = useState<DominantFoot>('direito');
 
   const targetCity =
     cities.find((c) => c.id === targetProfile.cityId) || cities[0];
@@ -222,171 +215,31 @@ export const AthleteProfileAndCardView: React.FC<
     setActiveSubTab('card');
   };
 
-  const handleOnboardingSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const created = registerNewAthlete({
-      displayName: newDisplayName,
-      email: newEmail,
-      cityId: selectedCityId,
-      neighborhood: newNeighborhood,
-      position: newPos,
-      dominantFoot: newFoot,
-      profileVisibility: 'publico',
-    });
-    if (created) {
-      setInspectedPlayerId(created.id);
-      setActiveSubTab('card');
-      setNewDisplayName('');
-      setNewEmail('');
-    }
-  };
-
   return (
     <div className="space-y-4">
-      {/* 1. Seletor de Atleta & Abas Limpas */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm space-y-2.5">
-        <select
-          aria-label="Selecionar Atleta"
-          value={targetProfile.id}
-          onChange={(e) => {
-            setInspectedPlayerId(e.target.value);
-            setActiveSubTab('card');
-          }}
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800"
-        >
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.displayName} — {p.position.toUpperCase()}
-            </option>
-          ))}
-        </select>
-
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
-          <button
-            onClick={() => setActiveSubTab('card')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-bold transition ${
-              activeSubTab === 'card'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600'
-            }`}
-          >
-            <Award className="h-3.5 w-3.5" />
-            Cartão
-          </button>
-
-          <button
-            onClick={() => {
-              if (currentPlayerProfile) {
-                setEditName(currentPlayerProfile.displayName);
-                setEditNeighborhood(currentPlayerProfile.neighborhood);
-                setEditPos(currentPlayerProfile.position);
-                setEditFoot(currentPlayerProfile.dominantFoot);
-                setEditVis(currentPlayerProfile.profileVisibility);
-              }
-              setActiveSubTab('edit_self');
-            }}
-            className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-bold transition ${
-              activeSubTab === 'edit_self'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600'
-            }`}
-          >
-            <UserCheck className="h-3.5 w-3.5" />
-            Editar
-          </button>
-
-          <button
-            onClick={() => setActiveSubTab('onboarding')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-xs font-bold transition ${
-              activeSubTab === 'onboarding'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-blue-700'
-            }`}
-          >
-            <UserPlus className="h-3.5 w-3.5" />
-            Novo
-          </button>
-        </div>
-      </div>
-
-      {/* ABA: NOVO ATLETA */}
-      {activeSubTab === 'onboarding' && (
-        <form
-          onSubmit={handleOnboardingSubmit}
-          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3"
-        >
-          <div>
-            <h2 className="text-base font-bold text-slate-900">
-              Novo Jogador na Liga
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Cadastre o jogador para integrar a liga.
-            </p>
-          </div>
-
-          <div className="space-y-2.5">
-            <input
-              type="text"
-              required
-              placeholder="Apelido Esportivo *"
-              value={newDisplayName}
-              onChange={(e) => setNewDisplayName(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
-            />
-            <input
-              type="email"
-              required
-              placeholder="E-mail (Privado) *"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
-            />
-
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={newPos}
-                onChange={(e) => setNewPos(e.target.value as PlayerPosition)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-800"
-              >
-                <optgroup label="Tipo: Goleiro">
-                  <option value="goleiro">🧤 Goleiro</option>
-                </optgroup>
-                <optgroup label="Tipo: Jogador de Linha">
-                  <option value="atacante">🏃 Atacante (Linha)</option>
-                  <option value="meio-campista">🏃 Meio-campista (Linha)</option>
-                  <option value="defensor">🏃 Defensor (Linha)</option>
-                </optgroup>
-              </select>
-              <select
-                value={newFoot}
-                onChange={(e) => setNewFoot(e.target.value as DominantFoot)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-800"
-              >
-                <option value="direito">Pé Direito</option>
-                <option value="esquerdo">Pé Esquerdo</option>
-                <option value="ambos">Ambidestro</option>
-              </select>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-sm"
-          >
-            Cadastrar Atleta
-          </button>
-        </form>
-      )}
-
       {/* ABA: EDITAR PERFIL */}
       {activeSubTab === 'edit_self' && (
         <form
           onSubmit={handleSaveSelfProfile}
           className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3"
         >
-          <h2 className="text-sm font-bold text-slate-900">
-            Preferências do Meu Perfil
-          </h2>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">
+                Preferências do Meu Perfil
+              </h2>
+              <p className="text-[11px] text-slate-500">
+                Altere seus dados esportivos e visibilidade
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('card')}
+              className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+            >
+              Voltar ao Cartão
+            </button>
+          </div>
 
           <div className="space-y-2.5">
             <input
@@ -463,14 +316,46 @@ export const AthleteProfileAndCardView: React.FC<
             <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-blue-500/20 blur-2xl pointer-events-none" />
             <div className="absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-indigo-500/15 blur-2xl pointer-events-none" />
 
-            {/* Topo do Cartão: Título e Compartilhar */}
+            {/* Topo do Cartão: Título, Voltar e Ações */}
             <div className="relative z-10 flex items-center justify-between border-b border-white/15 pb-2">
               <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-wider text-blue-100 uppercase">
+                {onBack && !isOwnProfile && (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="flex items-center gap-1 rounded-md bg-white/20 hover:bg-white/30 px-2 py-0.5 text-[10px] font-bold text-white transition active:scale-95 cursor-pointer mr-1"
+                    title="Voltar ao elenco"
+                  >
+                    <ArrowLeft className="h-3 w-3" />
+                    <span>Voltar</span>
+                  </button>
+                )}
                 <Award className="h-3.5 w-3.5 text-amber-300" />
                 <span>Cartão Oficial de Atleta</span>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                {isOwnProfile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (currentPlayerProfile) {
+                        setEditName(currentPlayerProfile.displayName);
+                        setEditNeighborhood(currentPlayerProfile.neighborhood);
+                        setEditPos(currentPlayerProfile.position);
+                        setEditFoot(currentPlayerProfile.dominantFoot);
+                        setEditVis(currentPlayerProfile.profileVisibility);
+                      }
+                      setActiveSubTab('edit_self');
+                    }}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 hover:bg-white/25 border border-white/20 text-white shadow-xs transition active:scale-90 cursor-pointer"
+                    title="Editar Meu Perfil"
+                    aria-label="Editar Perfil"
+                  >
+                    <Edit2 className="h-3.5 w-3.5 text-blue-200" />
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => setShowShareModal(true)}

@@ -119,17 +119,10 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
   if (inspectingPlayerId) {
     return (
       <div className="space-y-3">
-        <button
-          onClick={() => setInspectingPlayerId(undefined)}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-blue-700 shadow-sm active:scale-[0.99]"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Voltar para o Elenco Completo
-        </button>
-
         <AthleteProfileAndCardView
           key={inspectingPlayerId}
           initialPlayerId={inspectingPlayerId}
+          onBack={() => setInspectingPlayerId(undefined)}
         />
       </div>
     );
