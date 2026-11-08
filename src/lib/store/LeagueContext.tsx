@@ -164,6 +164,7 @@ interface LeagueContextValue extends LeagueState {
     dominantFoot: DominantFoot;
     profileVisibility: ProfileVisibility;
   }) => boolean;
+  deleteUserAccount: (userId?: string) => boolean;
   updatePlayerSkills: (
     playerId: string,
     skills: {
@@ -611,6 +612,81 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       'Perfil esportivo atualizado',
       'Suas preferências e visibilidade pública (LGPD) foram salvas com sucesso.'
     );
+    return true;
+  };
+
+  // Exclusão de Conta de Atleta (Direito de eliminação / LGPD)
+  const deleteUserAccount: LeagueContextValue['deleteUserAccount'] = (targetUserId) => {
+    const userIdToDelete = targetUserId || currentUserId;
+    if (!userIdToDelete) return false;
+
+    const userToDelete = state.users.find((u) => u.id === userIdToDelete);
+    const profileToDelete = state.profiles.find((p) => p.userId === userIdToDelete);
+
+    // Remove senhas ou credenciais locais
+    try {
+      const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
+      delete stored[userIdToDelete];
+      if (profileToDelete) {
+        delete stored[profileToDelete.id];
+      }
+      if (userToDelete?.whatsappNumber) {
+        delete stored[userToDelete.whatsappNumber.replace(/\D/g, '')];
+      }
+      if (userToDelete?.email) {
+        delete stored[userToDelete.email.toLowerCase()];
+      }
+      localStorage.setItem('futplay_user_passwords', JSON.stringify(stored));
+    } catch {
+      // Ignore
+    }
+
+    // Se o usuário excluído for o ativo, limpa as sessões locais de login
+    const isCurrentActive = userIdToDelete === currentUserId;
+    if (isCurrentActive) {
+      try {
+        localStorage.removeItem('futplay_lite_auth_session_v1');
+        localStorage.removeItem('futplay_lite_auth_session_v2');
+        localStorage.removeItem('futplay_lite_auth_session_v3');
+        localStorage.removeItem(ACTIVE_USER_STORAGE_KEY);
+      } catch {
+        // Ignore
+      }
+    }
+
+    // Remove o usuário e perfil do estado da liga
+    setState((prev) => {
+      const remainingUsers = prev.users.filter((u) => u.id !== userIdToDelete);
+      const remainingProfiles = prev.profiles.filter(
+        (p) => p.userId !== userIdToDelete && (!profileToDelete || p.id !== profileToDelete.id)
+      );
+      const remainingSeasonEntries = prev.seasonEntries.filter(
+        (se) => !profileToDelete || se.playerId !== profileToDelete.id
+      );
+
+      return {
+        ...prev,
+        users: remainingUsers,
+        profiles: remainingProfiles,
+        seasonEntries: remainingSeasonEntries,
+      };
+    });
+
+    if (isCurrentActive) {
+      const remainingUsers = state.users.filter((u) => u.id !== userIdToDelete);
+      if (remainingUsers.length > 0) {
+        setCurrentUserId(remainingUsers[0].id);
+      } else {
+        setCurrentUserId('');
+      }
+    }
+
+    notify(
+      'info',
+      'Conta Excluída com Sucesso',
+      `A conta de ${profileToDelete?.displayName || userToDelete?.email || 'atleta'} foi removida permanentemente da liga.`
+    );
+
     return true;
   };
 
@@ -2090,6 +2166,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         notify,
         registerNewAthlete,
         updateOwnProfile,
+        deleteUserAccount,
         updatePlayerSkills,
         saveUserWhatsapp,
         saveOnboardingStep1,
