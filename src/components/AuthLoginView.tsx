@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   ArrowRight,
-  CheckCircle2,
   Eye,
   EyeOff,
   Lock,
@@ -10,7 +9,6 @@ import {
   ShieldCheck,
   Sparkles,
   UserPlus,
-  Users,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { RosaliaCrest } from './RosaliaCrest';
@@ -25,7 +23,6 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 }) => {
   const {
     users,
-    profiles,
     selectedCityId,
     switchActiveUser,
     registerNewAthlete,
@@ -67,7 +64,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       return;
     }
 
-    // Procura usuário cadastrado pelo e-mail ou nome
+    // Procura usuário cadastrado pelo e-mail
     const existingUser = users.find(
       (u) => u.email.toLowerCase() === normalizedEmail
     );
@@ -78,9 +75,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       return;
     }
 
-    // Se digitou um e-mail que ainda não existe, sugere criar conta preenchida ou cria
     setLoginError(
-      'E-mail ainda não cadastrado. Toque em "Criar Conta" abaixo para concluir seu cadastro em segundos!'
+      'E-mail ainda não cadastrado. Toque na aba "Criar Conta" acima para se cadastrar em segundos!'
     );
     setRegEmail(normalizedEmail);
   };
@@ -163,9 +159,9 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   };
 
   return (
-    <div className="min-h-dvh w-full bg-slate-50 text-slate-900 flex flex-col justify-between">
-      <div className="mx-auto w-full max-w-[430px] px-4 py-6 space-y-4">
-        {/* Cabeçalho Oficial Branco & Azul com Mini Campo Animado */}
+    <div className="min-h-screen w-full bg-slate-100 text-slate-900 overflow-y-auto overflow-x-hidden flex flex-col items-center py-6 px-4">
+      <div className="w-full max-w-[430px] flex flex-col gap-4 pb-16">
+        {/* Cabeçalho Oficial Branco & Azul */}
         <div className="rounded-3xl bg-gradient-to-br from-blue-700 to-blue-900 p-6 text-white shadow-md text-center space-y-3">
           <div className="mx-auto flex items-center justify-center">
             <RosaliaCrest size={76} wide transparentBg />
@@ -178,20 +174,51 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
               FUTPLAY LITE
             </h1>
             <p className="text-xs text-blue-100/90 mt-0.5 font-medium">
-              Liga de Jogadores de Futebol Amador de Planalto - BA
+              Liga de Futebol Amador de Planalto - BA
             </p>
           </div>
         </div>
 
         {/* Card Principal de Autenticação */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+          {/* Seletor de Abas no Topo do Card (Login vs Criar Conta) */}
+          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setLoginError('');
+              }}
+              className={`py-2.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                mode === 'login'
+                  ? 'bg-white text-blue-700 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              Fazer Login
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('register');
+                setLoginError('');
+              }}
+              className={`py-2.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                mode === 'register'
+                  ? 'bg-white text-blue-700 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              Criar Conta
+            </button>
+          </div>
+
           {/* Botão Oficial do Google */}
           <button
             type="button"
             onClick={() => setShowGoogleModal(true)}
-            className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white py-3 px-4 text-xs font-bold text-slate-800 shadow-sm hover:bg-slate-50 active:scale-[0.99] transition"
+            className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white py-3 px-4 text-xs font-bold text-slate-800 shadow-xs hover:bg-slate-50 active:scale-[0.99] transition cursor-pointer"
           >
-            {/* Ícone Oficial do Google em SVG */}
             <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
               <path
                 fill="#4285F4"
@@ -247,7 +274,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     placeholder="seuemail@exemplo.com"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>
               </div>
@@ -264,12 +291,12 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="Digite sua senha"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -282,7 +309,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer"
               >
                 <span>Entrar na Liga</span>
                 <ArrowRight className="h-4 w-4" />
@@ -298,7 +325,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     setMode('register');
                     setLoginError('');
                   }}
-                  className="text-xs font-bold text-blue-600 hover:underline"
+                  className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                 >
                   Criar minha conta grátis
                 </button>
@@ -306,7 +333,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             </form>
           ) : (
             /* FORMULÁRIO DE CRIAÇÃO DE CONTA DE ATLETA */
-            <form onSubmit={handleCreateAccount} className="space-y-3">
+            <form onSubmit={handleCreateAccount} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Nome ou Apelido Esportivo
@@ -317,7 +344,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                   value={regName}
                   onChange={(e) => setRegName(e.target.value)}
                   placeholder="Ex.: Gabriel Camisa 10"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                 />
               </div>
 
@@ -333,7 +360,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
                     placeholder="seuemail@exemplo.com"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>
               </div>
@@ -350,12 +377,12 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
                     placeholder="Mínimo 4 caracteres"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -376,7 +403,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     onChange={(e) =>
                       setRegPosition(e.target.value as PlayerPosition)
                     }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none transition cursor-pointer"
                   >
                     <option value="atacante">Atacante</option>
                     <option value="meio-campista">Meio-campista</option>
@@ -394,7 +421,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     onChange={(e) =>
                       setRegFoot(e.target.value as DominantFoot)
                     }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none transition cursor-pointer"
                   >
                     <option value="direito">Direito</option>
                     <option value="esquerdo">Esquerdo</option>
@@ -414,7 +441,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     value={regNeighborhood}
                     onChange={(e) => setRegNeighborhood(e.target.value)}
                     placeholder="Ex.: Centro, Vila Nova, São José..."
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>
               </div>
@@ -428,7 +455,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition"
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer"
               >
                 <UserPlus className="h-4 w-4" />
                 <span>Criar Conta e Entrar na Liga</span>
@@ -442,7 +469,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     setMode('login');
                     setLoginError('');
                   }}
-                  className="text-xs font-bold text-blue-600 hover:underline"
+                  className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                 >
                   Fazer Login
                 </button>
@@ -451,56 +478,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           )}
         </div>
 
-        {/* Card de Acesso Rápido (Atletas da Liga para Teste em 1 Toque) */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-              <Users className="h-4 w-4 text-blue-600" />
-              Entrar Rápido com Atleta da Liga
-            </span>
-            <span className="text-[10px] font-semibold text-blue-600">
-              1 toque
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2">
-            {profiles.slice(0, 3).map((prof) => {
-              const u = users.find((user) => user.id === prof.userId);
-              if (!u) return null;
-              return (
-                <button
-                  key={prof.id}
-                  type="button"
-                  onClick={() => {
-                    switchActiveUser(u.id);
-                    onAuthenticated();
-                  }}
-                  className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-left hover:border-blue-300 transition"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 font-display text-xs font-bold text-white">
-                      {prof.displayName.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-slate-900 truncate">
-                        {prof.displayName}
-                      </div>
-                      <div className="text-[10px] text-slate-500 truncate">
-                        {u.email} · {prof.position}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-[11px] font-bold text-blue-600 shrink-0">
-                    Entrar →
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Rodapé de Segurança */}
-        <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 pb-4">
+        {/* Rodapé de Segurança e LGPD */}
+        <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 py-2">
           <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
           <span>Acesso gratuito · Dados protegidos pela LGPD</span>
         </div>
@@ -531,78 +510,62 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
               </svg>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">
-                  Escolha uma Conta do Google
+                  Entrar com o Google
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Para prosseguir para FutPlay Lite
+                  Informe seus dados para acessar a Liga
                 </p>
               </div>
             </div>
 
-            {/* Contas Google Sugeridas */}
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() =>
-                  handleGoogleAccountSelect(
-                    'Lucas "Raio" Oliveira',
-                    'lucas.raio@rosalia.esp.br'
-                  )
-                }
-                className="w-full flex items-center gap-3 rounded-xl border border-slate-200 p-2.5 text-left hover:bg-blue-50/50 hover:border-blue-200 transition"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
-                  LR
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-bold text-slate-900 truncate">
-                    Lucas "Raio" Oliveira
-                  </div>
-                  <div className="text-[11px] text-slate-500 truncate">
-                    lucas.raio@gmail.com
-                  </div>
-                </div>
-                <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
-              </button>
-
-              {/* Informar outra conta Google */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                <span className="text-[11px] font-bold text-slate-700 block">
-                  Ou entre com seu próprio Gmail:
-                </span>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Seu Nome
+                </label>
                 <input
                   type="text"
                   value={customGoogleName}
                   onChange={(e) => setCustomGoogleName(e.target.value)}
-                  placeholder="Seu Nome (ex.: João Silva)"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
+                  placeholder="Seu Nome ou Apelido"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Seu Gmail
+                </label>
                 <input
                   type="email"
                   value={customGoogleEmail}
                   onChange={(e) => setCustomGoogleEmail(e.target.value)}
                   placeholder="seugmail@gmail.com"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:outline-none"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
                 />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const name = customGoogleName.trim() || 'Atleta Google';
-                    const email =
-                      customGoogleEmail.trim() || 'atleta.google@gmail.com';
-                    handleGoogleAccountSelect(name, email);
-                  }}
-                  className="w-full rounded-lg bg-blue-600 py-2 text-xs font-bold text-white hover:bg-blue-700 transition"
-                >
-                  Continuar com este Gmail
-                </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const name = customGoogleName.trim() || 'Atleta';
+                  const email = customGoogleEmail.trim().toLowerCase();
+                  if (!email || !email.includes('@')) {
+                    alert('Informe um Gmail válido.');
+                    return;
+                  }
+                  handleGoogleAccountSelect(name, email);
+                }}
+                className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer"
+              >
+                Confirmar e Entrar com Google
+              </button>
             </div>
 
             <button
               type="button"
               onClick={() => setShowGoogleModal(false)}
-              className="w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              className="w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
             >
               Cancelar
             </button>
