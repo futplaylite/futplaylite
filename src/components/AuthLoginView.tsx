@@ -360,59 +360,41 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         {/* Banner de Instalação PWA */}
         <PWAInstallBanner />
         {/* Cabeçalho Oficial Branco & Azul */}
-        <div className="rounded-3xl bg-gradient-to-br from-blue-700 to-blue-900 p-6 text-white shadow-md text-center space-y-3">
-          <div className="mx-auto flex items-center justify-center">
-            <RosaliaCrest size={76} wide transparentBg />
-          </div>
+        <div
+          className={`rounded-3xl bg-gradient-to-br from-blue-700 to-blue-900 text-white shadow-md text-center transition-all duration-300 ${
+            mode === 'login' ? 'p-6 space-y-3' : 'py-3.5 px-4 space-y-1'
+          }`}
+        >
+          {mode === 'login' && (
+            <>
+              <div className="mx-auto flex items-center justify-center">
+                <RosaliaCrest size={76} wide transparentBg />
+              </div>
+              <div>
+                <span className="inline-block rounded-full bg-white/15 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-blue-100">
+                  COMPETIR É MAIS QUE JOGAR, É EVOLUIR
+                </span>
+              </div>
+            </>
+          )}
           <div>
-            <span className="inline-block rounded-full bg-white/15 px-3 py-0.5 text-[10px] font-bold uppercase tracking-widest text-blue-100">
-              COMPETIR É MAIS QUE JOGAR, É EVOLUIR
-            </span>
-            <h1 className="mt-1.5 font-display text-2xl font-extrabold tracking-wide text-white uppercase">
+            <h1
+              className={`font-display font-extrabold tracking-wide text-white uppercase ${
+                mode === 'login' ? 'mt-1.5 text-2xl' : 'text-xl'
+              }`}
+            >
               FUTPLAY LITE
             </h1>
-            <p className="text-xs text-blue-100/90 mt-0.5 font-medium">
-              Liga de Futebol Amador de Planalto - BA
+            <p className="text-xs text-blue-100/90 font-medium">
+              {mode === 'login'
+                ? 'Liga de Futebol Amador de Planalto - BA'
+                : 'Cadastro de Atleta · Planalto - BA'}
             </p>
           </div>
         </div>
 
         {/* Card Principal de Autenticação */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-          {/* Seletor de Abas no Topo do Card (Login vs Criar Conta) */}
-          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl">
-            <button
-              type="button"
-              onClick={() => {
-                setMode('login');
-                setLoginError('');
-              }}
-              className={`py-2.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                mode === 'login'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              Fazer Login
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('register');
-                setLoginError('');
-              }}
-              className={`py-2.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                mode === 'register'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900'
-              }`}
-            >
-              Criar Conta
-            </button>
-          </div>
-
-
-
           {loginError && (
             <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700">
               {loginError}
@@ -488,6 +470,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                   onClick={() => {
                     setMode('register');
                     setLoginError('');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                 >
@@ -698,6 +681,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                   onClick={() => {
                     setMode('login');
                     setLoginError('');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                 >
