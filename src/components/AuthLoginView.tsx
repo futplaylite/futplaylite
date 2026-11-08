@@ -424,7 +424,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             <form onSubmit={handleLogin} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  E-mail ou Celular (WhatsApp)
+                  E-mail ou Celular
                 </label>
                 <div className="relative">
                   {loginIdentifier && !loginIdentifier.includes('@') && loginIdentifier.replace(/\D/g, '').length > 0 ? (
@@ -514,7 +514,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  E-mail ou Celular (WhatsApp)
+                  E-mail ou Celular
                 </label>
                 <div className="relative">
                   {regIdentifier && !regIdentifier.includes('@') && regIdentifier.replace(/\D/g, '').length > 0 ? (
