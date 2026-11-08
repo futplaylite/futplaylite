@@ -57,7 +57,10 @@ const MainMobileShell: React.FC = () => {
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('futplay_lite_auth_session_v1') === 'true';
+      return (
+        localStorage.getItem('futplay_lite_auth_session_v3') === 'true' &&
+        Boolean(currentUser.id)
+      );
     } catch {
       return false;
     }
@@ -171,13 +174,13 @@ const MainMobileShell: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 1. TELA INICIAL: LOGIN (E-mail e Senha, Google ou Criar Conta)
-  if (!isAuthenticated) {
+  // 1. TELA INICIAL: LOGIN OU CRIAR CONTA (Exibida para qualquer novo visitante)
+  if (!isAuthenticated || !currentUser.id) {
     return (
       <AuthLoginView
         onAuthenticated={() => {
           try {
-            localStorage.setItem('futplay_lite_auth_session_v1', 'true');
+            localStorage.setItem('futplay_lite_auth_session_v3', 'true');
           } catch {
             // Ignore
           }
@@ -556,6 +559,9 @@ const MainMobileShell: React.FC = () => {
                       onClick={() => {
                         try {
                           localStorage.removeItem('futplay_lite_auth_session_v1');
+                          localStorage.removeItem('futplay_lite_auth_session_v2');
+                          localStorage.removeItem('futplay_lite_auth_session_v3');
+                          localStorage.removeItem('futplay_lite_active_user_id_v3');
                         } catch {
                           // Ignore
                         }

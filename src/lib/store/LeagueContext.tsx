@@ -56,9 +56,9 @@ import {
 import { inspectMatchForFraudSignals } from '../engine/antiFraud';
 import { isSupabaseConfigured, supabaseService } from '../supabase';
 
-const STORAGE_KEY = 'futplay_lite_planalto_ba_v2_excel_state';
-const ACTIVE_USER_STORAGE_KEY = 'futplay_lite_active_user_id_v1';
-const COMPLETED_FIRST_ACCESS_KEY = 'futplay_lite_completed_first_access_v1';
+const STORAGE_KEY = 'futplay_lite_planalto_ba_v3_clean';
+const ACTIVE_USER_STORAGE_KEY = 'futplay_lite_active_user_id_v3';
+const COMPLETED_FIRST_ACCESS_KEY = 'futplay_lite_completed_first_access_v3';
 
 function getCompletedFirstAccessSet(): Set<string> {
   try {
@@ -254,38 +254,11 @@ function getInitialState(): LeagueState {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed: LeagueState = JSON.parse(saved);
-      // Garante que PALITO (user-paredao) sempre tenha a role 'coach' e isTeamOwner
-      const updatedUsers = parsed.users.map((u) =>
-        u.id === 'user-paredao'
-          ? {
-              ...u,
-              role: 'coach' as const,
-              isTeamOwner: true,
-              teamName: u.teamName || 'Real Planalto FC',
-            }
-          : u
-      );
-      const updatedProfiles = parsed.profiles.map((p) =>
-        p.userId === 'user-paredao'
-          ? {
-              ...p,
-              isTeamOwner: true,
-              teamName: p.teamName || 'Real Planalto FC',
-            }
-          : p
-      );
-      // Garante que novos jogos em INITIAL_MATCHES sejam mesclados se não existirem no localStorage
-      const existingMatchIds = new Set((parsed.matches || []).map((m) => m.id));
-      const mergedMatches = [
-        ...(parsed.matches || []),
-        ...INITIAL_MATCHES.filter((im) => !existingMatchIds.has(im.id)),
-      ];
-
       return {
         ...parsed,
-        users: updatedUsers,
-        profiles: updatedProfiles,
-        matches: mergedMatches,
+        users: parsed.users || [],
+        profiles: parsed.profiles || [],
+        matches: parsed.matches || [],
         peerEvaluations: parsed.peerEvaluations || [],
         monthlyPayments: parsed.monthlyPayments || [],
         monthlyConfig: parsed.monthlyConfig || DEFAULT_MONTHLY_CONFIG,
@@ -325,10 +298,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       const stored = localStorage.getItem(ACTIVE_USER_STORAGE_KEY);
       if (stored) return stored;
-      // Define PALITO como treinador ativo padrão
-      return 'user-paredao';
+      return '';
     } catch {
-      return 'user-paredao';
+      return '';
     }
   });
   const [selectedCityId, setSelectedCityId] = useState<string>('city-rosalia');
@@ -439,14 +411,25 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const clearNotification = () => setNotification(null);
 
-  const rawCurrentUser =
-    state.users.find((u) => u.id === currentUserId) || state.users[0];
+  const rawCurrentUser: User =
+    (currentUserId ? state.users.find((u) => u.id === currentUserId) : undefined) ||
+    state.users[0] ||
+    ({
+      id: '',
+      email: '',
+      role: 'player',
+      status: 'ativa',
+      createdAt: new Date().toISOString(),
+      onboardingCompleted: false,
+      onboardingStep: 1,
+    } as User);
   const completedSet = getCompletedFirstAccessSet();
   const isAlreadyCompleted =
-    rawCurrentUser.onboardingCompleted === true ||
-    (rawCurrentUser.onboardingStep || 1) >= 4 ||
-    completedSet.has(rawCurrentUser.id.toLowerCase()) ||
-    completedSet.has(rawCurrentUser.email.toLowerCase());
+    Boolean(rawCurrentUser.id) &&
+    (rawCurrentUser.onboardingCompleted === true ||
+      (rawCurrentUser.onboardingStep || 1) >= 4 ||
+      completedSet.has(rawCurrentUser.id.toLowerCase()) ||
+      (rawCurrentUser.email && completedSet.has(rawCurrentUser.email.toLowerCase())));
 
   const currentUser: User = isAlreadyCompleted
     ? {
@@ -491,31 +474,42 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     const newUserId = `user-${Date.now()}`;
     const newPlayerId = `player-${Date.now()}`;
 
+    const isFirstUser = state.users.length === 0;
+
     const newUser: User = {
       id: newUserId,
-      email: params.email.trim() || `${trimmedName.toLowerCase()}@rosalia.esp.br`,
-      role: 'player',
+      email: params.email.trim() || `${trimmedName.toLowerCase().replace(/\s+/g, '')}@futplay.com`,
+      role: isFirstUser ? 'coach' : 'player',
+      isTeamOwner: isFirstUser,
+      teamName: isFirstUser ? 'Real Planalto FC' : undefined,
+      teamCity: 'Planalto - BA',
       status: 'ativa',
       createdAt: now,
+      onboardingStep: 1,
+      onboardingCompleted: false,
     };
 
     const newProfile: PlayerProfile = {
       id: newPlayerId,
       userId: newUserId,
       displayName: trimmedName,
+      fullNamePrivate: trimmedName,
       avatarColor: '#126B46',
-      cityId: params.cityId,
+      cityId: params.cityId || selectedCityId,
       neighborhood: params.neighborhood.trim() || 'Centro',
       position: params.position,
       dominantFoot: params.dominantFoot,
-      profileVisibility: params.profileVisibility,
+      profileVisibility: params.profileVisibility || 'publico',
       currentRating: 1000, // Valor inicial oficial (Seção 3.2)
       ratingUncertainty: 100,
       isProvisional: true, // Classificação provisória (Seção 2.3 / CA-021)
-      currentDivisionId: 'div-bronze',
+      currentDivisionId: '22222222-2222-4222-8222-222222222201',
       totalValidatedMatches: 0,
+      isTeamOwner: isFirstUser,
+      teamName: isFirstUser ? 'Real Planalto FC' : undefined,
+      teamCity: 'Planalto - BA',
       experimentalPositionScore: null,
-      badges: ['Estreante Rosália'],
+      badges: ['Estreante Planalto'],
       createdAt: now,
       updatedAt: now,
     };
@@ -1772,7 +1766,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const resetDemoDatabase = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(ACTIVE_USER_STORAGE_KEY);
+      localStorage.removeItem(COMPLETED_FIRST_ACCESS_KEY);
+      localStorage.removeItem('futplay_lite_auth_session_v1');
+      localStorage.removeItem('futplay_lite_auth_session_v2');
+      localStorage.removeItem('futplay_lite_auth_session_v3');
+    } catch {
+      // Ignore
+    }
     setState({
       users: INITIAL_USERS,
       cities: INITIAL_CITIES,
@@ -1794,11 +1797,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       monthlyPayments: [],
       monthlyConfig: DEFAULT_MONTHLY_CONFIG,
     });
-    setCurrentUserId('user-lukinha');
+    setCurrentUserId('');
     notify(
       'info',
-      'Banco de demonstração restaurado',
-      'Todos os dados iniciais da Liga Municipal de Planalto - BA foram recarregados.'
+      'Base Limpa com Sucesso',
+      'Todos os dados de teste foram removidos. Pronto para novos cadastros reais.'
     );
   };
 
