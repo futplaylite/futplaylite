@@ -38,10 +38,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string>('');
 
-  // Google Modal state
-  const [showGoogleModal, setShowGoogleModal] = useState<boolean>(false);
-  const [customGoogleName, setCustomGoogleName] = useState<string>('');
-  const [customGoogleEmail, setCustomGoogleEmail] = useState<string>('');
+
 
   // Register states
   const [regName, setRegName] = useState<string>('');
@@ -132,32 +129,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     }
   };
 
-  const handleGoogleAccountSelect = (name: string, email: string) => {
-    const normalized = email.trim().toLowerCase();
-    const existing = users.find((u) => u.email.toLowerCase() === normalized);
 
-    if (existing) {
-      switchActiveUser(existing.id);
-      setShowGoogleModal(false);
-      onAuthenticated();
-      return;
-    }
-
-    const created = registerNewAthlete({
-      displayName: name.trim(),
-      email: normalized,
-      cityId: selectedCityId,
-      neighborhood: 'Centro',
-      position: 'atacante',
-      dominantFoot: 'direito',
-      profileVisibility: 'publico',
-    });
-
-    if (created) {
-      setShowGoogleModal(false);
-      onAuthenticated();
-    }
-  };
 
   return (
     <div className="min-h-screen w-full bg-slate-100 text-slate-900 overflow-y-auto overflow-x-hidden flex flex-col items-center py-6 px-4">
@@ -216,45 +188,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             </button>
           </div>
 
-          {/* Botão Oficial do Google */}
-          <button
-            type="button"
-            onClick={() => setShowGoogleModal(true)}
-            className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white py-3 px-4 text-xs font-bold text-slate-800 shadow-xs hover:bg-slate-50 active:scale-[0.99] transition cursor-pointer"
-          >
-            <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 24c3.3 0 6.08-1.09 8.1-2.96l-3.88-3.05c-1.08.72-2.45 1.16-4.22 1.16-3.24 0-5.98-2.18-6.96-5.12H1.04v3.14C3.05 21.16 7.21 24 12 24z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.04 14.03c-.25-.72-.38-1.49-.38-2.28s.13-1.56.38-2.28V6.33H1.04C.38 7.64 0 9.13 0 11.75s.38 4.11 1.04 5.42l4-3.14z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 4.75c1.8 0 3.41.62 4.68 1.84l3.51-3.51C18.07 1.19 15.3 0 12 0 7.21 0 3.05 2.84 1.04 6.83l4 3.14c.98-2.94 3.72-5.22 6.96-5.22z"
-              />
-            </svg>
-            <span>
-              {mode === 'login'
-                ? 'Entrar com o Google'
-                : 'Cadastrar com o Google'}
-            </span>
-          </button>
 
-          {/* Divisor */}
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-slate-200 w-full" />
-            <span className="bg-white px-3 text-[11px] font-medium text-slate-400 shrink-0">
-              ou com seu e-mail
-            </span>
-            <div className="border-t border-slate-200 w-full" />
-          </div>
 
           {loginError && (
             <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700">
@@ -488,93 +422,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         </div>
       </div>
 
-      {/* Modal de Login com Google */}
-      {showGoogleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="w-full max-w-[380px] rounded-2xl bg-white p-5 shadow-xl space-y-4">
-            <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
-              <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 24c3.3 0 6.08-1.09 8.1-2.96l-3.88-3.05c-1.08.72-2.45 1.16-4.22 1.16-3.24 0-5.98-2.18-6.96-5.12H1.04v3.14C3.05 21.16 7.21 24 12 24z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.04 14.03c-.25-.72-.38-1.49-.38-2.28s.13-1.56.38-2.28V6.33H1.04C.38 7.64 0 9.13 0 11.75s.38 4.11 1.04 5.42l4-3.14z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 4.75c1.8 0 3.41.62 4.68 1.84l3.51-3.51C18.07 1.19 15.3 0 12 0 7.21 0 3.05 2.84 1.04 6.83l4 3.14c.98-2.94 3.72-5.22 6.96-5.22z"
-                />
-              </svg>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Entrar com o Google
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Informe seus dados para acessar a Liga
-                </p>
-              </div>
-            </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Seu Nome
-                </label>
-                <input
-                  type="text"
-                  value={customGoogleName}
-                  onChange={(e) => setCustomGoogleName(e.target.value)}
-                  placeholder="Seu Nome ou Apelido"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Seu Gmail
-                </label>
-                <input
-                  type="email"
-                  value={customGoogleEmail}
-                  onChange={(e) => setCustomGoogleEmail(e.target.value)}
-                  placeholder="seugmail@gmail.com"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const name = customGoogleName.trim() || 'Atleta';
-                  const email = customGoogleEmail.trim().toLowerCase();
-                  if (!email || !email.includes('@')) {
-                    alert('Informe um Gmail válido.');
-                    return;
-                  }
-                  handleGoogleAccountSelect(name, email);
-                }}
-                className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer"
-              >
-                Confirmar e Entrar com Google
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowGoogleModal(false)}
-              className="w-full rounded-xl border border-slate-200 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
