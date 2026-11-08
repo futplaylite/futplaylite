@@ -54,6 +54,7 @@ import {
   resolveDivisionForPlayer,
 } from '../engine/eloEngine';
 import { inspectMatchForFraudSignals } from '../engine/antiFraud';
+import { isSupabaseConfigured, supabaseService } from '../supabase';
 
 const STORAGE_KEY = 'futplay_lite_planalto_ba_v2_excel_state';
 const ACTIVE_USER_STORAGE_KEY = 'futplay_lite_active_user_id_v1';
@@ -405,6 +406,23 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       // Ignore
     }
   }, [currentUserId]);
+
+  // Sincronização inicial com o Supabase quando configurado
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    supabaseService.getMonthlyConfig().then((cfg) => {
+      if (cfg) {
+        setState((prev) => ({ ...prev, monthlyConfig: cfg }));
+      }
+    });
+
+    supabaseService.getMonthlyPayments().then((payments) => {
+      if (payments && payments.length > 0) {
+        setState((prev) => ({ ...prev, monthlyPayments: payments }));
+      }
+    });
+  }, []);
 
   const notify = (
     type: NotificationBanner['type'],
@@ -1817,6 +1835,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           ? currentList.map((item, idx) => (idx === existingIdx ? record : item))
           : [...currentList, record];
 
+      if (isSupabaseConfigured()) {
+        supabaseService.upsertMonthlyPayment(record).catch((err) => {
+          console.warn('Falha assíncrona ao sincronizar mensalidade com Supabase:', err);
+        });
+      }
+
       return {
         ...prev,
         monthlyPayments: updatedPayments,
@@ -1835,13 +1859,19 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const updateMonthlyConfig: LeagueContextValue['updateMonthlyConfig'] = (config) => {
+    const updatedConfig = {
+      ...(state.monthlyConfig || DEFAULT_MONTHLY_CONFIG),
+      ...config,
+    };
     setState((prev) => ({
       ...prev,
-      monthlyConfig: {
-        ...(prev.monthlyConfig || DEFAULT_MONTHLY_CONFIG),
-        ...config,
-      },
+      monthlyConfig: updatedConfig,
     }));
+    if (isSupabaseConfigured()) {
+      supabaseService.saveMonthlyConfig(updatedConfig).catch((err) => {
+        console.warn('Falha assíncrona ao salvar config no Supabase:', err);
+      });
+    }
     notify('success', 'Configuração Salva', 'Dados da mensalidade e PIX atualizados com sucesso.');
     return true;
   };
