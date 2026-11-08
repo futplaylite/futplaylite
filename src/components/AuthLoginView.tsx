@@ -12,7 +12,6 @@ import {
   Phone,
   RefreshCw,
   ShieldCheck,
-  Sparkles,
   UserPlus,
   X,
 } from 'lucide-react';
@@ -649,12 +648,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                 </div>
               </div>
 
-              <div className="rounded-xl bg-blue-50 border border-blue-100 p-2.5 flex items-center gap-2 text-[11px] text-blue-800">
-                <Sparkles className="h-4 w-4 text-blue-600 shrink-0" />
-                <span>
-                  Cadastre-se para ativar seu cartão oficial na liga!
-                </span>
-              </div>
+
 
               <button
                 type="submit"
