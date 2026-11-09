@@ -366,11 +366,16 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [gridWarning, setGridWarning] = useState<string | null>(null);
 
-  // Auto-salvar no localStorage a cada alteração
+  // Auto-salvar no localStorage a cada alteração / preenchimento
   useEffect(() => {
     if (isDeletedRef.current) return;
     try {
-      const updated = { ...sumula, lastUpdated: new Date().toISOString() };
+      const updated = {
+        ...sumula,
+        timerSeconds: sumulaStopwatch.seconds,
+        isTimerRunning: sumulaStopwatch.isRunning,
+        lastUpdated: new Date().toISOString(),
+      };
       saveSumulaToList(updated);
       setSavedBadge(true);
       const timer = setTimeout(() => setSavedBadge(false), 1500);
@@ -955,7 +960,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
               )}
             </div>
 
-            {/* Lado Direito: Badge de Status */}
+            {/* Lado Direito: Badge de Status com Feedback de Salvamento Automático */}
             <div className="flex items-center gap-1.5 min-w-0">
               {isLocked ? (
                 <span className="rounded-full bg-emerald-900/80 border border-emerald-500/40 px-2.5 py-1 text-[10px] font-extrabold text-emerald-200 shrink-0 flex items-center gap-1 shadow-2xs">
@@ -965,6 +970,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
               ) : !isCoachOrAdmin ? (
                 <span className="rounded-full bg-blue-900/80 border border-blue-500/30 px-2.5 py-1 text-[10px] font-extrabold text-blue-200 shrink-0">
                   Somente Leitura
+                </span>
+              ) : savedBadge ? (
+                <span className="rounded-full bg-emerald-950/80 border border-emerald-500/50 px-2.5 py-1 text-[10px] font-bold text-emerald-300 shrink-0 flex items-center gap-1.5 shadow-2xs">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  <span>Salvo autom.</span>
                 </span>
               ) : (
                 <span className="rounded-full bg-slate-800 border border-slate-700 px-2.5 py-1 text-[10px] font-bold text-slate-300 shrink-0 flex items-center gap-1.5">
@@ -1949,52 +1959,17 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
             </button>
           </div>
 
-          {/* Linha 2: Ações Principais da Súmula */}
+          {/* Linha 2: Finalização da Súmula (Salvamento é 100% automático a cada toque) */}
           {isCoachOrAdmin && !isLocked && (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const draftSumula: SumulaData = {
-                    ...sumula,
-                    timerSeconds: sumulaStopwatch.seconds,
-                    isTimerRunning: sumulaStopwatch.isRunning,
-                    lastUpdated: new Date().toISOString(),
-                  };
-                  saveSumulaToList(draftSumula);
-                  setSavedBadge(true);
-                  setTimeout(() => setSavedBadge(false), 2500);
-                }}
-                className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-xs font-black transition active:scale-95 cursor-pointer shadow-2xs ${
-                  savedBadge
-                    ? 'border-emerald-400 bg-emerald-50 text-emerald-800'
-                    : 'border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                }`}
-                title="Salva as alterações mantendo a súmula aberta para edição"
-              >
-                {savedBadge ? (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <span>✓ Salvo!</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4" />
-                    <span>Salvar Rascunho</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowFinalizeModal(true)}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-3.5 py-2.5 text-xs font-black text-white shadow-md hover:from-emerald-500 hover:to-teal-500 active:scale-95 transition cursor-pointer"
-                title="Fecha a súmula e registra os dados em todos os atletas"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                <span>Finalizar Súmula</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowFinalizeModal(true)}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-3 text-xs sm:text-sm font-black text-white shadow-md hover:from-emerald-500 hover:to-teal-500 active:scale-95 transition cursor-pointer"
+              title="Fecha a súmula e registra os dados em todos os atletas"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              <span>Finalizar Súmula da Rodada</span>
+            </button>
           )}
 
           {isLocked && (
