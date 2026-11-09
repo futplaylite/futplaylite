@@ -7,13 +7,10 @@ import {
   LogOut,
   Pause,
   Play,
-  QrCode,
   RotateCcw,
   Search,
   ShieldCheck,
-  Smartphone,
   Swords,
-  Trash2,
   Trophy,
   UserCircle2,
   Users,
@@ -49,14 +46,11 @@ const formatStopwatchTime = (totalSecs: number) => {
 
 const MainMobileShell: React.FC = () => {
   const {
-    users,
     profiles,
     matches,
     currentUser,
     notification,
     clearNotification,
-    switchActiveUser,
-    deleteUserAccount,
     sumulaStopwatch,
   } = useLeague();
 
@@ -71,11 +65,8 @@ const MainMobileShell: React.FC = () => {
     }
   });
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [showQrModal, setShowQrModal] = useState<boolean>(false);
   const [showProfileMenu, setShowProfileMenu] = useState<boolean>(false);
   const [showMonthlyFeesPage, setShowMonthlyFeesPage] = useState<boolean>(false);
-  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState<boolean>(false);
-  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -538,56 +529,10 @@ const MainMobileShell: React.FC = () => {
                         </span>
                       </button>
                     )}
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        setShowQrModal(true);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition text-left cursor-pointer"
-                    >
-                      <QrCode className="h-3.5 w-3.5 text-blue-600" />
-                      <span>Compartilhar App / QR</span>
-                    </button>
                   </div>
 
-                  {/* Alternar Usuário Compacto */}
-                  <div className="border-t border-slate-100 pt-1.5 pb-1">
-                    <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1 px-1">
-                      Alternar Conta
-                    </span>
-                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
-                      <select
-                        aria-label="Alternar conta"
-                        value={currentUser.id}
-                        onChange={(e) => {
-                          switchActiveUser(e.target.value);
-                          setShowProfileMenu(false);
-                        }}
-                        className="w-full bg-transparent text-[11px] font-semibold text-slate-800 focus:outline-none cursor-pointer"
-                      >
-                        {users.map((u) => {
-                          const prof = profiles.find((p) => p.userId === u.id);
-                          const uCoach = u.role === 'coach' || u.isTeamOwner;
-                          const uAdmin = u.role === 'admin';
-                          const roleTag = uCoach
-                            ? ' (Treinador)'
-                            : uAdmin
-                              ? ' (Admin)'
-                              : '';
-                          return (
-                            <option key={u.id} value={u.id}>
-                              {(prof ? prof.displayName : 'Moderador') + roleTag}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Ações da Conta: Sair e Excluir */}
-                  <div className="border-t border-slate-100 pt-1 mt-1 space-y-0.5">
+                  {/* Ações da Conta: Sair */}
+                  <div className="border-t border-slate-100 pt-1 mt-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -608,18 +553,6 @@ const MainMobileShell: React.FC = () => {
                       <LogOut className="h-3.5 w-3.5 text-slate-500" />
                       <span>Sair da Conta</span>
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowProfileMenu(false);
-                        setShowDeleteAccountModal(true);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition text-left cursor-pointer"
-                    >
-                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                      <span>Excluir Minha Conta</span>
-                    </button>
                   </div>
                 </div>
               )}
@@ -630,123 +563,6 @@ const MainMobileShell: React.FC = () => {
 
         {/* Banner de Instalação PWA */}
         <PWAInstallBanner />
-
-        {/* Modal de QR Code para Compartilhar */}
-        {showQrModal && (
-          <div className="mx-4 mt-3 rounded-2xl border border-blue-200 bg-white p-4 shadow-lg space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-blue-700">
-                <Smartphone className="h-4 w-4" />
-                Link de Acesso no Celular
-              </div>
-              <button
-                onClick={() => setShowQrModal(false)}
-                className="rounded-lg p-1 text-slate-400 hover:text-slate-700"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex flex-col items-center text-center space-y-2.5">
-              <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(publicUrl)}`}
-                  alt="QR Code"
-                  className="h-40 w-40"
-                />
-              </div>
-              <div className="w-full space-y-1.5 text-xs">
-                <div className="rounded-xl bg-blue-50 border border-blue-100 p-2.5">
-                  <span className="text-[10px] text-blue-600 font-semibold uppercase block">
-                    Link Direto (4G, 5G ou Wi-Fi):
-                  </span>
-                  <a
-                    href={publicUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-mono text-xs font-bold text-blue-700 underline break-all"
-                  >
-                    {publicUrl}
-                  </a>
-                </div>
-                <div className="rounded-xl bg-slate-50 border border-slate-200 p-2 text-[11px] text-slate-600">
-                  Wi-Fi Local: <strong className="font-mono">{lanUrl}</strong>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-
-
-        {/* Modal de Confirmação para Excluir Conta do Usuário Atual */}
-        {showDeleteAccountModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-            <div className="w-full max-w-[380px] rounded-3xl bg-white p-5 shadow-2xl space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-600">
-                  <AlertTriangle className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">
-                    Excluir Conta Definitivamente?
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Esta ação não pode ser desfeita.
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-red-100 bg-red-50/70 p-3 text-xs text-red-900 space-y-1.5">
-                <p className="font-semibold text-slate-700">
-                  Você está prestes a excluir:
-                </p>
-                <p className="font-extrabold text-red-700 text-sm">
-                  {userDisplayName}
-                </p>
-                <p className="text-[11px] text-red-700/80 leading-relaxed">
-                  Seu cartão oficial de atleta, histórico de partidas e acesso serão apagados da liga FUTPLAY LITE.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  disabled={isDeletingAccount}
-                  onClick={() => setShowDeleteAccountModal(false)}
-                  className="flex-1 rounded-xl border border-slate-200 bg-slate-100 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200 active:scale-98 transition cursor-pointer disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isDeletingAccount}
-                  onClick={async () => {
-                    setIsDeletingAccount(true);
-                    await deleteUserAccount(currentUser.id);
-                    setShowDeleteAccountModal(false);
-                    setIsDeletingAccount(false);
-                    try {
-                      localStorage.removeItem('futplay_lite_auth_session_v1');
-                      localStorage.removeItem('futplay_lite_auth_session_v2');
-                      localStorage.removeItem('futplay_lite_auth_session_v3');
-                      localStorage.removeItem('futplay_lite_active_user_id_v3');
-                    } catch {
-                      // Ignore
-                    }
-                    setIsAuthenticated(false);
-                    window.location.reload();
-                  }}
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-red-700 active:scale-98 transition cursor-pointer disabled:opacity-50"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>{isDeletingAccount ? 'Excluindo...' : 'Sim, Excluir'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Conteúdo Principal */}
         <main className="flex-1 px-4 pt-4 pb-24 space-y-4">
