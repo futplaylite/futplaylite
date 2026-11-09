@@ -391,3 +391,49 @@ export interface PeladaMonthlyConfig {
   pixKeyType: string;
   pixReceiverName: string;
 }
+
+export interface SumulaData {
+  id: string;
+  status: 'em_andamento' | 'finalizada';
+  matchDate: string;
+  startTime: string;
+  lastUpdated: string;
+  teamName?: string;
+  createdByUserId?: string;
+  createdByName?: string;
+  timerSeconds?: number;
+  isTimerRunning?: boolean;
+  arrivalList: {
+    order: number;
+    playerName: string;
+    confirmed: boolean;
+    note?: string;
+    isGuest?: boolean;
+    isGoalkeeper?: boolean;
+  }[];
+  yellowCards: string[];
+  blueCards: string[];
+  redCards: string[];
+  goalkeepers: { num: string; name: string }[];
+  teamsGrid: {
+    teamName: string;
+    matches: string[];
+    vitorias?: number;
+    empates?: number;
+    derrotas?: number;
+    golsPro?: number;
+    golsContra?: number;
+    saldoGols?: number;
+    pontos?: number;
+  }[];
+  gridTimers?: {
+    [cellKey: string]: {
+      updatedAt: number;
+      isLocked: boolean;
+    };
+  };
+  teamLineups: {
+    [key: string]: { player: string; goals: number | string; isSub?: boolean }[];
+  };
+  highlightGoals: { player: string; time: string }[];
+}

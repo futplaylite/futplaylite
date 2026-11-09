@@ -23,6 +23,7 @@ import {
   ResultConfirmation,
   Season,
   SeasonEntry,
+  SumulaData,
   TeamModality,
   User,
   UserRole,
@@ -273,6 +274,7 @@ interface LeagueContextValue extends LeagueState {
     amount?: number
   ) => boolean;
   updateMonthlyConfig: (config: Partial<PeladaMonthlyConfig>) => boolean;
+  finalizePeladaSumula: (sumula: SumulaData) => boolean;
 }
 
 const LeagueContext = createContext<LeagueContextValue | null>(null);
@@ -2420,6 +2422,205 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     return true;
   };
 
+  const finalizePeladaSumula: LeagueContextValue['finalizePeladaSumula'] = (sumulaToFinalize) => {
+    const finalized: SumulaData = {
+      ...sumulaToFinalize,
+      status: 'finalizada',
+      lastUpdated: new Date().toISOString(),
+    };
+
+    // Salva no localStorage de todas as súmulas
+    try {
+      const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
+      const ACTIVE_KEY = 'futplay_sumula_pelada_ativa_v1';
+      const raw = localStorage.getItem(ALL_KEY);
+      let list: SumulaData[] = raw ? JSON.parse(raw) : [];
+      const idx = list.findIndex((s) => s.id === finalized.id);
+      if (idx >= 0) {
+        list[idx] = finalized;
+      } else {
+        list = [finalized, ...list];
+      }
+      localStorage.setItem(ALL_KEY, JSON.stringify(list));
+      localStorage.setItem(ACTIVE_KEY, JSON.stringify(finalized));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('futplay_sumulas_changed', {
+            detail: { savedId: finalized.id, count: list.length },
+          })
+        );
+      }
+    } catch (e) {
+      console.warn('Erro ao persistir súmula finalizada:', e);
+    }
+
+    // 1. Participantes confirmados na chegada ou escalados
+    const confirmedArrivalNames = new Set(
+      (finalized.arrivalList || [])
+        .filter((a) => a.confirmed)
+        .map((a) => (a.playerName || '').trim().toLowerCase())
+    );
+
+    // 2. Mapeamento de gols por atleta (nome em minúsculo)
+    const goalsByPlayer: Record<string, number> = {};
+    Object.values(finalized.teamLineups || {}).forEach((lineup) => {
+      (lineup || []).forEach((item) => {
+        const pKey = (item.player || '').trim().toLowerCase();
+        const g = Number(item.goals) || 0;
+        if (pKey && g > 0) {
+          goalsByPlayer[pKey] = (goalsByPlayer[pKey] || 0) + g;
+        }
+      });
+    });
+
+    // 3. Mapeamento de cartões por atleta
+    const yellowByPlayer: Record<string, number> = {};
+    (finalized.yellowCards || []).forEach((name) => {
+      const pKey = (name || '').trim().toLowerCase();
+      if (pKey) yellowByPlayer[pKey] = (yellowByPlayer[pKey] || 0) + 1;
+    });
+
+    const blueByPlayer: Record<string, number> = {};
+    (finalized.blueCards || []).forEach((name) => {
+      const pKey = (name || '').trim().toLowerCase();
+      if (pKey) blueByPlayer[pKey] = (blueByPlayer[pKey] || 0) + 1;
+    });
+
+    const redByPlayer: Record<string, number> = {};
+    (finalized.redCards || []).forEach((name) => {
+      const pKey = (name || '').trim().toLowerCase();
+      if (pKey) redByPlayer[pKey] = (redByPlayer[pKey] || 0) + 1;
+    });
+
+    // 4. Identifica o time campeão da súmula para Super Capas
+    let championTeamName = '';
+    let maxWins = -1;
+    let maxDraws = -1;
+    let maxGoals = -1;
+    (finalized.teamsGrid || []).forEach((row) => {
+      const wins = (row.matches || []).filter((m) => m === 'V').length;
+      const draws = (row.matches || []).filter((m) => m === 'E').length;
+      const pts = wins * 3 + draws;
+      const maxPts = maxWins * 3 + maxDraws;
+
+      const lineup = (finalized.teamLineups && finalized.teamLineups[row.teamName]) || [];
+      const teamG = lineup.reduce((acc, p) => acc + (Number(p.goals) || 0), 0);
+
+      if (pts > maxPts || (pts === maxPts && teamG > maxGoals)) {
+        maxWins = wins;
+        maxDraws = draws;
+        maxGoals = teamG;
+        championTeamName = row.teamName;
+      }
+    });
+
+    const championLineup = championTeamName
+      ? (finalized.teamLineups?.[championTeamName] || [])
+      : [];
+    const championPlayerKeys = new Set(
+      championLineup.map((p) => (p.player || '').trim().toLowerCase())
+    );
+
+    // 5. Atualiza os SeasonEntries no estado da liga
+    setState((prev) => {
+      const updatedEntries = [...prev.seasonEntries];
+      const nowStr = new Date().toISOString();
+
+      prev.profiles.forEach((profile) => {
+        const pKey = (profile.displayName || '').trim().toLowerCase();
+
+        // Participou se estava confirmado na chegada OU se foi escalado em qualquer time
+        const isArrivalConfirmed = confirmedArrivalNames.has(pKey);
+        const isLineupMember = Object.values(finalized.teamLineups || {}).some((lineup) =>
+          (lineup || []).some((p) => (p.player || '').trim().toLowerCase() === pKey)
+        );
+        const participated = isArrivalConfirmed || isLineupMember;
+
+        const goalsToAdd = goalsByPlayer[pKey] || 0;
+        const yellowToAdd = yellowByPlayer[pKey] || 0;
+        const blueToAdd = blueByPlayer[pKey] || 0;
+        const redToAdd = redByPlayer[pKey] || 0;
+        const isSuperCapa = championPlayerKeys.has(pKey);
+        const isGk = profile.position === 'goleiro';
+
+        if (participated || goalsToAdd > 0 || yellowToAdd > 0 || blueToAdd > 0 || redToAdd > 0) {
+          const entryIdx = updatedEntries.findIndex((se) => se.playerId === profile.id);
+          if (entryIdx >= 0) {
+            const current = updatedEntries[entryIdx];
+            const newMatches = (current.matchesPlayed || 0) + (participated ? 1 : 0);
+            const newGoals = (current.goals || 0) + goalsToAdd;
+            const newYellow = (current.yellowCards || 0) + yellowToAdd;
+            const newBlue = (current.blueCards || 0) + blueToAdd;
+            const newRed = (current.redCards || 0) + redToAdd;
+            const newSuperCapas = (current.superCapas || current.mvpCount || 0) + (isSuperCapa ? 1 : 0);
+            const newGkCapas = (current.goalkeeperCapas || 0) + (isSuperCapa && isGk ? 1 : 0);
+            const newCapaPct = newMatches > 0 ? Math.round((newSuperCapas / newMatches) * 100) : 0;
+            const newPoints = (current.seasonPoints || 0) + (isSuperCapa ? 3 : participated ? 1 : 0);
+
+            updatedEntries[entryIdx] = {
+              ...current,
+              matchesPlayed: newMatches,
+              goals: newGoals,
+              yellowCards: newYellow,
+              blueCards: newBlue,
+              redCards: newRed,
+              superCapas: newSuperCapas,
+              goalkeeperCapas: newGkCapas,
+              capaEfficiencyPct: newCapaPct,
+              seasonPoints: newPoints,
+              updatedAt: nowStr,
+            };
+          } else {
+            const newMatches = participated ? 1 : 0;
+            const newGoals = goalsToAdd;
+            const newSuperCapas = isSuperCapa ? 1 : 0;
+            const newGkCapas = isSuperCapa && isGk ? 1 : 0;
+            const newCapaPct = newMatches > 0 ? Math.round((newSuperCapas / newMatches) * 100) : 0;
+
+            updatedEntries.push({
+              id: `se-${profile.id}-${Date.now()}`,
+              seasonId: prev.seasons[0]?.id || 'season-2026-2',
+              playerId: profile.id,
+              divisionId: profile.currentDivisionId || 'div-ouro',
+              seasonPoints: isSuperCapa ? 3 : 1,
+              pendingPoints: 0,
+              matchesPlayed: newMatches,
+              wins: isSuperCapa ? 1 : 0,
+              draws: 0,
+              losses: 0,
+              goals: newGoals,
+              assists: 0,
+              mvpCount: newSuperCapas,
+              superCapas: newSuperCapas,
+              goalkeeperCapas: newGkCapas,
+              capaEfficiencyPct: newCapaPct,
+              yellowCards: yellowToAdd,
+              blueCards: blueToAdd,
+              redCards: redToAdd,
+              cleanSheets: 0,
+              defensiveActions: 0,
+              status: 'elegivel',
+              updatedAt: nowStr,
+            });
+          }
+        }
+      });
+
+      return {
+        ...prev,
+        seasonEntries: updatedEntries,
+      };
+    });
+
+    notify(
+      'success',
+      'Súmula Finalizada e Homologada!',
+      'Gols, presenças e cartões foram computados nas estatísticas oficiais de todos os atletas participantes.'
+    );
+
+    return true;
+  };
+
   const saveUserWhatsapp: LeagueContextValue['saveUserWhatsapp'] = (
     whatsappNumber
   ) => {
@@ -2668,6 +2869,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         sumulaStopwatch,
         toggleMonthlyPayment,
         updateMonthlyConfig,
+        finalizePeladaSumula,
       }}
     >
       {children}

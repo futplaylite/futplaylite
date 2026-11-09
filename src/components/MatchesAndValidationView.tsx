@@ -46,6 +46,7 @@ export const MatchesAndValidationView: React.FC<
     submitMatchScoreAndEvents,
     confirmMatchResult,
     contestMatchResult,
+    notify,
   } = useLeague();
 
   // Nível de acesso: Treinador (coach / dono de time) ou Admin podem criar/gerenciar súmulas em andamento
@@ -591,62 +592,84 @@ export const MatchesAndValidationView: React.FC<
                       (a) => a.confirmed
                     ).length;
 
+                    const isSumulaActive = s.status === 'em_andamento';
+                    const canPlayerAccess = isCoachOrAdmin || !isSumulaActive;
+
                     return (
                       <div
-                        key={s.id || idx}
-                        onClick={() => {
-                          setSelectedSumulaId(s.id);
-                          setIsCreatingNewSumula(false);
-                          setActiveSumulaView('pelada');
-                        }}
-                        className="cursor-pointer rounded-xl bg-gradient-to-r from-blue-50/70 to-slate-50 border border-blue-200/80 p-2.5 hover:border-blue-400 hover:shadow-xs transition space-y-1.5"
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="rounded bg-blue-100 text-blue-800 border border-blue-200 px-1.5 py-0.2 text-[8px] font-black uppercase flex items-center gap-0.5">
-                              <ClipboardList className="h-2.5 w-2.5" />
-                              Treino
-                            </span>
-                            <span
-                              className={`flex h-2 w-2 shrink-0 rounded-full ${
-                                s.status === 'em_andamento'
-                                   ? 'bg-emerald-500 animate-pulse'
-                                   : 'bg-blue-600'
-                              }`}
-                            ></span>
-                            <span className="text-xs font-black text-slate-900 truncate">
-                              Súmula {s.matchDate || 'Rodada'}
-                            </span>
-                            <span
-                              className={`shrink-0 rounded-full px-1.5 py-0.2 text-[9px] font-bold ${
-                                s.status === 'em_andamento'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-blue-100 text-blue-800'
-                              }`}
-                            >
-                              {s.status === 'em_andamento' ? 'Ativa' : 'Validada'}
-                            </span>
-                          </div>
+                            key={s.id || idx}
+                            onClick={() => {
+                              if (!canPlayerAccess) {
+                                notify(
+                                  'info',
+                                  'Súmula em Andamento',
+                                  'Esta súmula está sendo gerenciada pelo treinador da sua equipe. O acesso dos atletas é liberado assim que o treino for finalizado e homologado.'
+                                );
+                                return;
+                              }
+                              setSelectedSumulaId(s.id);
+                              setIsCreatingNewSumula(false);
+                              setActiveSumulaView('pelada');
+                            }}
+                            className={`rounded-xl border p-2.5 transition space-y-1.5 ${
+                              canPlayerAccess
+                                ? 'cursor-pointer bg-gradient-to-r from-blue-50/70 to-slate-50 border-blue-200/80 hover:border-blue-400 hover:shadow-xs'
+                                : 'cursor-not-allowed bg-slate-50/90 border-slate-200 opacity-90'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="rounded bg-blue-100 text-blue-800 border border-blue-200 px-1.5 py-0.2 text-[8px] font-black uppercase flex items-center gap-0.5">
+                                  <ClipboardList className="h-2.5 w-2.5" />
+                                  Treino
+                                </span>
+                                <span
+                                  className={`flex h-2 w-2 shrink-0 rounded-full ${
+                                    s.status === 'em_andamento'
+                                       ? 'bg-amber-500 animate-pulse'
+                                       : 'bg-emerald-500'
+                                  }`}
+                                ></span>
+                                <span className="text-xs font-black text-slate-900 truncate">
+                                  Súmula {s.matchDate || 'Rodada'}
+                                </span>
+                                <span
+                                  className={`shrink-0 rounded-full px-1.5 py-0.2 text-[9px] font-bold ${
+                                    s.status === 'em_andamento'
+                                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  }`}
+                                >
+                                  {s.status === 'em_andamento' ? 'Em Andamento' : 'Finalizada'}
+                                </span>
+                              </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            {isCoachOrAdmin && (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSumulaToDelete(s);
-                                }}
-                                className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
-                                title="Excluir súmula"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            <span className="text-[11px] font-bold text-blue-600 flex items-center">
-                              Abrir Súmula →
-                            </span>
-                          </div>
-                        </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {isCoachOrAdmin && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSumulaToDelete(s);
+                                    }}
+                                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                                    title="Excluir súmula"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                {!canPlayerAccess ? (
+                                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Lock className="h-3 w-3 text-amber-600" />
+                                    Aguardando Treinador
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] font-bold text-blue-600 flex items-center">
+                                    Abrir Súmula →
+                                  </span>
+                                )}
+                              </div>
+                            </div>
 
                         <div className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1 border border-slate-100 text-[10px]">
                           <span className="text-slate-600 font-medium">

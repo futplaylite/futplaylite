@@ -20,42 +20,8 @@ import {
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { ShareSumulaReceiptModal } from './ShareSumulaReceiptModal';
-
-export interface SumulaData {
-  id: string;
-  status: 'em_andamento' | 'finalizada';
-  matchDate: string;
-  startTime: string;
-  lastUpdated: string;
-  teamName?: string;
-  createdByUserId?: string;
-  createdByName?: string;
-  timerSeconds?: number;
-  isTimerRunning?: boolean;
-  arrivalList: {
-    order: number;
-    playerName: string;
-    confirmed: boolean;
-    note?: string;
-    isGuest?: boolean;
-    isGoalkeeper?: boolean; // Usuário do tipo Goleiro
-  }[];
-  yellowCards: string[];
-  blueCards: string[];
-  redCards: string[];
-  goalkeepers: { num: string; name: string }[];
-  teamsGrid: { teamName: string; matches: string[] }[];
-  gridTimers?: {
-    [cellKey: string]: {
-      updatedAt: number; // timestamp quando foi marcado
-      isLocked: boolean; // se já passou 30s e travou
-    };
-  };
-  teamLineups: {
-    [key: string]: { player: string; goals: number | string; isSub?: boolean }[];
-  };
-  highlightGoals: { player: string; time: string }[];
-}
+import { SumulaData } from '../types/league';
+export type { SumulaData };
 
 const STORAGE_KEY = 'futplay_sumula_pelada_ativa_v1';
 export const ALL_SUMULAS_STORAGE_KEY = 'futplay_todas_sumulas_peladas_v1';
@@ -251,12 +217,19 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   sumulaId,
   isNew,
 }) => {
-  const { currentUser, sumulaStopwatch, profiles, currentPlayerProfile } = useLeague();
+  const {
+    currentUser,
+    sumulaStopwatch,
+    profiles,
+    currentPlayerProfile,
+    finalizePeladaSumula,
+  } = useLeague();
   const isCoachOrAdmin =
     currentUser?.role === 'admin' ||
     currentUser?.role === 'coach' ||
     currentUser?.isTeamOwner === true;
 
+  const [showFinalizeModal, setShowFinalizeModal] = useState<boolean>(false);
   const isDeletedRef = useRef<boolean>(false);
   const userTeam = (currentUser?.teamName || currentPlayerProfile?.teamName || '').trim();
 
@@ -330,6 +303,9 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
     return sanitized;
   });
+
+  const isLocked = sumula.status === 'finalizada';
+  const canEdit = isCoachOrAdmin && !isLocked;
 
   // Ativa o cronômetro no cabeçalho do app enquanto a súmula estiver aberta
   useEffect(() => {
@@ -506,7 +482,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // 1. Lista de Presença
   const handleAddArrival = () => {
-    if (!newArrivalName.trim()) return;
+    if (!canEdit || !newArrivalName.trim()) return;
     const name = newArrivalName.trim().toUpperCase();
     const matchedProfile = profiles.find(
       (p) => p.displayName.trim().toUpperCase() === name
@@ -543,6 +519,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   };
 
   const handleToggleArrival = (idx: number) => {
+    if (!canEdit) return;
     setSumula((prev) => {
       const updatedArrivals = prev.arrivalList.map((item, i) =>
         i === idx ? { ...item, confirmed: !item.confirmed } : item
@@ -561,7 +538,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // 2. Cartões
   const handleAddCard = () => {
-    if (!newCardPlayer.trim()) return;
+    if (!canEdit || !newCardPlayer.trim()) return;
     const name = newCardPlayer.trim().toUpperCase();
     setSumula((prev) => {
       if (selectedCardType === 'amarelo') {
@@ -579,6 +556,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     type: 'yellow' | 'blue' | 'red',
     removeIdx: number
   ) => {
+    if (!canEdit) return;
     setSumula((prev) => {
       if (type === 'yellow') {
         return {
@@ -601,6 +579,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // 3. Goleiros
   const handleGkChange = (idx: number, val: string) => {
+    if (!canEdit) return;
     setSumula((prev) => ({
       ...prev,
       goalkeepers: prev.goalkeepers.map((g, i) =>
@@ -631,6 +610,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // 4. Grade de Pontos (V / E / -)
   const handleGridResultToggle = (tIdx: number, mIdx: number) => {
+    if (!canEdit) return;
     const cellKey = `${tIdx}_${mIdx}`;
     const cellTimer = sumula.gridTimers?.[cellKey];
     
@@ -670,6 +650,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // Iniciar pressão para desbloqueio (3 segundos)
   const handleStartHold = (cellKey: string) => {
+    if (!canEdit) return;
     const cellTimer = sumula.gridTimers?.[cellKey];
     const isLocked =
       cellTimer?.isLocked ||
@@ -716,6 +697,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // 5. Gols da Escalação
   const handleGoalChange = (teamKey: string, pIdx: number, delta: number) => {
+    if (!canEdit) return;
     setSumula((prev) => {
       const list = [...prev.teamLineups[teamKey]];
       const current = Number(list[pIdx].goals) || 0;
@@ -734,6 +716,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     specificPlayerName?: string,
     specificIsSub?: boolean
   ) => {
+    if (!canEdit) return;
     const name = (specificPlayerName || newTeamPlayerName).trim().toUpperCase();
     if (!name) return;
 
@@ -776,6 +759,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // Remover jogador de um Time da súmula
   const handleRemovePlayerFromTeam = (teamKey: string, pIdx: number) => {
+    if (!canEdit) return;
     const playerToRemove = sumula.teamLineups[teamKey]?.[pIdx];
     if (!playerToRemove) return;
 
@@ -802,7 +786,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // 6. Gols Destaque
   const handleAddHighlightGoal = () => {
-    if (!newHighlightPlayer.trim()) return;
+    if (!canEdit || !newHighlightPlayer.trim()) return;
     setSumula((prev) => ({
       ...prev,
       highlightGoals: [
@@ -819,6 +803,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // Reiniciar súmula
   const handleReset = () => {
+    if (!canEdit) return;
     if (window.confirm('Deseja reiniciar a súmula para uma nova rodada em branco?')) {
       const teamProfiles = profiles.filter((p) => {
         const pTeam = (p.teamName || '').trim().toLowerCase();
@@ -867,11 +852,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
               <span>Voltar</span>
             </button>
 
-            {isCoachOrAdmin && (
+            {canEdit && (
               <button
                 type="button"
                 onClick={() => setShowDeleteModal(true)}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-950/60 hover:bg-red-900/80 text-red-300 px-2 py-1 text-[10px] font-bold transition active:scale-95 shrink-0"
+                className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-950/60 hover:bg-red-900/80 text-red-300 px-2 py-1 text-[10px] font-bold transition active:scale-95 shrink-0 cursor-pointer"
                 title="Excluir Súmula"
               >
                 <Trash2 className="h-3 w-3 text-red-400" />
@@ -883,11 +868,16 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
               Data e Horário:
             </span>
 
-            {!isCoachOrAdmin && (
+            {isLocked ? (
+              <span className="rounded bg-emerald-900/80 border border-emerald-500/40 px-2 py-0.5 text-[9px] font-extrabold text-emerald-200 shrink-0 flex items-center gap-1">
+                <Lock className="h-2.5 w-2.5" />
+                Finalizada
+              </span>
+            ) : !isCoachOrAdmin ? (
               <span className="rounded bg-blue-900/80 border border-blue-500/30 px-1.5 py-0.2 text-[8px] font-extrabold text-blue-200 shrink-0">
                 Leitura
               </span>
-            )}
+            ) : null}
           </div>
 
           {/* Lado Direito: Data e Início */}
@@ -896,11 +886,12 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
               <Calendar className="h-3 w-3 text-blue-400 shrink-0" />
               <input
                 type="text"
+                disabled={!canEdit}
                 value={sumula.matchDate}
                 onChange={(e) =>
                   setSumula((prev) => ({ ...prev, matchDate: e.target.value }))
                 }
-                className="bg-transparent border-b border-slate-700 text-white font-mono text-[11px] font-bold w-20 focus:outline-none focus:border-blue-400 text-center"
+                className="bg-transparent border-b border-slate-700 text-white font-mono text-[11px] font-bold w-20 focus:outline-none focus:border-blue-400 disabled:opacity-75 text-center"
                 title="Data do jogo"
               />
             </span>
@@ -909,7 +900,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
               <Clock className="h-3 w-3 text-blue-400 shrink-0" />
               <input
                 type="text"
-                disabled={!isCoachOrAdmin}
+                disabled={!canEdit}
                 value={sumula.startTime}
                 onChange={(e) =>
                   setSumula((prev) => ({ ...prev, startTime: e.target.value }))
@@ -920,6 +911,36 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Banner Informativo de Súmula Finalizada e Homologada */}
+        {isLocked && (
+          <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 border-b border-emerald-500/40 px-3.5 py-2.5 flex items-center justify-between gap-3 text-white">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <Lock className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase text-emerald-300 tracking-wider flex items-center gap-1.5">
+                  Súmula Finalizada & Homologada
+                  <span className="rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-400/30 px-1.5 py-0.2 text-[8px] font-mono">
+                    IMUTÁVEL
+                  </span>
+                </p>
+                <p className="text-[10px] text-emerald-100/80">
+                  Gols, presenças e cartões já foram registrados nas estatísticas oficiais de todos os atletas. Modo somente leitura.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowReceiptModal(true)}
+              className="shrink-0 flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1.5 transition active:scale-95 cursor-pointer shadow-xs"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              <span>Comprovante</span>
+            </button>
+          </div>
+        )}
 
         {/* Conteúdo da Prancheta */}
         <div className="p-2 sm:p-3 space-y-3 text-xs bg-[#fdfdfd]">
@@ -1769,30 +1790,105 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
             <span>Comprovante</span>
           </button>
 
-          {isCoachOrAdmin && (
-            <button
-              type="button"
-              onClick={() => {
-                const finalSumula: SumulaData = {
-                  ...sumula,
-                  timerSeconds: sumulaStopwatch.seconds,
-                  isTimerRunning: sumulaStopwatch.isRunning,
-                  lastUpdated: new Date().toISOString(),
-                };
-                saveSumulaToList(finalSumula);
-                if (onFinish) {
-                  onFinish(finalSumula);
-                }
-                setShowReceiptModal(true);
-              }}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-xs font-black text-white shadow-md hover:from-emerald-500 hover:to-teal-500 active:scale-95 transition cursor-pointer"
-            >
-              <Save className="h-4 w-4" />
-              <span>Gravar & Compartilhar</span>
-            </button>
+          {isCoachOrAdmin && !isLocked && (
+            <div className="flex-1 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const draftSumula: SumulaData = {
+                    ...sumula,
+                    timerSeconds: sumulaStopwatch.seconds,
+                    isTimerRunning: sumulaStopwatch.isRunning,
+                    lastUpdated: new Date().toISOString(),
+                  };
+                  saveSumulaToList(draftSumula);
+                  setSavedBadge(true);
+                  setTimeout(() => setSavedBadge(false), 2500);
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-blue-400 bg-blue-50 px-3 py-2.5 text-xs font-black text-blue-700 hover:bg-blue-100 active:scale-95 transition cursor-pointer shadow-2xs"
+                title="Salva as alterações mantendo a súmula aberta para edição"
+              >
+                <Save className="h-4 w-4" />
+                <span>Salvar Rascunho</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowFinalizeModal(true)}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-xs font-black text-white shadow-md hover:from-emerald-500 hover:to-teal-500 active:scale-95 transition cursor-pointer"
+                title="Fecha a súmula e registra os dados em todos os atletas"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                <span>Finalizar Súmula</span>
+              </button>
+            </div>
+          )}
+
+          {isLocked && (
+            <div className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 border border-emerald-300 py-2.5 px-3 text-xs font-black text-emerald-800">
+              <Lock className="h-4 w-4 text-emerald-600" />
+              <span>Súmula Finalizada & Homologada</span>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Modal de Confirmação de Finalização da Súmula */}
+      {showFinalizeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-black text-slate-900">
+                  Finalizar Súmula da Rodada?
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Ao finalizar, a súmula será fechada definitivamente e <strong>nenhum dado poderá mais ser alterado</strong>.
+                </p>
+                <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+                  Todos os gols, presenças confirmadas, cartões e títulos de Super Capas serão registrados imediatamente na ficha e ranking dos atletas participantes.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowFinalizeModal(false)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition cursor-pointer"
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFinalizeModal(false);
+                  const toFinalize: SumulaData = {
+                    ...sumula,
+                    status: 'finalizada',
+                    timerSeconds: sumulaStopwatch.seconds,
+                    isTimerRunning: false,
+                    lastUpdated: new Date().toISOString(),
+                  };
+                  finalizePeladaSumula(toFinalize);
+                  setSumula(toFinalize);
+                  setShowReceiptModal(true);
+                  if (onFinish) {
+                    onFinish(toFinalize);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-emerald-700 active:scale-95 transition cursor-pointer"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Sim, Finalizar & Homologar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Popup / Modal de Confirmação de Exclusão */}
       {showDeleteModal && (
