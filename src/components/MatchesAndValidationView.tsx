@@ -656,7 +656,7 @@ export const MatchesAndValidationView: React.FC<
                             ⚽ <strong className="text-blue-700">{totalGoals}</strong> gols
                           </span>
                           <span className="text-slate-600 font-medium">
-                            🟨 <strong>{s.yellowCards.length}</strong> · 🟦 <strong>{s.blueCards.length}</strong>{s.redCards && s.redCards.length > 0 ? <> · 🟥 <strong>{s.redCards.length}</strong></> : null}
+                            🟨 <strong>{(s.yellowCards || []).length}</strong> · 🟦 <strong>{(s.blueCards || []).length}</strong> · 🟥 <strong>{(s.redCards || []).length}</strong>
                           </span>
                         </div>
                       </div>
