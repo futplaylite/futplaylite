@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   Check,
@@ -61,6 +61,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     selectedCityId,
     switchActiveUser,
     setActiveUserWithData,
+    removeLocalUserSilently,
     registerNewAthlete,
     notify,
   } = useLeague();
@@ -86,6 +87,14 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [openPositionDropdown, setOpenPositionDropdown] = useState<boolean>(false);
   const [openFootDropdown, setOpenFootDropdown] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const errorBoxRef = useRef<HTMLDivElement>(null);
+
+  // Sempre que surgir um erro, rola a tela até a mensagem (no celular ela ficava fora da tela)
+  useEffect(() => {
+    if (loginError && errorBoxRef.current) {
+      errorBoxRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [loginError]);
 
   /**
    * Localiza usuário existente comparando por e-mail ou por dígitos de telefone/WhatsApp
@@ -269,22 +278,34 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
     setIsSubmitting(true);
 
-    // Verifica se já existe uma conta cadastrada localmente
+    // Verifica se já existe conta: o Supabase é a fonte oficial
     let existing = findUserByIdentifier(trimmedIdentifier);
-    if (!existing && isSupabaseConfigured()) {
+    let staleLocalUserId: string | undefined;
+
+    if (isSupabaseConfigured()) {
+      let remoteUser: User | undefined;
       try {
         const supAccount = await supabaseService.findUserByIdentifier(trimmedIdentifier);
         if (supAccount) {
-          existing = supAccount.user;
+          remoteUser = supAccount.user;
         }
       } catch {
         // Ignora falha de consulta
+      }
+
+      if (remoteUser) {
+        existing = remoteUser;
+      } else if (existing) {
+        // Conta antiga que ficou só neste aparelho e nunca chegou ao banco:
+        // não bloqueia o cadastro; será substituída após salvar no Supabase.
+        staleLocalUserId = existing.id;
+        existing = undefined;
       }
     }
 
     if (existing) {
       setIsSubmitting(false);
-      setLoginError('Já existe uma conta cadastrada com este e-mail ou telefone. Toque na aba "Já Tenho Conta" para entrar.');
+      setLoginError('Já existe uma conta cadastrada com este e-mail ou telefone. Toque em "Fazer Login" para entrar.');
       return;
     }
 
@@ -346,15 +367,23 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           });
           if (!supSync.success) {
             console.error('Falha de sincronização no Supabase:', supSync.error);
+            // Desfaz o registro local para não deixar conta "fantasma" no aparelho
+            removeLocalUserSilently(created.userId);
             setIsSubmitting(false);
             setLoginError(`Erro ao salvar no banco de dados: ${supSync.error || 'Falha na resposta do servidor'}`);
             return;
           }
         } catch (syncErr) {
           console.error('Erro ao conectar com Supabase durante registro:', syncErr);
+          removeLocalUserSilently(created.userId);
           setIsSubmitting(false);
           setLoginError(`Erro de conexão com o Supabase: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`);
           return;
+        }
+
+        // Conta salva no banco: descarta a conta antiga que existia só no aparelho
+        if (staleLocalUserId && staleLocalUserId !== created.userId) {
+          removeLocalUserSilently(staleLocalUserId);
         }
       }
 
@@ -425,7 +454,10 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         {/* Card Principal de Autenticação */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
           {loginError && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700">
+            <div
+              ref={errorBoxRef}
+              className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
+            >
               {loginError}
             </div>
           )}

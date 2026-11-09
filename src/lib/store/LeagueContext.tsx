@@ -142,6 +142,7 @@ interface LeagueContextValue extends LeagueState {
   setSelectedSeasonId: (seasonId: string) => void;
   switchActiveUser: (userId: string) => void;
   setActiveUserWithData: (user: User, profile?: PlayerProfile) => void;
+  removeLocalUserSilently: (userId: string) => void;
   clearNotification: () => void;
   notify: (
     type: NotificationBanner['type'],
@@ -570,6 +571,23 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch {
       // Ignore
     }
+  };
+
+  // Remove um usuário apenas da memória local (sem notificação e sem tocar no Supabase).
+  // Usado para descartar contas antigas que ficaram só no aparelho e nunca chegaram ao banco.
+  const removeLocalUserSilently = (userId: string) => {
+    if (!userId) return;
+    setState((prev) => {
+      const prof = prev.profiles.find((p) => p.userId === userId);
+      return {
+        ...prev,
+        users: prev.users.filter((u) => u.id !== userId),
+        profiles: prev.profiles.filter((p) => p.userId !== userId),
+        seasonEntries: prev.seasonEntries.filter(
+          (se) => !prof || se.playerId !== prof.id
+        ),
+      };
+    });
   };
 
   // RF-001, RF-002, RF-003: Cadastro de Novo Atleta com Classificação Provisória (Bronze, 1000 Elo)
@@ -2302,6 +2320,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         setSelectedSeasonId,
         switchActiveUser,
         setActiveUserWithData,
+        removeLocalUserSilently,
         clearNotification,
         notify,
         registerNewAthlete,
