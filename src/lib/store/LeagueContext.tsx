@@ -386,15 +386,51 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
-    // 1. Sincroniza usuários do Supabase
+    // 1. Sincroniza usuários do Supabase e migra contas locais pré-existentes
     supabaseService.getUsers().then((remoteUsers) => {
-      if (remoteUsers && remoteUsers.length > 0) {
+      const remoteUserList = remoteUsers || [];
+      const remoteEmails = new Set(
+        remoteUserList.map((u) => u.email.toLowerCase())
+      );
+
+      // Se houver contas criadas localmente que ainda não foram para o Supabase, envia automaticamente agora
+      if (state.users.length > 0) {
+        try {
+          const storedPasswords = JSON.parse(
+            localStorage.getItem('futplay_user_passwords') || '{}'
+          );
+          state.users.forEach((localUser) => {
+            if (!remoteEmails.has(localUser.email.toLowerCase())) {
+              const localProfile = state.profiles.find(
+                (p) => p.userId === localUser.id || p.id === localUser.id
+              );
+              if (localProfile) {
+                const pwd =
+                  storedPasswords[localUser.id] ||
+                  storedPasswords[localUser.email?.toLowerCase()] ||
+                  (localUser.whatsappNumber
+                    ? storedPasswords[localUser.whatsappNumber.replace(/\D/g, '')]
+                    : undefined);
+                supabaseService.registerAthleteInSupabase({
+                  user: localUser,
+                  profile: localProfile,
+                  password: pwd,
+                });
+              }
+            }
+          });
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (remoteUserList.length > 0) {
         setState((prev) => {
           const existingIds = new Set(prev.users.map((u) => u.id));
           const existingEmails = new Set(
             prev.users.map((u) => u.email.toLowerCase())
           );
-          const toAdd = remoteUsers.filter(
+          const toAdd = remoteUserList.filter(
             (u) =>
               !existingIds.has(u.id) &&
               !existingEmails.has(u.email.toLowerCase())

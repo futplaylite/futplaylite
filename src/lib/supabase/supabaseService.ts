@@ -193,10 +193,31 @@ export const supabaseService = {
     }
 
     try {
+      const isValidUUID = (str?: string) =>
+        Boolean(
+          str &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              str
+            )
+        );
+
+      const finalUserId = isValidUUID(params.user.id)
+        ? params.user.id
+        : generateUUID();
+      const finalProfileId = isValidUUID(params.profile.id)
+        ? params.profile.id
+        : generateUUID();
+      const finalCityId = isValidUUID(params.profile.cityId)
+        ? params.profile.cityId
+        : '11111111-1111-4111-8111-111111111101';
+      const finalDivisionId = isValidUUID(params.profile.currentDivisionId)
+        ? params.profile.currentDivisionId
+        : '22222222-2222-4222-8222-222222222201';
+
       // 1. Inserir ou atualizar na tabela users (com fallback caso colunas estendidas ainda não existam)
       let uErr: any = null;
       const { error: fullErr } = await supabase.from('users').upsert({
-        id: params.user.id,
+        id: finalUserId,
         email: params.user.email.toLowerCase(),
         whatsapp_number: params.user.whatsappNumber || null,
         password_hash: params.password || null,
@@ -208,7 +229,7 @@ export const supabaseService = {
       if (fullErr) {
         if (fullErr.message?.includes('does not exist')) {
           const { error: baseErr } = await supabase.from('users').upsert({
-            id: params.user.id,
+            id: finalUserId,
             email: params.user.email.toLowerCase(),
             role: params.user.role || 'player',
             status: params.user.status || 'ativa',
@@ -227,20 +248,17 @@ export const supabaseService = {
 
       // 2. Inserir ou atualizar perfil de atleta
       const { error: pErr } = await supabase.from('player_profiles').upsert({
-        id: params.profile.id,
-        user_id: params.user.id,
+        id: finalProfileId,
+        user_id: finalUserId,
         display_name: params.profile.displayName,
-        city_id:
-          params.profile.cityId || '11111111-1111-4111-8111-111111111101',
+        city_id: finalCityId,
         position: params.profile.position,
         dominant_foot: params.profile.dominantFoot,
         profile_visibility: params.profile.profileVisibility || 'publico',
         current_rating: params.profile.currentRating || 1000,
         rating_uncertainty: 100,
         is_provisional: true,
-        current_division_id:
-          params.profile.currentDivisionId ||
-          '22222222-2222-4222-8222-222222222201',
+        current_division_id: finalDivisionId,
         updated_at: new Date().toISOString(),
       });
 
