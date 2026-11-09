@@ -926,52 +926,63 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     <div className="-mx-2.5 sm:mx-0 space-y-3 pb-8 relative">
       {/* Prancheta Física Estilizada com laterais expandidas */}
       <div className="rounded-xl sm:rounded-2xl bg-white shadow-md border border-slate-300 text-slate-800 overflow-hidden">
-        {/* CABEÇALHO DO CARD: EXCLUIR ANTES DO TÍTULO + SÚMULA DE TREINO + DATA/HORA */}
-        <div className="bg-slate-900 text-white px-3 sm:px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2">
-          {/* Lado Esquerdo: Botão Voltar + Excluir Súmula + Título Oficial */}
-          <div className="flex items-center gap-1.5 min-w-0">
-            <button
-              type="button"
-              onClick={handleExit}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 text-[10px] font-bold transition active:scale-95 shrink-0"
-              title="Voltar para a lista de partidas"
-            >
-              <ArrowLeft className="h-3 w-3 text-blue-400" />
-              <span>Voltar</span>
-            </button>
-
-            {canEdit && (
+        {/* CABEÇALHO DO CARD: ORGANIZADO EM DUAS LINHAS ALINHADAS */}
+        <div className="bg-slate-900 text-white px-3 sm:px-3.5 py-2.5 border-b border-slate-800 space-y-2">
+          {/* Linha 1: Botões de Ação (Voltar / Excluir) + Status / Título da Súmula */}
+          <div className="flex items-center justify-between gap-2">
+            {/* Lado Esquerdo: Botões Voltar e Excluir */}
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                onClick={() => setShowDeleteModal(true)}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-950/60 hover:bg-red-900/80 text-red-300 px-2 py-1 text-[10px] font-bold transition active:scale-95 shrink-0 cursor-pointer"
-                title="Excluir Súmula"
+                onClick={handleExit}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 text-xs font-bold transition active:scale-95 shadow-xs"
+                title="Voltar para a lista de partidas"
               >
-                <Trash2 className="h-3 w-3 text-red-400" />
-                <span>Excluir</span>
+                <ArrowLeft className="h-3.5 w-3.5 text-blue-400" />
+                <span>Voltar</span>
               </button>
-            )}
 
-            <span className="text-xs font-black uppercase tracking-wider text-slate-200 truncate">
-              Data e Horário:
-            </span>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-950/60 hover:bg-red-900/80 text-red-300 px-2.5 py-1.5 text-xs font-bold transition active:scale-95 cursor-pointer shadow-xs"
+                  title="Excluir Súmula"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                  <span>Excluir</span>
+                </button>
+              )}
+            </div>
 
-            {isLocked ? (
-              <span className="rounded bg-emerald-900/80 border border-emerald-500/40 px-2 py-0.5 text-[9px] font-extrabold text-emerald-200 shrink-0 flex items-center gap-1">
-                <Lock className="h-2.5 w-2.5" />
-                Finalizada
-              </span>
-            ) : !isCoachOrAdmin ? (
-              <span className="rounded bg-blue-900/80 border border-blue-500/30 px-1.5 py-0.2 text-[8px] font-extrabold text-blue-200 shrink-0">
-                Leitura
-              </span>
-            ) : null}
+            {/* Lado Direito: Badge de Status */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              {isLocked ? (
+                <span className="rounded-full bg-emerald-900/80 border border-emerald-500/40 px-2.5 py-1 text-[10px] font-extrabold text-emerald-200 shrink-0 flex items-center gap-1 shadow-2xs">
+                  <Lock className="h-3 w-3 text-emerald-400" />
+                  <span>Finalizada</span>
+                </span>
+              ) : !isCoachOrAdmin ? (
+                <span className="rounded-full bg-blue-900/80 border border-blue-500/30 px-2.5 py-1 text-[10px] font-extrabold text-blue-200 shrink-0">
+                  Somente Leitura
+                </span>
+              ) : (
+                <span className="rounded-full bg-slate-800 border border-slate-700 px-2.5 py-1 text-[10px] font-bold text-slate-300 shrink-0 flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Súmula Ativa</span>
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Lado Direito: Data e Início */}
-          <div className="flex items-center gap-2 text-xs text-slate-300 shrink-0">
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3 w-3 text-blue-400 shrink-0" />
+          {/* Linha 2: Data da Rodada e Horário de Início em Grid Alinhado */}
+          <div className="grid grid-cols-2 gap-2 pt-0.5">
+            {/* Bloco 1: Data do Jogo */}
+            <div className="flex items-center justify-between gap-1.5 rounded-lg border border-slate-800 bg-slate-950/80 px-2.5 py-1.5 text-slate-300">
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 shrink-0">
+                <Calendar className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                <span>Data:</span>
+              </span>
               <input
                 type="text"
                 disabled={!canEdit}
@@ -979,13 +990,18 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                 onChange={(e) =>
                   setSumula((prev) => ({ ...prev, matchDate: e.target.value }))
                 }
-                className="bg-transparent border-b border-slate-700 text-white font-mono text-[11px] font-bold w-20 focus:outline-none focus:border-blue-400 disabled:opacity-75 text-center"
+                placeholder="DD/MM/AAAA"
+                className="bg-transparent text-white font-mono text-xs font-bold w-full text-right focus:outline-none focus:text-blue-300 disabled:opacity-75"
                 title="Data do jogo"
               />
-            </span>
-            <span className="text-slate-600">•</span>
-            <span className="flex items-center gap-1">
-              <Clock className="h-3 w-3 text-blue-400 shrink-0" />
+            </div>
+
+            {/* Bloco 2: Horário de Início */}
+            <div className="flex items-center justify-between gap-1.5 rounded-lg border border-slate-800 bg-slate-950/80 px-2.5 py-1.5 text-slate-300">
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400 shrink-0">
+                <Clock className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+                <span>Início:</span>
+              </span>
               <input
                 type="text"
                 disabled={!canEdit}
@@ -993,10 +1009,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                 onChange={(e) =>
                   setSumula((prev) => ({ ...prev, startTime: e.target.value }))
                 }
-                className="bg-transparent border-b border-slate-700 text-white font-mono text-[11px] font-bold w-12 focus:outline-none focus:border-blue-400 disabled:opacity-75 text-center"
+                placeholder="HH:MM"
+                className="bg-transparent text-white font-mono text-xs font-bold w-full text-right focus:outline-none focus:text-blue-300 disabled:opacity-75"
                 title="Horário de início"
               />
-            </span>
+            </div>
           </div>
         </div>
 
@@ -1907,29 +1924,34 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
           </div>
         </div>
 
-        {/* Rodapé de Ações */}
-        <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={handleExit}
-            className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition cursor-pointer"
-          >
-            ← Voltar
-          </button>
+        {/* Rodapé de Ações da Súmula: Organizado em 2 Linhas Perfeitamente Alinhadas */}
+        <div className="p-3 bg-slate-50 border-t border-slate-200 space-y-2">
+          {/* Linha 1: Navegação & Comprovante (50% / 50%) */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleExit}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition cursor-pointer shadow-2xs"
+              title="Voltar para a lista de partidas"
+            >
+              <ArrowLeft className="h-3.5 w-3.5 text-slate-500" />
+              <span>Voltar</span>
+            </button>
 
-          {/* Botão para Gerar e Compartilhar Imagem do Comprovante da Súmula */}
-          <button
-            type="button"
-            onClick={() => setShowReceiptModal(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400 bg-emerald-50 px-3 py-2.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 active:scale-95 transition cursor-pointer shadow-2xs"
-            title="Gerar e compartilhar comprovante visual da súmula"
-          >
-            <Share2 className="h-4 w-4 text-emerald-600" />
-            <span>Comprovante</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setShowReceiptModal(true)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 active:scale-95 transition cursor-pointer shadow-2xs"
+              title="Gerar e compartilhar comprovante visual da súmula"
+            >
+              <Share2 className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Comprovante</span>
+            </button>
+          </div>
 
+          {/* Linha 2: Ações Principais da Súmula */}
           {isCoachOrAdmin && !isLocked && (
-            <div className="flex-1 flex items-center gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -1943,17 +1965,30 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                   setSavedBadge(true);
                   setTimeout(() => setSavedBadge(false), 2500);
                 }}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-blue-400 bg-blue-50 px-3 py-2.5 text-xs font-black text-blue-700 hover:bg-blue-100 active:scale-95 transition cursor-pointer shadow-2xs"
+                className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-xs font-black transition active:scale-95 cursor-pointer shadow-2xs ${
+                  savedBadge
+                    ? 'border-emerald-400 bg-emerald-50 text-emerald-800'
+                    : 'border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                }`}
                 title="Salva as alterações mantendo a súmula aberta para edição"
               >
-                <Save className="h-4 w-4" />
-                <span>Salvar Rascunho</span>
+                {savedBadge ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <span>✓ Salvo!</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    <span>Salvar Rascunho</span>
+                  </>
+                )}
               </button>
 
               <button
                 type="button"
                 onClick={() => setShowFinalizeModal(true)}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-xs font-black text-white shadow-md hover:from-emerald-500 hover:to-teal-500 active:scale-95 transition cursor-pointer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-3.5 py-2.5 text-xs font-black text-white shadow-md hover:from-emerald-500 hover:to-teal-500 active:scale-95 transition cursor-pointer"
                 title="Fecha a súmula e registra os dados em todos os atletas"
               >
                 <CheckCircle2 className="h-4 w-4" />
@@ -1963,7 +1998,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
           )}
 
           {isLocked && (
-            <div className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-emerald-50 border border-emerald-300 py-2.5 px-3 text-xs font-black text-emerald-800">
+            <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 border border-emerald-300 py-2.5 px-3 text-xs font-black text-emerald-800 shadow-2xs">
               <Lock className="h-4 w-4 text-emerald-600" />
               <span>Súmula Finalizada & Homologada</span>
             </div>
