@@ -89,6 +89,29 @@ function markFirstAccessCompletedInStorage(userId: string, email?: string) {
   }
 }
 
+function unmarkFirstAccessCompletedInStorage(
+  userId?: string,
+  email?: string,
+  whatsappNumber?: string
+) {
+  try {
+    const set = getCompletedFirstAccessSet();
+    if (userId) set.delete(userId.toLowerCase());
+    if (email) set.delete(email.trim().toLowerCase());
+    const digits = (whatsappNumber || '').replace(/\D/g, '');
+    if (digits) {
+      set.delete(digits);
+      set.delete(`${digits}@celular.futplay.com`);
+    }
+    localStorage.setItem(
+      COMPLETED_FIRST_ACCESS_KEY,
+      JSON.stringify(Array.from(set))
+    );
+  } catch {
+    // Ignore storage write errors
+  }
+}
+
 export interface NotificationBanner {
   id: string;
   type: 'success' | 'error' | 'warning' | 'info';
@@ -468,8 +491,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       onboardingStep: 1,
     } as User);
   const completedSet = getCompletedFirstAccessSet();
+  const isExplicitlyInOnboarding =
+    rawCurrentUser.onboardingCompleted === false &&
+    (rawCurrentUser.onboardingStep || 1) < 4;
+
   const isAlreadyCompleted =
     Boolean(rawCurrentUser.id) &&
+    !isExplicitlyInOnboarding &&
     (rawCurrentUser.onboardingCompleted === true ||
       (rawCurrentUser.onboardingStep || 1) >= 4 ||
       completedSet.has(rawCurrentUser.id.toLowerCase()) ||
@@ -592,6 +620,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       onboardingStep: 1,
       onboardingCompleted: false,
     };
+
+    // Garante que uma nova conta SEMPRE passe pelos passos de primeiro acesso
+    unmarkFirstAccessCompletedInStorage(
+      newUserId,
+      newUser.email,
+      newUser.whatsappNumber
+    );
 
     const targetCityId = params.cityId || selectedCityId || '11111111-1111-4111-8111-111111111101';
     const targetDivisionId = '22222222-2222-4222-8222-222222222201';
@@ -755,7 +790,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
-    // 2. Remove senhas ou credenciais locais
+    // 2. Remove senhas, credenciais locais e histórico de primeiro acesso
+    unmarkFirstAccessCompletedInStorage(
+      userIdToDelete,
+      userToDelete?.email,
+      userToDelete?.whatsappNumber
+    );
     try {
       const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
       delete stored[userIdToDelete];
@@ -2162,6 +2202,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       ),
     }));
 
+    if (isSupabaseConfigured()) {
+      supabaseService.updateProfile(currentUser.id, {
+        displayName: trimmedName,
+        avatarUrl,
+      });
+    }
+
     notify(
       'success',
       'Passo 1 de 3 Concluído!',
@@ -2245,6 +2292,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           : p
       ),
     }));
+
+    if (isSupabaseConfigured() && position) {
+      supabaseService.updateProfile(currentUser.id, { position });
+    }
 
     notify(
       'success',

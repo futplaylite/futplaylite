@@ -236,7 +236,14 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       }
 
       // Ativa o usuário e perfil no estado da liga e persiste sessão
-      setActiveUserWithData(existingUser, matchedProfile);
+      setActiveUserWithData(
+        {
+          ...existingUser,
+          onboardingCompleted: true,
+          onboardingStep: 4,
+        },
+        matchedProfile
+      );
       onAuthenticated();
       return;
     }
@@ -408,6 +415,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           role: 'player',
           status: 'ativa',
           createdAt: new Date().toISOString(),
+          onboardingStep: 1,
+          onboardingCompleted: false,
         },
         created
       );

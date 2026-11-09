@@ -1,8 +1,11 @@
 import { supabase, isSupabaseConfigured } from './client';
 import {
+  DominantFoot,
   MonthlyPaymentRecord,
   PeladaMonthlyConfig,
+  PlayerPosition,
   PlayerProfile,
+  ProfileVisibility,
   User,
 } from '../../types/league';
 
@@ -403,6 +406,48 @@ export const supabaseService = {
       return true;
     } catch (err) {
       console.error('Erro ao excluir usuário no Supabase:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Atualiza dados do perfil esportivo no Supabase (foto, nome, posição, pé dominante)
+   */
+  async updateProfile(
+    userId: string,
+    updates: {
+      displayName?: string;
+      avatarUrl?: string;
+      position?: PlayerPosition;
+      dominantFoot?: DominantFoot;
+      profileVisibility?: ProfileVisibility;
+    }
+  ): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase || !userId) return false;
+    try {
+      const payload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (updates.displayName !== undefined) payload.display_name = updates.displayName;
+      if (updates.avatarUrl !== undefined) payload.avatar_path = updates.avatarUrl;
+      if (updates.position !== undefined) payload.position = updates.position;
+      if (updates.dominantFoot !== undefined) payload.dominant_foot = updates.dominantFoot;
+      if (updates.profileVisibility !== undefined) {
+        payload.profile_visibility = updates.profileVisibility;
+      }
+
+      const { error } = await supabase
+        .from('player_profiles')
+        .update(payload)
+        .eq('user_id', userId);
+
+      if (error) {
+        console.warn('Aviso ao atualizar perfil no Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Erro ao atualizar perfil no Supabase:', err);
       return false;
     }
   },
