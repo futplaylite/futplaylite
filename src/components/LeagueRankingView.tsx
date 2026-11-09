@@ -424,7 +424,7 @@ export const LeagueRankingView: React.FC<LeagueRankingViewProps> = ({
   const userTeamName =
     currentUser?.teamName ||
     currentPlayerProfile?.teamName ||
-    'Real Planalto FC';
+    'Meu Time';
 
   const userTeamCrest =
     currentUser?.teamCrestUrl ||

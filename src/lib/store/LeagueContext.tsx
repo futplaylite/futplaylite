@@ -25,6 +25,7 @@ import {
   SeasonEntry,
   TeamModality,
   User,
+  UserRole,
 } from '../../types/league';
 import {
   INITIAL_AUDIT_LOGS,
@@ -190,6 +191,12 @@ interface LeagueContextValue extends LeagueState {
     dominantFoot: DominantFoot;
     profileVisibility: ProfileVisibility;
   }) => boolean;
+  updateTeamInfo: (params: {
+    teamName: string;
+    teamCity?: string;
+    teamCrestUrl?: string;
+    teamModality?: TeamModality;
+  }) => boolean;
   deleteUserAccount: (userId?: string) => Promise<boolean>;
   updatePlayerSkills: (
     playerId: string,
@@ -274,7 +281,7 @@ export const DEFAULT_MONTHLY_CONFIG: PeladaMonthlyConfig = {
   dueDay: 10,
   pixKey: '77988001122',
   pixKeyType: 'Celular',
-  pixReceiverName: 'Rosália Esportes / Real Planalto FC',
+  pixReceiverName: 'Rosália Esportes',
 };
 
 function getInitialState(): LeagueState {
@@ -497,11 +504,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const isAlreadyCompleted =
     Boolean(rawCurrentUser.id) &&
-    !isExplicitlyInOnboarding &&
-    (rawCurrentUser.onboardingCompleted === true ||
-      (rawCurrentUser.onboardingStep || 1) >= 4 ||
-      completedSet.has(rawCurrentUser.id.toLowerCase()) ||
-      (rawCurrentUser.email && completedSet.has(rawCurrentUser.email.toLowerCase())));
+    (rawCurrentUser.role === 'admin' ||
+      (!isExplicitlyInOnboarding &&
+        (rawCurrentUser.onboardingCompleted === true ||
+          (rawCurrentUser.onboardingStep || 1) >= 4 ||
+          completedSet.has(rawCurrentUser.id.toLowerCase()) ||
+          (rawCurrentUser.email && completedSet.has(rawCurrentUser.email.toLowerCase())))));
 
   const currentUser: User = isAlreadyCompleted
     ? {
@@ -611,9 +619,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       id: newUserId,
       email: params.email?.trim() || `${trimmedName.toLowerCase().replace(/\s+/g, '')}@futplay.com`,
       whatsappNumber: params.whatsappNumber?.trim() || undefined,
-      role: isFirstUser ? 'coach' : 'player',
-      isTeamOwner: isFirstUser,
-      teamName: isFirstUser ? 'Real Planalto FC' : undefined,
+      role: 'player',
+      isTeamOwner: false,
+      teamName: undefined,
       teamCity: 'Planalto - BA',
       status: 'ativa',
       createdAt: now,
@@ -648,8 +656,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       isProvisional: true, // Classificação provisória (Seção 2.3 / CA-021)
       currentDivisionId: targetDivisionId,
       totalValidatedMatches: 0,
-      isTeamOwner: isFirstUser,
-      teamName: isFirstUser ? 'Real Planalto FC' : undefined,
+      isTeamOwner: false,
+      teamName: undefined,
       teamCity: 'Planalto - BA',
       experimentalPositionScore: null,
       badges: ['Estreante Planalto'],
@@ -765,6 +773,94 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       'success',
       'Perfil esportivo atualizado',
       'Suas preferências e visibilidade pública (LGPD) foram salvas com sucesso.'
+    );
+    return true;
+  };
+
+  const updateTeamInfo: LeagueContextValue['updateTeamInfo'] = (params) => {
+    const trimmedTeam = params.teamName.trim();
+    if (trimmedTeam.length < 2) {
+      notify(
+        'error',
+        'Nome inválido',
+        'O nome da equipe deve ter no mínimo 2 caracteres.'
+      );
+      return false;
+    }
+
+    const trimmedCity = params.teamCity?.trim() || 'Planalto - BA';
+    const oldTeamName = (currentUser.teamName || currentPlayerProfile?.teamName || '').trim();
+    const now = new Date().toISOString();
+
+    setState((prev) => {
+      const updatedUsers = prev.users.map((u) => {
+        if (u.id === currentUser.id) {
+          return {
+            ...u,
+            teamName: trimmedTeam,
+            teamCity: trimmedCity,
+            teamCrestUrl: params.teamCrestUrl !== undefined ? params.teamCrestUrl : u.teamCrestUrl,
+            teamModality: params.teamModality || u.teamModality || 'society',
+            isTeamOwner: true,
+            role: (u.role === 'admin' ? 'admin' : 'coach') as UserRole,
+          };
+        }
+        if (
+          oldTeamName &&
+          u.teamName &&
+          u.teamName.trim().toLowerCase() === oldTeamName.toLowerCase()
+        ) {
+          return {
+            ...u,
+            teamName: trimmedTeam,
+            teamCity: trimmedCity,
+            teamCrestUrl: params.teamCrestUrl !== undefined ? params.teamCrestUrl : u.teamCrestUrl,
+            teamModality: params.teamModality || u.teamModality,
+          };
+        }
+        return u;
+      });
+
+      const updatedProfiles = prev.profiles.map((p) => {
+        if (p.userId === currentUser.id) {
+          return {
+            ...p,
+            teamName: trimmedTeam,
+            teamCity: trimmedCity,
+            teamCrestUrl: params.teamCrestUrl !== undefined ? params.teamCrestUrl : p.teamCrestUrl,
+            teamModality: params.teamModality || p.teamModality || 'society',
+            isTeamOwner: true,
+            updatedAt: now,
+          };
+        }
+        if (
+          oldTeamName &&
+          p.teamName &&
+          p.teamName.trim().toLowerCase() === oldTeamName.toLowerCase()
+        ) {
+          return {
+            ...p,
+            teamName: trimmedTeam,
+            teamCity: trimmedCity,
+            teamCrestUrl: params.teamCrestUrl !== undefined ? params.teamCrestUrl : p.teamCrestUrl,
+            teamModality: params.teamModality || p.teamModality,
+            updatedAt: now,
+          };
+        }
+        return p;
+      });
+
+      return {
+        ...prev,
+        users: updatedUsers,
+        profiles: updatedProfiles,
+      };
+    });
+
+    notify(
+      'success',
+      'Time Atualizado com Sucesso!',
+      `A equipe oficial agora é "${trimmedTeam}".`
     );
     return true;
   };
@@ -2351,6 +2447,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         notify,
         registerNewAthlete,
         updateOwnProfile,
+        updateTeamInfo,
         deleteUserAccount,
         updatePlayerSkills,
         saveUserWhatsapp,

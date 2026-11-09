@@ -256,14 +256,14 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     currentUser?.isTeamOwner === true;
 
   const isDeletedRef = useRef<boolean>(false);
-  const userTeam = currentUser?.teamName || currentPlayerProfile?.teamName || 'Real Planalto FC';
+  const userTeam = (currentUser?.teamName || currentPlayerProfile?.teamName || '').trim();
 
   // Carrega a súmula específica ou cria uma nova com id único para o time correspondente
   const [sumula, setSumula] = useState<SumulaData>(() => {
     // Busca atletas reais cadastrados no time atual
     const teamProfiles = profiles.filter((p) => {
       const pTeam = (p.teamName || '').trim().toLowerCase();
-      return pTeam === userTeam.trim().toLowerCase();
+      return Boolean(userTeam) && pTeam === userTeam.toLowerCase();
     });
 
     const activeAthletes = teamProfiles.length > 0
@@ -283,7 +283,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
       const newId = `sumula-pelada-${Date.now()}`;
       return createCleanSumula({
         id: newId,
-        teamName: userTeam,
+        teamName: userTeam || 'Meu Time',
         createdByUserId: currentUser.id,
         createdByName: currentPlayerProfile?.displayName || currentUser.email.split('@')[0],
         arrivalList: teamArrivals,
@@ -1602,7 +1602,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
           }}
           data={{
             sumula,
-            teamName: 'Real Planalto FC',
+            teamName: sumula.teamName || userTeam || 'Meu Time',
             venueName: 'Arena Planalto Society',
           }}
         />

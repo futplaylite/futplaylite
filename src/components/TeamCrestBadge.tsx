@@ -8,7 +8,7 @@ interface TeamCrestBadgeProps {
 }
 
 export const TeamCrestBadge: React.FC<TeamCrestBadgeProps> = ({
-  name = 'Real Planalto FC',
+  name = 'Meu Time',
   crestUrl,
   size = 38,
   className = '',

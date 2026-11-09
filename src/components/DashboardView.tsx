@@ -325,7 +325,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const userTeamNameLower = (
     currentUser?.teamName ||
     activeProfile.teamName ||
-    'Real Planalto FC'
+    ''
   ).trim().toLowerCase();
 
   const myTeamSumulas = useMemo(() => {
@@ -646,7 +646,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     const myTeamLower = (
       activeProfile.teamName ||
       currentUser?.teamName ||
-      'Real Planalto FC'
+      ''
     ).toLowerCase().trim();
 
     for (let offset = -4; offset <= 20; offset++) {
@@ -801,7 +801,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           matchDate: formatPeladaDateExtended(peladaConfig.date),
           startTime: peladaConfig.time,
           lastUpdated: new Date().toISOString(),
-          teamName: activeProfile.teamName || currentUser?.teamName || 'Real Planalto FC',
+          teamName: activeProfile.teamName || currentUser?.teamName || 'Meu Time',
           createdByUserId: currentUser?.id,
           createdByName: activeProfile.displayName,
           timerSeconds: 0,
@@ -936,7 +936,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const userTeamName =
     currentUser?.teamName ||
     activeProfile.teamName ||
-    'Real Planalto FC';
+    'Meu Time';
   const userTeamCrest =
     currentUser?.teamCrestUrl || activeProfile.teamCrestUrl;
 

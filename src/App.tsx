@@ -199,9 +199,12 @@ const MainMobileShell: React.FC = () => {
     );
   }
 
+  // Contas de Administrador da Liga nunca passam pelos passos de integração de atletas
+  const isAdmin = currentUser.role === 'admin';
+
   // 2. TELA DE PRIMEIRO ACESSO: BOAS-VINDAS + CADASTRO DE WHATSAPP PARA NOTIFICAÇÕES
-  // Exibe APENAS no primeiro acesso da conta (nunca se repete após concluir a confirmação)
-  if (!currentUser.onboardingCompleted && !currentUser.whatsappNumber) {
+  // Exibe APENAS no primeiro acesso da conta de atleta (nunca para administradores)
+  if (!isAdmin && !currentUser.onboardingCompleted && !currentUser.whatsappNumber) {
     return (
       <WhatsappOnboardingView
         onComplete={() => {
@@ -214,6 +217,7 @@ const MainMobileShell: React.FC = () => {
   // 3. PASSOS DE PRIMEIRO ACESSO APÓS SALVAR O WHATSAPP (Passos 1, 2 e 3)
   // Ao confirmar a entrada no time ou concluir os convites, encerra os passos definitivamente e nunca se repete
   if (
+    !isAdmin &&
     !currentUser.onboardingCompleted &&
     (currentUser.onboardingStep || 1) < 4
   ) {
@@ -236,7 +240,7 @@ const MainMobileShell: React.FC = () => {
   const userTeamName =
     currentUser.teamName ||
     currentPlayerProfile?.teamName ||
-    'Real Planalto FC';
+    'Meu Time';
   const userTeamCrest =
     currentUser.teamCrestUrl || currentPlayerProfile?.teamCrestUrl;
   const userDisplayName =
@@ -244,7 +248,6 @@ const MainMobileShell: React.FC = () => {
   const userAvatarUrl =
     currentPlayerProfile?.avatarUrl || currentUser.avatarUrl;
   const isCoach = currentUser.role === 'coach' || currentUser.isTeamOwner;
-  const isAdmin = currentUser.role === 'admin';
   const isTeamCreator =
     currentUser?.isTeamOwner ||
     currentUser?.role === 'coach' ||

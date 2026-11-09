@@ -97,7 +97,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
   const [editAmount, setEditAmount] = useState<number>(monthlyConfig?.monthlyAmount || 30);
   const [editPixKey, setEditPixKey] = useState<string>(monthlyConfig?.pixKey || '77988001122');
   const [editPixReceiver, setEditPixReceiver] = useState<string>(
-    monthlyConfig?.pixReceiverName || 'Rosália Esportes / Real Planalto FC'
+    monthlyConfig?.pixReceiverName || 'Rosália Esportes'
   );
 
   const cityPlayers = useMemo(() => {
@@ -168,7 +168,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     const monthName = formatYearMonth(selectedMonth);
     const amount = monthlyConfig?.monthlyAmount || 30;
     const pix = monthlyConfig?.pixKey || '77988001122';
-    const receiver = monthlyConfig?.pixReceiverName || 'Rosália Esportes / Real Planalto FC';
+    const receiver = monthlyConfig?.pixReceiverName || 'Rosália Esportes';
 
     const message = `Fala ${player.displayName}! ⚽\nPassando para lembrar da mensalidade da pelada de *${monthName}* no valor de *R$ ${amount},00*.\n\n🔑 Chave PIX: *${pix}*\nTitular: *${receiver}*\n\nAssim que fizer o pagamento, envia o comprovante aqui para darmos baixa no sistema! Tmj! 👊`;
 
@@ -339,7 +339,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
               type="text"
               value={editPixReceiver}
               onChange={(e) => setEditPixReceiver(e.target.value)}
-              placeholder="Ex: Rosália Esportes / Real Planalto FC"
+              placeholder="Ex: Rosália Esportes"
               className="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:border-blue-500 focus:outline-none"
             />
           </div>
@@ -416,7 +416,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
               {monthlyConfig?.pixKey || '77988001122'}
             </p>
             <p className="text-[10px] text-emerald-200 truncate mt-0.5">
-              Titular: {monthlyConfig?.pixReceiverName || 'Rosália Esportes / Real Planalto FC'}
+              Titular: {monthlyConfig?.pixReceiverName || 'Rosália Esportes'}
             </p>
             <p className="text-[10px] text-amber-300 font-bold mt-0.5">
               Valor: R$ {monthlyConfig?.monthlyAmount || 30},00 por atleta

@@ -108,7 +108,7 @@ export const AthleteProfileAndCardView: React.FC<
   const userTeamName =
     targetProfile.teamName ||
     (isOwnProfile ? currentUser?.teamName : undefined) ||
-    'Real Planalto FC';
+    'Meu Time';
 
   const userTeamCrest =
     targetProfile.teamCrestUrl ||

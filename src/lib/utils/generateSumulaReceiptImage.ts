@@ -9,7 +9,7 @@ export interface SumulaReceiptImageData {
 export async function generateSumulaReceiptImage(
   data: SumulaReceiptImageData
 ): Promise<{ dataUrl: string; file: File }> {
-  const { sumula, teamName = 'Real Planalto FC', venueName = 'Arena Planalto Society' } = data;
+  const { sumula, teamName = sumula.teamName || 'Meu Time', venueName = 'Arena Society' } = data;
 
   const width = 1080;
   const height = 1520;

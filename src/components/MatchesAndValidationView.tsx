@@ -61,9 +61,9 @@ export const MatchesAndValidationView: React.FC<
 
   // Campos para agendamento de novo Jogo Oficial
   const [newOfficialHomeTeam, setNewOfficialHomeTeam] = useState<string>(
-    currentUser.teamName || 'Real Planalto FC'
+    currentUser.teamName || currentPlayerProfile?.teamName || 'Meu Time'
   );
-  const [newOfficialAwayTeam, setNewOfficialAwayTeam] = useState<string>('Unidos da Vila');
+  const [newOfficialAwayTeam, setNewOfficialAwayTeam] = useState<string>('');
   const [newOfficialDate, setNewOfficialDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
@@ -73,27 +73,20 @@ export const MatchesAndValidationView: React.FC<
   const [newOfficialVenue, setNewOfficialVenue] = useState<string>('Arena Planalto Society');
   const [newOfficialFormat, setNewOfficialFormat] = useState<MatchFormat>('7v7');
 
-  // Lista consolidada de times cadastrados no app
+  // Lista consolidada de times cadastrados no app por atletas/treinadores reais
   const allRegisteredTeamNames = useMemo(() => {
-    const set = new Set<string>([
-      'Real Planalto FC',
-      'Unidos da Vila',
-      'Falcões do Sudoeste',
-      'Areia de Ouro Planalto',
-      'Barcelona do Bairro',
-      'Chelsea Planalto',
-      'Boleiros de Ouro',
-      'Rosália EC',
-    ]);
+    const set = new Set<string>();
+    const myTeam = (currentUser.teamName || currentPlayerProfile?.teamName || '').trim();
+    if (myTeam) set.add(myTeam);
     profiles.forEach((p) => {
-      if (p.teamName) set.add(p.teamName);
+      if (p.teamName && p.teamName.trim()) set.add(p.teamName.trim());
     });
     matches.forEach((m) => {
       if (m.homeTeamName) set.add(m.homeTeamName);
       if (m.awayTeamName) set.add(m.awayTeamName);
     });
     return Array.from(set);
-  }, [profiles, matches]);
+  }, [profiles, matches, currentUser.teamName, currentPlayerProfile?.teamName]);
 
   const getTeamCrest = (teamName: string) => {
     const p = profiles.find((prof) => prof.teamName === teamName && prof.teamCrestUrl);
@@ -124,10 +117,10 @@ export const MatchesAndValidationView: React.FC<
       format: newOfficialFormat,
       homeTeamName: newOfficialHomeTeam,
       awayTeamName: newOfficialAwayTeam,
-      homePlayerIds: homePlayers.length > 0 ? homePlayers : ['player-henrique'],
-      awayPlayerIds: awayPlayers.length > 0 ? awayPlayers : ['player-melquiz'],
-      homeCaptainId: homePlayers[0] || 'player-henrique',
-      awayCaptainId: awayPlayers[0] || 'player-melquiz',
+      homePlayerIds: homePlayers,
+      awayPlayerIds: awayPlayers,
+      homeCaptainId: homePlayers[0] || (currentPlayerProfile?.id ?? ''),
+      awayCaptainId: awayPlayers[0] || '',
     });
 
     setShowCreateOfficialModal(false);
@@ -186,7 +179,7 @@ export const MatchesAndValidationView: React.FC<
       if (myNameUpper && s.arrivalList?.some((a) => a.playerName.trim().toUpperCase() === myNameUpper)) {
         return true;
       }
-      if (!sTeam && userTeam === 'real planalto fc') return true;
+      if (!sTeam && !userTeam) return true;
       return false;
     });
   }, [allSavedSumulas, isAdmin, userTeam, currentUser.id, currentPlayerProfile?.displayName]);
@@ -196,37 +189,19 @@ export const MatchesAndValidationView: React.FC<
   const [format, setFormat] = useState<MatchFormat>('7v7');
   const [homeTeamName, setHomeTeamName] = useState('Esquadrão Azul');
   const [awayTeamName, setAwayTeamName] = useState('Seleção Ouro');
-  const [homePlayerIds, setHomePlayerIds] = useState<string[]>([
-    'player-henrique',
-    'player-jp',
-    'player-hugo-pacoca',
-    'player-deda',
-    'player-palito',
-  ]);
-  const [awayPlayerIds, setAwayPlayerIds] = useState<string[]>([
-    'player-melquiz',
-    'player-dayvid',
-    'player-marlom',
-    'player-yago',
-    'player-manelao',
-  ]);
+  const [homePlayerIds, setHomePlayerIds] = useState<string[]>([]);
+  const [awayPlayerIds, setAwayPlayerIds] = useState<string[]>([]);
 
-  const [homeScoreInput, setHomeScoreInput] = useState<number>(6);
-  const [awayScoreInput, setAwayScoreInput] = useState<number>(5);
-  const [mvpPlayerIdInput, setMvpPlayerIdInput] =
-    useState<string>('player-henrique');
+  const [homeScoreInput, setHomeScoreInput] = useState<number>(0);
+  const [awayScoreInput, setAwayScoreInput] = useState<number>(0);
+  const [mvpPlayerIdInput, setMvpPlayerIdInput] = useState<string>('');
   const [goalkeeperCapaPlayerIdInput, setGoalkeeperCapaPlayerIdInput] =
-    useState<string>('player-palito');
-  const [goalScorersInput, setGoalScorersInput] = useState<string[]>([
-    'player-henrique',
-    'player-henrique',
-    'player-melquiz',
-    'player-dayvid',
-  ]);
-  const [assistPlayersInput] = useState<string[]>(['player-jp']);
+    useState<string>('');
+  const [goalScorersInput, setGoalScorersInput] = useState<string[]>([]);
+  const [assistPlayersInput] = useState<string[]>([]);
   const [yellowCardPlayersInput, setYellowCardPlayersInput] = useState<
     string[]
-  >(['player-henrique']);
+  >([]);
   const [blueCardPlayersInput, setBlueCardPlayersInput] = useState<string[]>(
     []
   );
