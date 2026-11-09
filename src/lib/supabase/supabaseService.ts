@@ -577,6 +577,31 @@ export const supabaseService = {
   },
 
   /**
+   * Atualiza a senha do usuário no Supabase
+   */
+  async updatePassword(userId: string, newPassword: string): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase || !userId) return false;
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          password_hash: newPassword,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId);
+
+      if (error) {
+        console.warn('Aviso ao atualizar senha no Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Erro ao atualizar senha no Supabase:', err);
+      return false;
+    }
+  },
+
+  /**
    * Busca perfis esportivos cadastrados no Supabase
    */
   async getProfiles(): Promise<PlayerProfile[] | null> {

@@ -15,7 +15,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
-import { supabaseService, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, supabaseService, isSupabaseConfigured } from '../lib/supabase';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PWAInstallBanner } from './PWAInstallBanner';
 import { DominantFoot, PlayerPosition, ProfileVisibility, User, PlayerProfile } from '../types/league';
@@ -311,6 +311,18 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       setLoginError('Informe seu nome ou apelido esportivo (mín. 2 letras).');
       return;
     }
+
+    // Valida se o apelido já existe localmente
+    const nameUpper = trimmedName.toUpperCase();
+    const isNickTakenLocally = profiles.some(
+      (p) => p.displayName.trim().toUpperCase() === nameUpper
+    );
+    if (isNickTakenLocally) {
+      setLoginError(
+        `O apelido "${trimmedName}" já está cadastrado por outro atleta na liga. Por favor, escolha outro apelido ou adicione seu sobrenome.`
+      );
+      return;
+    }
     if (!isEmail && digits.length < 8) {
       setLoginError('Informe um e-mail válido ou telefone celular com DDD.');
       return;
@@ -340,6 +352,27 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     }
 
     setIsSubmitting(true);
+
+    // Valida se o apelido já existe no banco Supabase
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: nickMatches } = await supabase
+          .from('player_profiles')
+          .select('id, display_name')
+          .ilike('display_name', trimmedName)
+          .limit(1);
+
+        if (nickMatches && nickMatches.length > 0) {
+          setIsSubmitting(false);
+          setLoginError(
+            `O apelido "${trimmedName}" já está cadastrado por outro atleta no banco da liga. Por favor, escolha outro apelido.`
+          );
+          return;
+        }
+      } catch {
+        // Ignora falha de verificação remota
+      }
+    }
 
     // Verifica se já existe conta: o Supabase é a fonte oficial
     let existing = findUserByIdentifier(trimmedIdentifier);

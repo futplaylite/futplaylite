@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
   Award,
+  Camera,
   Check,
   Clock,
   Edit2,
+  Eye,
+  EyeOff,
   Lock,
   Share2,
   Star,
@@ -19,6 +22,8 @@ import { PlayerRatingModal } from './PlayerRatingModal';
 import { ShareCardModal } from './ShareCardModal';
 import { TeamCrestBadge } from './TeamCrestBadge';
 import { getStoredSumulas } from './SumulaPeladaView';
+import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
+import { supabaseService } from '../lib/supabase/supabaseService';
 import {
   DominantFoot,
   PlayerPosition,
@@ -28,6 +33,35 @@ import {
 interface AthleteProfileAndCardViewProps {
   initialPlayerId?: string;
   onBack?: () => void;
+}
+
+function resizeImageToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Falha ao ler a imagem.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Formato de imagem inválido.'));
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = 320;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(reader.result as string);
+          return;
+        }
+        const minSide = Math.min(img.width, img.height);
+        const sx = (img.width - minSide) / 2;
+        const sy = (img.height - minSide) / 2;
+        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 export const AthleteProfileAndCardView: React.FC<
@@ -87,6 +121,18 @@ export const AthleteProfileAndCardView: React.FC<
   const [editVis, setEditVis] = useState<ProfileVisibility>(
     currentPlayerProfile?.profileVisibility || 'publico'
   );
+  const [editAvatarUrl, setEditAvatarUrl] = useState<string | undefined>(
+    currentPlayerProfile?.avatarUrl
+  );
+  const [changePassword, setChangePassword] = useState<boolean>(false);
+  const [currentPass, setCurrentPass] = useState<string>('');
+  const [newPass, setNewPass] = useState<string>('');
+  const [confirmPass, setConfirmPass] = useState<string>('');
+  const [showCurrentPass, setShowCurrentPass] = useState<boolean>(false);
+  const [showNewPass, setShowNewPass] = useState<boolean>(false);
+  const [editError, setEditError] = useState<string>('');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOwnProfile && currentPlayerProfile) {
@@ -95,6 +141,7 @@ export const AthleteProfileAndCardView: React.FC<
       setEditPos(currentPlayerProfile.position);
       setEditFoot(currentPlayerProfile.dominantFoot);
       setEditVis(currentPlayerProfile.profileVisibility);
+      setEditAvatarUrl(currentPlayerProfile.avatarUrl);
     }
   }, [isOwnProfile, currentPlayerProfile]);
 
@@ -203,16 +250,152 @@ export const AthleteProfileAndCardView: React.FC<
     setTimeout(() => setCopiedCard(false), 3000);
   };
 
-  const handleSaveSelfProfile = (e: React.FormEvent) => {
+  const handleAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await resizeImageToDataUrl(file);
+      setEditAvatarUrl(dataUrl);
+    } catch {
+      alert('Falha ao processar a foto. Tente outra imagem.');
+    }
+  };
+
+  const handleSaveSelfProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateOwnProfile({
-      displayName: editName,
-      neighborhood: editNeighborhood,
+    setEditError('');
+
+    const trimmedName = editName.trim();
+    if (trimmedName.length < 2) {
+      setEditError('O apelido esportivo deve ter pelo menos 2 caracteres.');
+      return;
+    }
+
+    // 1. Validação de Unicidade de Apelido (Não permitir apelido que já existe)
+    const nameUpper = trimmedName.toUpperCase();
+    const currentUpper = (currentPlayerProfile?.displayName || '').trim().toUpperCase();
+
+    if (nameUpper !== currentUpper) {
+      const isConflictLocal = profiles.some(
+        (p) =>
+          p.id !== currentPlayerProfile?.id &&
+          p.displayName.trim().toUpperCase() === nameUpper
+      );
+
+      if (isConflictLocal) {
+        setEditError(
+          `O apelido "${trimmedName}" já está cadastrado por outro atleta na liga. Por favor, escolha outro apelido ou adicione seu sobrenome.`
+        );
+        return;
+      }
+
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          const { data: nickMatches } = await supabase
+            .from('player_profiles')
+            .select('id, user_id')
+            .ilike('display_name', trimmedName)
+            .neq('user_id', currentUser.id)
+            .limit(1);
+
+          if (nickMatches && nickMatches.length > 0) {
+            setEditError(
+              `O apelido "${trimmedName}" já está cadastrado no banco de dados da liga. Por favor, escolha outro apelido.`
+            );
+            return;
+          }
+        } catch {
+          // Ignora erro de rede
+        }
+      }
+    }
+
+    // 2. Validação e Troca de Senha (com confirmação da senha anterior)
+    if (changePassword || currentPass.trim() || newPass.trim() || confirmPass.trim()) {
+      if (!currentPass.trim()) {
+        setEditError('Informe sua senha atual para confirmar a alteração de segurança.');
+        return;
+      }
+
+      let isCurrentValid = false;
+      try {
+        const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
+        const expected =
+          stored[currentUser.id] ||
+          (currentUser.email ? stored[currentUser.email.toLowerCase()] : undefined) ||
+          (currentUser.whatsappNumber ? stored[currentUser.whatsappNumber.replace(/\D/g, '')] : undefined);
+        if (expected && expected === currentPass.trim()) {
+          isCurrentValid = true;
+        }
+      } catch {
+        // Ignora
+      }
+
+      if (!isCurrentValid && isSupabaseConfigured() && supabase) {
+        try {
+          const { data: userRow } = await supabase
+            .from('users')
+            .select('password_hash')
+            .eq('id', currentUser.id)
+            .maybeSingle();
+
+          if (userRow?.password_hash && userRow.password_hash === currentPass.trim()) {
+            isCurrentValid = true;
+          }
+        } catch {
+          // Ignora
+        }
+      }
+
+      if (!isCurrentValid) {
+        setEditError('A senha atual informada está incorreta.');
+        return;
+      }
+
+      if (newPass.trim().length < 4) {
+        setEditError('A nova senha deve ter no mínimo 4 caracteres.');
+        return;
+      }
+
+      if (newPass.trim() !== confirmPass.trim()) {
+        setEditError('A confirmação da nova senha não confere com a nova senha digitada.');
+        return;
+      }
+
+      setIsSaving(true);
+      if (isSupabaseConfigured()) {
+        await supabaseService.updatePassword(currentUser.id, newPass.trim());
+      }
+      try {
+        const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
+        stored[currentUser.id] = newPass.trim();
+        if (currentUser.email) stored[currentUser.email.toLowerCase()] = newPass.trim();
+        if (currentUser.whatsappNumber) stored[currentUser.whatsappNumber.replace(/\D/g, '')] = newPass.trim();
+        localStorage.setItem('futplay_user_passwords', JSON.stringify(stored));
+      } catch {
+        // Ignora
+      }
+    }
+
+    // 3. Salva os dados do perfil (apelido, bairro, posição, pé dominante, foto, visibilidade)
+    setIsSaving(true);
+    const ok = updateOwnProfile({
+      displayName: trimmedName,
+      neighborhood: editNeighborhood.trim(),
       position: editPos,
       dominantFoot: editFoot,
       profileVisibility: editVis,
+      avatarUrl: editAvatarUrl,
     });
-    setActiveSubTab('card');
+
+    setIsSaving(false);
+    if (ok) {
+      setCurrentPass('');
+      setNewPass('');
+      setConfirmPass('');
+      setChangePassword(false);
+      setActiveSubTab('card');
+    }
   };
 
   return (
@@ -221,82 +404,290 @@ export const AthleteProfileAndCardView: React.FC<
       {activeSubTab === 'edit_self' && (
         <form
           onSubmit={handleSaveSelfProfile}
-          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3"
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4"
         >
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+          {/* Topo do Formulário */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
-                Preferências do Meu Perfil
+                Editar Meu Perfil
               </h2>
               <p className="text-[11px] text-slate-500">
-                Altere seus dados esportivos e visibilidade
+                Atualize sua foto, dados esportivos e senha de acesso
               </p>
             </div>
             <button
               type="button"
-              onClick={() => setActiveSubTab('card')}
+              onClick={() => {
+                setEditError('');
+                setActiveSubTab('card');
+              }}
               className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600 hover:bg-slate-200 transition cursor-pointer"
             >
               Voltar ao Cartão
             </button>
           </div>
 
-          <div className="space-y-2.5">
+          {editError && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs font-semibold text-red-700 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{editError}</span>
+            </div>
+          )}
+
+          {/* 1. Foto de Perfil */}
+          <div className="flex items-center gap-3.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="relative group shrink-0">
+              {editAvatarUrl ? (
+                <img
+                  src={editAvatarUrl}
+                  alt={editName}
+                  className="h-16 w-16 rounded-full object-cover border-2 border-blue-600 shadow-xs"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-white font-extrabold text-lg shadow-xs">
+                  {editName.slice(0, 2).toUpperCase() || 'FP'}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                title="Trocar Foto"
+                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-white opacity-0 group-hover:opacity-100 transition cursor-pointer"
+              >
+                <Camera className="h-5 w-5" />
+              </button>
+            </div>
+
             <input
-              type="text"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              placeholder="Apelido Público"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900"
+              type="file"
+              ref={avatarInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarFile}
             />
-            <select
-              value={editPos}
-              onChange={(e) => setEditPos(e.target.value as PlayerPosition)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800"
-            >
-              <optgroup label="Tipo: Goleiro">
-                <option value="goleiro">🧤 Goleiro</option>
-              </optgroup>
-              <optgroup label="Tipo: Jogador de Linha">
-                <option value="atacante">🏃 Atacante (Linha)</option>
-                <option value="meio-campista">🏃 Meio-campista (Linha)</option>
-                <option value="defensor">🏃 Defensor (Linha)</option>
-              </optgroup>
-            </select>
-            <select
-              value={editVis}
-              onChange={(e) => setEditVis(e.target.value as ProfileVisibility)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-blue-700"
-            >
-              <option value="publico">Visibilidade: Público</option>
-              <option value="restrito">Visibilidade: Restrito à Liga</option>
-              <option value="privado">Visibilidade: Privado</option>
-            </select>
+
+            <div className="min-w-0 flex-1 space-y-1">
+              <span className="block text-xs font-bold text-slate-800">
+                Foto de Perfil
+              </span>
+              <p className="text-[10px] text-slate-500">
+                PNG ou JPG. Aparece no seu cartão digital e nas súmulas.
+              </p>
+              <div className="flex items-center gap-1.5 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-[11px] transition shadow-2xs cursor-pointer"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  <span>Escolher Foto</span>
+                </button>
+                {editAvatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setEditAvatarUrl(undefined)}
+                    className="px-2 py-1 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 text-[10px] font-medium transition cursor-pointer"
+                  >
+                    Remover
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
-          <button
-            type="submit"
-            className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-98 transition cursor-pointer"
-          >
-            Salvar Alterações
-          </button>
+          {/* 2. Dados Esportivos */}
+          <div className="space-y-3">
+            {/* Apelido Público */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Apelido Público (Único na Liga)
+              </label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Ex: JÚNIOR, NEYMAR, PAULINHO..."
+                className="w-full uppercase font-bold rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                required
+              />
+              <span className="text-[9px] text-slate-400 mt-0.5 block">
+                Nome oficial exibido no cartão, escalações e súmulas.
+              </span>
+            </div>
 
-          {/* Zona de Exclusão de Conta (LGPD) */}
-          <div className="pt-4 border-t border-slate-100 space-y-2">
-            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Gerenciamento da Conta
-            </span>
+            {/* Bairro */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Bairro / Comunidade
+              </label>
+              <input
+                type="text"
+                value={editNeighborhood}
+                onChange={(e) => setEditNeighborhood(e.target.value)}
+                placeholder="Ex: Centro, Vila Nova, Umbuzeiro..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+              />
+            </div>
+
+            {/* Posição em Campo & Pé Dominante em Grid 2 Colunas */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Posição em Campo
+                </label>
+                <select
+                  value={editPos}
+                  onChange={(e) => setEditPos(e.target.value as PlayerPosition)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 cursor-pointer"
+                >
+                  <option value="goleiro">🧤 Goleiro</option>
+                  <option value="atacante">⚡ Atacante</option>
+                  <option value="meio-campista">🎯 Meio-campista</option>
+                  <option value="defensor">🛡️ Defensor</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Pé Dominante
+                </label>
+                <select
+                  value={editFoot}
+                  onChange={(e) => setEditFoot(e.target.value as DominantFoot)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 cursor-pointer"
+                >
+                  <option value="direito">👟 Destro (Direito)</option>
+                  <option value="esquerdo">👟 Canhoto (Esquerdo)</option>
+                  <option value="ambos">👟 Ambidestro (Ambos)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Visibilidade do Perfil */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Visibilidade na Liga (LGPD)
+              </label>
+              <select
+                value={editVis}
+                onChange={(e) => setEditVis(e.target.value as ProfileVisibility)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-blue-700 focus:outline-none focus:border-blue-600 cursor-pointer"
+              >
+                <option value="publico">Visibilidade: Público (Visível a todos)</option>
+                <option value="restrito">Visibilidade: Restrito (Apenas membros da liga)</option>
+                <option value="privado">Visibilidade: Privado (Apenas comissão)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* 3. Seção: Alterar Senha (com confirmação da anterior) */}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <Lock className="h-3.5 w-3.5 text-slate-500" />
+                <span>Segurança e Senha</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setChangePassword((prev) => !prev);
+                  setEditError('');
+                }}
+                className="text-[11px] font-bold text-blue-600 hover:text-blue-800 transition cursor-pointer"
+              >
+                {changePassword ? 'Cancelar troca de senha' : '+ Alterar Senha'}
+              </button>
+            </div>
+
+            {changePassword && (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5 animate-in fade-in duration-150">
+                <span className="block text-[10px] text-slate-500 font-medium">
+                  Para alterar sua senha, confirme a senha atual antes de definir a nova.
+                </span>
+
+                {/* Senha Atual */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                    Senha Atual
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPass ? 'text' : 'password'}
+                      value={currentPass}
+                      onChange={(e) => setCurrentPass(e.target.value)}
+                      placeholder="Digite sua senha atual..."
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 pr-8 focus:outline-none focus:border-blue-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPass((prev) => !prev)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showCurrentPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Nova Senha */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                    Nova Senha (mín. 4 caracteres)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPass ? 'text' : 'password'}
+                      value={newPass}
+                      onChange={(e) => setNewPass(e.target.value)}
+                      placeholder="Digite a nova senha..."
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 pr-8 focus:outline-none focus:border-blue-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPass((prev) => !prev)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showNewPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirmar Nova Senha */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                    Confirmar Nova Senha
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmPass}
+                    onChange={(e) => setConfirmPass(e.target.value)}
+                    placeholder="Repita a nova senha..."
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Botões de Ação */}
+          <div className="flex items-center gap-2 pt-2">
             <button
               type="button"
-              onClick={() => setShowDeleteModal(true)}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50/80 py-2.5 px-3 text-xs font-bold text-red-600 hover:bg-red-100 hover:border-red-300 active:scale-[0.99] transition cursor-pointer"
+              onClick={() => {
+                setEditError('');
+                setActiveSubTab('card');
+              }}
+              className="flex-1 rounded-xl border border-slate-200 bg-slate-100 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200 transition cursor-pointer text-center"
             >
-              <Trash2 className="h-4 w-4" />
-              <span>Excluir Minha Conta</span>
+              Cancelar
             </button>
-            <p className="text-[10px] text-slate-400 text-center">
-              A exclusão remove seu perfil esportivo, estatísticas e cartão da liga.
-            </p>
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="flex-1 rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-98 transition cursor-pointer disabled:opacity-50 text-center"
+            >
+              {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+            </button>
           </div>
         </form>
       )}

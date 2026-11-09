@@ -190,6 +190,7 @@ interface LeagueContextValue extends LeagueState {
     position: PlayerPosition;
     dominantFoot: DominantFoot;
     profileVisibility: ProfileVisibility;
+    avatarUrl?: string;
   }) => boolean;
   updateTeamInfo: (params: {
     teamName: string;
@@ -728,6 +729,19 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return null;
     }
 
+    const nameUpper = trimmedName.toUpperCase();
+    const isConflict = state.profiles.some(
+      (p) => p.displayName.trim().toUpperCase() === nameUpper
+    );
+    if (isConflict) {
+      notify(
+        'error',
+        'Apelido indisponível',
+        `O apelido "${trimmedName}" já está em uso por outro atleta na liga. Por favor, escolha outro apelido ou adicione seu sobrenome.`
+      );
+      return null;
+    }
+
     const now = new Date().toISOString();
     const newUserId = generateUUID();
     const newPlayerId = generateUUID();
@@ -870,14 +884,55 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return false;
     }
 
+    const trimmedName = params.displayName.trim();
+    if (trimmedName.length < 2) {
+      notify(
+        'error',
+        'Apelido inválido',
+        'O apelido esportivo deve ter pelo menos 2 caracteres.'
+      );
+      return false;
+    }
+
+    // Validação de unicidade do apelido
+    const nameUpper = trimmedName.toUpperCase();
+    const isConflict = state.profiles.some(
+      (p) =>
+        p.id !== currentPlayerProfile.id &&
+        p.displayName.trim().toUpperCase() === nameUpper
+    );
+
+    if (isConflict) {
+      notify(
+        'error',
+        'Apelido já em uso',
+        `O apelido "${trimmedName}" já está cadastrado por outro atleta na liga. Por favor, escolha outro apelido ou adicione seu sobrenome.`
+      );
+      return false;
+    }
+
     const now = new Date().toISOString();
+    const finalAvatar =
+      params.avatarUrl !== undefined
+        ? params.avatarUrl
+        : currentPlayerProfile.avatarUrl;
+
     setState((prev) => ({
       ...prev,
+      users: prev.users.map((u) =>
+        u.id === currentUser.id
+          ? {
+              ...u,
+              avatarUrl: finalAvatar,
+            }
+          : u
+      ),
       profiles: prev.profiles.map((p) =>
         p.id === currentPlayerProfile.id
           ? {
               ...p,
-              displayName: params.displayName.trim() || p.displayName,
+              displayName: trimmedName,
+              avatarUrl: finalAvatar,
               neighborhood: params.neighborhood.trim() || p.neighborhood,
               position: params.position,
               dominantFoot: params.dominantFoot,
@@ -888,10 +943,20 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       ),
     }));
 
+    if (isSupabaseConfigured() && currentUser?.id) {
+      supabaseService.updateProfile(currentUser.id, {
+        displayName: trimmedName,
+        avatarUrl: finalAvatar,
+        position: params.position,
+        dominantFoot: params.dominantFoot,
+        profileVisibility: params.profileVisibility,
+      });
+    }
+
     notify(
       'success',
-      'Perfil esportivo atualizado',
-      'Suas preferências e visibilidade pública (LGPD) foram salvas com sucesso.'
+      'Perfil atualizado com sucesso!',
+      'Suas alterações foram salvas e sincronizadas.'
     );
     return true;
   };
