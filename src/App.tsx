@@ -262,29 +262,29 @@ const MainMobileShell: React.FC = () => {
         <header
           className={`sticky top-0 z-50 transition-colors duration-200 ${
             sumulaStopwatch.isActive
-              ? 'border-b border-slate-800 bg-slate-900 text-white px-3 py-2 shadow-md'
+              ? 'border-b border-slate-800 bg-slate-900 text-white px-3 py-2.5 sm:py-3 shadow-lg'
               : 'border-b border-slate-200 bg-white/95 backdrop-blur-md px-4 py-2.5'
           }`}
         >
           {sumulaStopwatch.isActive ? (
-            /* Modo Cronômetro da Súmula Ativa */
-            <div className="flex items-center justify-between gap-2 h-9">
+            /* Modo Cronômetro da Súmula Ativa (Barra Ampliada e Mais Legível) */
+            <div className="flex items-center justify-between gap-1.5 sm:gap-2.5 min-h-[48px] sm:min-h-[54px]">
               {/* Esquerda: Indicador e Título */}
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                 <span
-                  className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${
+                  className={`inline-block h-3 w-3 rounded-full shrink-0 ${
                     sumulaStopwatch.isRunning
-                      ? 'bg-emerald-400 animate-pulse'
+                      ? 'bg-emerald-400 animate-pulse ring-4 ring-emerald-500/25'
                       : sumulaStopwatch.seconds > 0
-                      ? 'bg-amber-400'
-                      : 'bg-slate-400'
+                      ? 'bg-amber-400 ring-4 ring-amber-500/25'
+                      : 'bg-slate-500'
                   }`}
                 />
-                <div className="min-w-0 flex flex-col justify-center leading-none">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-300 truncate">
+                <div className="min-w-0 flex flex-col justify-center leading-tight">
+                  <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-blue-300 truncate">
                     {sumulaStopwatch.title || 'Tempo de Jogo'}
                   </span>
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                  <span className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                     {sumulaStopwatch.isRunning
                       ? '● Ao Vivo'
                       : sumulaStopwatch.seconds > 0
@@ -294,19 +294,19 @@ const MainMobileShell: React.FC = () => {
                 </div>
               </div>
 
-              {/* Centro: Display Digital do Cronômetro */}
-              <div className="flex items-center shrink-0 bg-slate-950/80 px-3 py-1 rounded-xl border border-slate-800 shadow-inner">
-                <span className="font-mono text-xl sm:text-2xl font-black text-emerald-400 tracking-wider drop-shadow-[0_0_8px_rgba(52,211,153,0.35)] leading-none">
+              {/* Centro: Display Digital do Cronômetro Ampliado */}
+              <div className="flex items-center shrink-0 bg-slate-950 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-slate-800 shadow-inner">
+                <span className="font-mono text-2xl sm:text-3xl font-black text-emerald-400 tracking-wider drop-shadow-[0_0_10px_rgba(52,211,153,0.45)] leading-none">
                   {formatStopwatchTime(sumulaStopwatch.seconds)}
                 </span>
               </div>
 
-              {/* Direita: Botões Play/Pausa e Zerar */}
-              <div className="flex items-center gap-1.5 shrink-0">
+              {/* Direita: Botões Play/Pausa e Zerar Ampliados */}
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={sumulaStopwatch.toggle}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-black shadow-xs transition active:scale-95 ${
+                  className={`inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2 rounded-xl text-xs sm:text-sm font-black shadow-sm transition active:scale-95 ${
                     sumulaStopwatch.isRunning
                       ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
                       : 'bg-emerald-600 hover:bg-emerald-500 text-white'
@@ -315,12 +315,12 @@ const MainMobileShell: React.FC = () => {
                 >
                   {sumulaStopwatch.isRunning ? (
                     <>
-                      <Pause className="h-3 w-3 fill-current" />
+                      <Pause className="h-3.5 w-3.5 fill-current" />
                       <span>Pausar</span>
                     </>
                   ) : (
                     <>
-                      <Play className="h-3 w-3 fill-current" />
+                      <Play className="h-3.5 w-3.5 fill-current" />
                       <span>Iniciar</span>
                     </>
                   )}
@@ -329,10 +329,10 @@ const MainMobileShell: React.FC = () => {
                 <button
                   type="button"
                   onClick={sumulaStopwatch.reset}
-                  className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 active:scale-95 transition"
+                  className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 active:scale-95 transition"
                   title="Zerar Cronômetro (00:00)"
                 >
-                  <RotateCcw className="h-3 w-3 text-slate-400" />
+                  <RotateCcw className="h-3.5 w-3.5 text-slate-400" />
                   <span>Zerar</span>
                 </button>
               </div>
