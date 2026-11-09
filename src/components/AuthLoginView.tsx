@@ -163,11 +163,13 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
     let existingUser: User | undefined;
     let matchedProfile: PlayerProfile | undefined;
+    let supabaseChecked = false;
 
     // 1. Consulta SEMPRE o Supabase primeiro como fonte oficial da verdade
     if (isSupabaseConfigured()) {
       try {
         const remoteMatch = await supabaseService.findUserByIdentifier(trimmed);
+        supabaseChecked = true;
         if (remoteMatch) {
           existingUser = remoteMatch.user;
           matchedProfile = remoteMatch.profile;
@@ -193,14 +195,20 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           } catch {
             // Ignora falha local
           }
+        } else {
+          // Se o Supabase respondeu e a conta não existe mais lá, limpa eventual rastro local
+          const staleLocal = findUserByIdentifier(trimmed);
+          if (staleLocal) {
+            removeLocalUserSilently(staleLocal.id);
+          }
         }
       } catch (err) {
         console.warn('Falha ao consultar Supabase no login:', err);
       }
     }
 
-    // 2. Fallback local (apenas caso esteja sem conexão com o Supabase)
-    if (!existingUser) {
+    // 2. Fallback local (APENAS caso esteja sem conexão com a internet / Supabase inacessível)
+    if (!existingUser && !supabaseChecked) {
       existingUser = findUserByIdentifier(trimmed);
       matchedProfile = existingUser
         ? profiles.find((p) => p.userId === existingUser?.id)

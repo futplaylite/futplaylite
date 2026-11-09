@@ -699,9 +699,9 @@ export const AthleteProfileAndCardView: React.FC<
               <button
                 type="button"
                 disabled={isDeleting}
-                onClick={() => {
+                onClick={async () => {
                   setIsDeleting(true);
-                  deleteUserAccount(targetProfile.userId || currentUser.id);
+                  await deleteUserAccount(targetProfile.userId || currentUser.id);
                   setShowDeleteModal(false);
                   setIsDeleting(false);
                   window.location.reload();
@@ -709,7 +709,7 @@ export const AthleteProfileAndCardView: React.FC<
                 className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-red-700 active:scale-98 transition cursor-pointer disabled:opacity-50"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                <span>Sim, Excluir</span>
+                <span>{isDeleting ? 'Excluindo...' : 'Sim, Excluir'}</span>
               </button>
             </div>
           </div>

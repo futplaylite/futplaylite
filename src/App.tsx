@@ -74,6 +74,7 @@ const MainMobileShell: React.FC = () => {
   const [showProfileMenu, setShowProfileMenu] = useState<boolean>(false);
   const [showMonthlyFeesPage, setShowMonthlyFeesPage] = useState<boolean>(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState<boolean>(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -688,17 +689,21 @@ const MainMobileShell: React.FC = () => {
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
+                  disabled={isDeletingAccount}
                   onClick={() => setShowDeleteAccountModal(false)}
-                  className="flex-1 rounded-xl border border-slate-200 bg-slate-100 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200 active:scale-98 transition cursor-pointer"
+                  className="flex-1 rounded-xl border border-slate-200 bg-slate-100 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200 active:scale-98 transition cursor-pointer disabled:opacity-50"
                 >
                   Cancelar
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    deleteUserAccount(currentUser.id);
+                  disabled={isDeletingAccount}
+                  onClick={async () => {
+                    setIsDeletingAccount(true);
+                    await deleteUserAccount(currentUser.id);
                     setShowDeleteAccountModal(false);
+                    setIsDeletingAccount(false);
                     try {
                       localStorage.removeItem('futplay_lite_auth_session_v1');
                       localStorage.removeItem('futplay_lite_auth_session_v2');
@@ -710,10 +715,10 @@ const MainMobileShell: React.FC = () => {
                     setIsAuthenticated(false);
                     window.location.reload();
                   }}
-                  className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-red-700 active:scale-98 transition cursor-pointer"
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-red-700 active:scale-98 transition cursor-pointer disabled:opacity-50"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  <span>Sim, Excluir</span>
+                  <span>{isDeletingAccount ? 'Excluindo...' : 'Sim, Excluir'}</span>
                 </button>
               </div>
             </div>

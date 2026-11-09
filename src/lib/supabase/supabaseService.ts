@@ -351,24 +351,55 @@ export const supabaseService = {
   /**
    * Exclui usuário e perfil do Supabase (LGPD)
    */
-  async deleteUser(userId: string): Promise<boolean> {
+  async deleteUser(
+    userId: string,
+    email?: string,
+    whatsappNumber?: string
+  ): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      // 1. Localiza o perfil esportivo para obter o player_id
-      const { data: prof } = await supabase
-        .from('player_profiles')
-        .select('id')
-        .eq('user_id', userId)
-        .maybeSingle();
+      const userIdsToDelete = new Set<string>([userId]);
+      const digits = (whatsappNumber || '').replace(/\D/g, '');
 
-      // 2. Remove primeiro os vínculos em season_entries para não violar foreign key constraint
-      if (prof?.id) {
-        await supabase.from('season_entries').delete().eq('player_id', prof.id);
+      // Também busca possíveis registros pelo mesmo telefone ou e-mail
+      if (digits.length >= 8) {
+        const { data: byPhone } = await supabase
+          .from('users')
+          .select('id')
+          .or(`whatsapp_number.ilike.%${digits}%,email.ilike.${digits}%`);
+        if (byPhone) {
+          byPhone.forEach((u) => userIdsToDelete.add(u.id));
+        }
+      }
+      if (email) {
+        const { data: byEmail } = await supabase
+          .from('users')
+          .select('id')
+          .ilike('email', email.trim());
+        if (byEmail) {
+          byEmail.forEach((u) => userIdsToDelete.add(u.id));
+        }
       }
 
-      // 3. Remove perfil e usuário
-      await supabase.from('player_profiles').delete().eq('user_id', userId);
-      await supabase.from('users').delete().eq('id', userId);
+      const allUserIds = Array.from(userIdsToDelete);
+
+      // 1. Localiza todos os perfis esportivos vinculados a esses user_ids
+      const { data: profiles } = await supabase
+        .from('player_profiles')
+        .select('id')
+        .in('user_id', allUserIds);
+
+      const profileIds = (profiles || []).map((p) => p.id);
+
+      // 2. Remove primeiro os vínculos em season_entries e monthly_payments para não violar foreign key constraint
+      if (profileIds.length > 0) {
+        await supabase.from('season_entries').delete().in('player_id', profileIds);
+        await supabase.from('monthly_payments').delete().in('player_id', profileIds);
+      }
+
+      // 3. Remove perfis e usuários
+      await supabase.from('player_profiles').delete().in('user_id', allUserIds);
+      await supabase.from('users').delete().in('id', allUserIds);
       return true;
     } catch (err) {
       console.error('Erro ao excluir usuário no Supabase:', err);

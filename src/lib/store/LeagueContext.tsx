@@ -167,7 +167,7 @@ interface LeagueContextValue extends LeagueState {
     dominantFoot: DominantFoot;
     profileVisibility: ProfileVisibility;
   }) => boolean;
-  deleteUserAccount: (userId?: string) => boolean;
+  deleteUserAccount: (userId?: string) => Promise<boolean>;
   updatePlayerSkills: (
     playerId: string,
     skills: {
@@ -391,30 +391,39 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     // 1. Sincroniza usuários a partir do Supabase (fonte oficial da verdade)
     supabaseService.getUsers().then((remoteUsers) => {
       if (!remoteUsers) return;
-      if (remoteUsers.length > 0) {
-        setState((prev) => {
-          const localMap = new Map(prev.users.map((u) => [u.id, u]));
-          const merged = remoteUsers.map((ru) => {
-            const loc = localMap.get(ru.id);
-            return loc ? { ...loc, ...ru } : ru;
-          });
-          return { ...prev, users: merged };
+      setState((prev) => {
+        const localMap = new Map(prev.users.map((u) => [u.id, u]));
+        const merged = remoteUsers.map((ru) => {
+          const loc = localMap.get(ru.id);
+          return loc ? { ...loc, ...ru } : ru;
         });
-      }
+        const next = { ...prev, users: merged };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // Ignore
+        }
+        return next;
+      });
     });
 
     // 2. Sincroniza perfis esportivos do Supabase
     supabaseService.getProfiles().then((remoteProfiles) => {
-      if (remoteProfiles && remoteProfiles.length > 0) {
-        setState((prev) => {
-          const localMap = new Map(prev.profiles.map((p) => [p.id, p]));
-          const merged = remoteProfiles.map((rp) => {
-            const loc = localMap.get(rp.id);
-            return loc ? { ...loc, ...rp } : rp;
-          });
-          return { ...prev, profiles: merged };
+      if (!remoteProfiles) return;
+      setState((prev) => {
+        const localMap = new Map(prev.profiles.map((p) => [p.id, p]));
+        const merged = remoteProfiles.map((rp) => {
+          const loc = localMap.get(rp.id);
+          return loc ? { ...loc, ...rp } : rp;
         });
-      }
+        const next = { ...prev, profiles: merged };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // Ignore
+        }
+        return next;
+      });
     });
 
     // 3. Sincroniza configurações e mensalidades
@@ -726,14 +735,27 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   // Exclusão de Conta de Atleta (Direito de eliminação / LGPD)
-  const deleteUserAccount: LeagueContextValue['deleteUserAccount'] = (targetUserId) => {
+  const deleteUserAccount: LeagueContextValue['deleteUserAccount'] = async (targetUserId) => {
     const userIdToDelete = targetUserId || currentUserId;
     if (!userIdToDelete) return false;
 
     const userToDelete = state.users.find((u) => u.id === userIdToDelete);
     const profileToDelete = state.profiles.find((p) => p.userId === userIdToDelete);
 
-    // Remove senhas ou credenciais locais
+    // 1. Sincroniza exclusão no Supabase PRIMEIRO (aguardando conclusão antes de eventual reload)
+    if (isSupabaseConfigured()) {
+      try {
+        await supabaseService.deleteUser(
+          userIdToDelete,
+          userToDelete?.email,
+          userToDelete?.whatsappNumber
+        );
+      } catch (err) {
+        console.warn('Erro ao excluir no Supabase:', err);
+      }
+    }
+
+    // 2. Remove senhas ou credenciais locais
     try {
       const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
       delete stored[userIdToDelete];
@@ -751,9 +773,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       // Ignore
     }
 
-    // Se o usuário excluído for o ativo, limpa as sessões locais de login
+    // 3. Se o usuário excluído for o ativo, limpa as sessões locais de login
     const isCurrentActive = userIdToDelete === currentUserId;
     if (isCurrentActive) {
+      setCurrentUserId('');
       try {
         localStorage.removeItem('futplay_lite_auth_session_v1');
         localStorage.removeItem('futplay_lite_auth_session_v2');
@@ -764,7 +787,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
-    // Remove o usuário e perfil do estado da liga
+    // 4. Remove o usuário e perfil do estado da liga e persiste imediatamente no localStorage
     setState((prev) => {
       const remainingUsers = prev.users.filter((u) => u.id !== userIdToDelete);
       const remainingProfiles = prev.profiles.filter(
@@ -774,29 +797,21 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         (se) => !profileToDelete || se.playerId !== profileToDelete.id
       );
 
-      return {
+      const nextState = {
         ...prev,
         users: remainingUsers,
         profiles: remainingProfiles,
         seasonEntries: remainingSeasonEntries,
       };
-    });
 
-    if (isCurrentActive) {
-      const remainingUsers = state.users.filter((u) => u.id !== userIdToDelete);
-      if (remainingUsers.length > 0) {
-        setCurrentUserId(remainingUsers[0].id);
-      } else {
-        setCurrentUserId('');
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+      } catch {
+        // Ignore
       }
-    }
 
-    // Sincroniza exclusão no Supabase
-    if (isSupabaseConfigured()) {
-      supabaseService.deleteUser(userIdToDelete).catch((err) => {
-        console.warn('Erro ao excluir no Supabase:', err);
-      });
-    }
+      return nextState;
+    });
 
     notify(
       'info',
