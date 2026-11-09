@@ -321,11 +321,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const [storedSumulas, setStoredSumulas] = useState<SumulaData[]>(getStoredSumulas);
   const [presenceFeedback, setPresenceFeedback] = useState<string | null>(null);
 
-  // Cálculo dos Super Capas da Semana baseado na última súmula registrada
+  // Filtra súmulas do time do atleta/treinador atual (cada time vê apenas suas súmulas; admin vê todas)
+  const userTeamNameLower = (
+    currentUser?.teamName ||
+    activeProfile.teamName ||
+    'Real Planalto FC'
+  ).trim().toLowerCase();
+
+  const myTeamSumulas = useMemo(() => {
+    return storedSumulas.filter((s) => {
+      if (currentUser?.role === 'admin') return true;
+      const sTeam = (s.teamName || '').trim().toLowerCase();
+      if (sTeam && userTeamNameLower) return sTeam === userTeamNameLower;
+      if (s.createdByUserId && s.createdByUserId === currentUser?.id) return true;
+      const myUpper = activeProfile.displayName.trim().toUpperCase();
+      return Boolean(s.arrivalList?.some((a) => a.playerName.trim().toUpperCase() === myUpper));
+    });
+  }, [storedSumulas, currentUser?.role, currentUser?.id, userTeamNameLower, activeProfile.displayName]);
+
+  // Cálculo dos Super Capas da Semana baseado na última súmula registrada do time
   const superCapasInfo = useMemo(() => {
     try {
-      const sumula = storedSumulas[0] || DEFAULT_INITIAL_SUMULA;
+      const sumula = myTeamSumulas[0];
       if (!sumula || !sumula.teamsGrid || sumula.teamsGrid.length === 0) return null;
+
+      const hasPlayedGames = sumula.teamsGrid.some((row) =>
+        (row.matches || []).some((m) => m === 'V' || m === 'E' || m === 'D')
+      );
+      if (!hasPlayedGames) return null;
 
       // Calcula pontuação e estatísticas de cada time na súmula
       const teamsStats = sumula.teamsGrid.map((row) => {
@@ -738,26 +761,80 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
 
 
-  // Status de Presença do atleta na súmula da rodada atual
-  const activeSumula = storedSumulas[0] || DEFAULT_INITIAL_SUMULA;
+  // Status de Presença do atleta na súmula da rodada atual do seu time
+  const activeSumula = myTeamSumulas[0];
   const myNameUpper = activeProfile.displayName.trim().toUpperCase();
-  const myArrivalEntry = activeSumula.arrivalList?.find(
+  const myArrivalEntry = activeSumula?.arrivalList?.find(
     (a) => a.playerName.trim().toUpperCase() === myNameUpper
   );
   const isMyPresenceConfirmed = Boolean(myArrivalEntry?.confirmed);
   const confirmedCount =
-    activeSumula.arrivalList?.filter((a) => a.confirmed).length || 0;
-  const totalRosterCount = activeSumula.arrivalList?.length || 28;
+    activeSumula?.arrivalList?.filter((a) => a.confirmed).length || 0;
+  const totalRosterCount = activeSumula?.arrivalList?.length || 0;
 
   // Alternar presença do atleta diretamente no Card
   const handleToggleMyPresence = () => {
     try {
       const all = getStoredSumulas();
-      const current = all[0] || DEFAULT_INITIAL_SUMULA;
+      let current = myTeamSumulas[0];
       const isGk = activeProfile.position === 'goleiro';
 
+      if (!current) {
+        // Se ainda não existir súmula para o time, cria uma nova limpa com os atletas reais do time
+        const teamProfiles = profiles.filter((p) => {
+          const pTeam = (p.teamName || '').trim().toLowerCase();
+          return pTeam === userTeamNameLower;
+        });
+        const activeAthletes = teamProfiles.length > 0 ? teamProfiles : [activeProfile];
+        const initialArrivals: SumulaData['arrivalList'] = activeAthletes.map((p, idx) => ({
+          order: idx + 1,
+          playerName: p.displayName.trim().toUpperCase(),
+          confirmed: p.id === activeProfile.id,
+          isGuest: false,
+          isGoalkeeper: p.position === 'goleiro',
+          note: p.position === 'goleiro' ? 'Goleiro' : undefined,
+        }));
+
+        const fresh: SumulaData = {
+          id: `sumula-pelada-${Date.now()}`,
+          status: 'em_andamento',
+          matchDate: formatPeladaDateExtended(peladaConfig.date),
+          startTime: peladaConfig.time,
+          lastUpdated: new Date().toISOString(),
+          teamName: activeProfile.teamName || currentUser?.teamName || 'Real Planalto FC',
+          createdByUserId: currentUser?.id,
+          createdByName: activeProfile.displayName,
+          timerSeconds: 0,
+          isTimerRunning: false,
+          arrivalList: initialArrivals,
+          yellowCards: [],
+          blueCards: [],
+          redCards: [],
+          goalkeepers: syncFixedGoalkeepers(initialArrivals),
+          teamsGrid: [
+            { teamName: 'Time 01', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
+            { teamName: 'Time 02', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
+            { teamName: 'Time 03', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
+            { teamName: 'Time 04', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
+          ],
+          teamLineups: {
+            'Time 01': [],
+            'Time 02': [],
+            'Time 03': [],
+            'Time 04': [],
+          },
+          highlightGoals: [],
+        };
+
+        saveSumulaToList(fresh);
+        setStoredSumulas(getStoredSumulas());
+        setPresenceFeedback('✓ Sua presença na pelada foi confirmada!');
+        setTimeout(() => setPresenceFeedback(null), 3000);
+        return;
+      }
+
       let found = false;
-      const updatedArrivals = current.arrivalList.map((a) => {
+      const updatedArrivals = (current.arrivalList || []).map((a) => {
         if (a.playerName.trim().toUpperCase() === myNameUpper) {
           found = true;
           return {
@@ -814,18 +891,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     try {
       localStorage.setItem('futplay_pelada_schedule_v1', JSON.stringify(updated));
 
-      // Sincroniza a data e horário também na súmula da rodada atual
+      // Sincroniza a data e horário também na súmula da rodada atual se existir
       const [y, m, d] = updated.date.split('-');
       const dateBr = `${d}/${m}/${y}`;
-      const current = storedSumulas[0] || DEFAULT_INITIAL_SUMULA;
-      const syncedSumula: SumulaData = {
-        ...current,
-        matchDate: dateBr,
-        startTime: updated.time,
-        lastUpdated: new Date().toISOString(),
-      };
-      saveSumulaToList(syncedSumula);
-      setStoredSumulas(getStoredSumulas());
+      const current = myTeamSumulas[0];
+      if (current) {
+        const syncedSumula: SumulaData = {
+          ...current,
+          matchDate: dateBr,
+          startTime: updated.time,
+          lastUpdated: new Date().toISOString(),
+        };
+        saveSumulaToList(syncedSumula);
+        setStoredSumulas(getStoredSumulas());
+      }
     } catch (err) {
       console.warn('Erro ao salvar agendamento da pelada:', err);
     }

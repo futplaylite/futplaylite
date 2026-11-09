@@ -25,6 +25,9 @@ export interface SumulaData {
   matchDate: string;
   startTime: string;
   lastUpdated: string;
+  teamName?: string;
+  createdByUserId?: string;
+  createdByName?: string;
   timerSeconds?: number;
   isTimerRunning?: boolean;
   arrivalList: {
@@ -53,54 +56,15 @@ export interface SumulaData {
 }
 
 const STORAGE_KEY = 'futplay_sumula_pelada_ativa_v1';
-
-// Goleiros Oficiais Cadastrados no Banco / Seed Excel
-export const OFFICIAL_GOALKEEPER_NAMES: string[] = [
-  'PALITO',
-  'EMERSOM GOLEIRO',
-  'MANELÃO',
-  'RAFAEL GOLEIROS',
-];
-
-export const OFFICIAL_ELENCO_PLAYERS: string[] = [
-  'JUNIOR (GANSO)',
-  'MARLOM',
-  'ROBSOM',
-  'SEVERINO',
-  'YAGO',
-  'ELIZEU (ZEU)',
-  'DEDA',
-  'HUGO PAÇOCA',
-  'RAFAEL (RAFA)',
-  'HENRIQUE',
-  'JUACY',
-  'MAILOM',
-  'CARLOS',
-  'TEI (SUJO)',
-  'DAMIÃO',
-  'DAYVID',
-  'GLEISOM',
-  'JASOM',
-  'MELQUIZ',
-  'PITBUL',
-  'JR GALEGO',
-  'RODRIGO',
-  'GEO',
-  'ALMIR',
-  'FABRICIO',
-  'EDNALDO',
-  'TIAGO',
-  'RONALDO',
-];
+export const ALL_SUMULAS_STORAGE_KEY = 'futplay_todas_sumulas_peladas_v1';
 
 /**
- * Identifica se um atleta é do tipo Goleiro (pelo flag explícito ou pelo nome oficial)
+ * Identifica se um atleta é do tipo Goleiro (pelo flag explícito ou pelo nome esportivo)
  */
 export const isGoalkeeperPlayer = (name: string, isGoalkeeperFlag?: boolean): boolean => {
   if (isGoalkeeperFlag !== undefined) return isGoalkeeperFlag;
   const upper = (name || '').trim().toUpperCase();
-  if (upper.includes('GOLEIRO')) return true;
-  return OFFICIAL_GOALKEEPER_NAMES.some((gk) => gk.toUpperCase() === upper);
+  return upper.includes('GOLEIRO') || upper.endsWith('(GK)') || upper.startsWith('GK');
 };
 
 /**
@@ -108,14 +72,13 @@ export const isGoalkeeperPlayer = (name: string, isGoalkeeperFlag?: boolean): bo
  * que estiverem com presença confirmada na Lista de Presença.
  */
 export const syncFixedGoalkeepers = (
-  arrivalList: SumulaData['arrivalList']
+  arrivalList?: SumulaData['arrivalList']
 ): { num: string; name: string }[] => {
-  // Coleta os nomes de goleiros com presença confirmada
-  const confirmedGkNames = arrivalList
+  const list = arrivalList || [];
+  const confirmedGkNames = list
     .filter((a) => a.confirmed && isGoalkeeperPlayer(a.playerName, a.isGoalkeeper))
     .map((a) => a.playerName.toUpperCase());
 
-  // Mínimo de 4 vagas de goleiros fixos na súmula
   const slotCount = Math.max(4, confirmedGkNames.length);
   const slots: { num: string; name: string }[] = [];
 
@@ -129,117 +92,93 @@ export const syncFixedGoalkeepers = (
   return slots;
 };
 
-export const buildDefaultArrivalList = (): SumulaData['arrivalList'] => {
-  // 1. Goleiros com presença confirmada por padrão para preencherem os Goleiros Fixos da súmula
-  const goalkeepersList = OFFICIAL_GOALKEEPER_NAMES.map((name, idx) => ({
-    order: idx + 1,
-    playerName: name,
-    confirmed: true,
-    isGuest: false,
-    isGoalkeeper: true,
-  }));
-
-  // 2. Jogadores de Linha
-  const fieldPlayersList = OFFICIAL_ELENCO_PLAYERS.map((name, idx) => ({
-    order: goalkeepersList.length + idx + 1,
-    playerName: name,
-    confirmed: idx < 18, // Primeiros 18 jogadores de linha confirmados por padrão
-    isGuest: false,
-    isGoalkeeper: false,
-  }));
-
-  return [...goalkeepersList, ...fieldPlayersList];
+/**
+ * Cria uma súmula em branco e limpa (sem dados fictícios de demonstração).
+ */
+export const createCleanSumula = (params?: {
+  id?: string;
+  teamName?: string;
+  createdByUserId?: string;
+  createdByName?: string;
+  arrivalList?: SumulaData['arrivalList'];
+}): SumulaData => {
+  const arrivals = params?.arrivalList || [];
+  return {
+    id: params?.id || `sumula-pelada-${Date.now()}`,
+    status: 'em_andamento',
+    matchDate: new Date().toLocaleDateString('pt-BR'),
+    startTime: '20:15',
+    lastUpdated: new Date().toISOString(),
+    teamName: params?.teamName,
+    createdByUserId: params?.createdByUserId,
+    createdByName: params?.createdByName,
+    timerSeconds: 0,
+    isTimerRunning: false,
+    arrivalList: arrivals,
+    yellowCards: [],
+    blueCards: [],
+    redCards: [],
+    goalkeepers: syncFixedGoalkeepers(arrivals),
+    teamsGrid: [
+      { teamName: 'Time 01', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
+      { teamName: 'Time 02', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
+      { teamName: 'Time 03', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
+      { teamName: 'Time 04', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
+    ],
+    teamLineups: {
+      'Time 01': [],
+      'Time 02': [],
+      'Time 03': [],
+      'Time 04': [],
+    },
+    highlightGoals: [],
+  };
 };
 
-const defaultArrivals = buildDefaultArrivalList();
+export const DEFAULT_INITIAL_SUMULA: SumulaData = createCleanSumula({ id: 'template' });
 
-export const DEFAULT_INITIAL_SUMULA: SumulaData = {
-  id: 'pelada-rodada-atual',
-  status: 'em_andamento',
-  matchDate: new Date().toLocaleDateString('pt-BR'),
-  startTime: '20:15',
-  lastUpdated: new Date().toISOString(),
-  timerSeconds: 0,
-  isTimerRunning: false,
-  arrivalList: defaultArrivals,
-  yellowCards: [
-    'YAGO',
-    'RAFAEL (RAFA)',
-    'ELIZEU (ZEU)',
-    'HENRIQUE',
-    'GLEISOM',
-  ],
-  blueCards: [],
-  redCards: [],
-  goalkeepers: syncFixedGoalkeepers(defaultArrivals),
-  teamsGrid: [
-    { teamName: 'Time 01', matches: ['-', '-', 'V', 'E', '-', '-', 'E', '-', '-', '-', 'V', '-', '-', '-', '-'] },
-    { teamName: 'Time 02', matches: ['V', 'V', 'V', '-', 'V', '-', '-', 'E', '-', 'V', 'V', '-', '-', '-', '-'] },
-    { teamName: 'Time 03', matches: ['-', '-', '-', 'E', '-', 'V', 'V', 'E', '-', '-', '-', '-', '-', '-', '-'] },
-    { teamName: 'Time 04', matches: ['-', '-', '-', '-', '-', '-', 'E', '-', 'V', '-', '-', '-', '-', '-', '-'] },
-  ],
-  teamLineups: {
-    'Time 01': [
-      { player: 'JUNIOR (GANSO)', goals: 1 },
-      { player: 'PITBUL', goals: 0 },
-      { player: 'HUGO PAÇOCA', goals: 1 },
-      { player: 'CARLOS', goals: 0 },
-      { player: 'ROBSOM', goals: 0 },
-      { player: 'DAMIÃO', goals: 0, isSub: true },
-      { player: 'GEO', goals: 1, isSub: true },
-    ],
-    'Time 02': [
-      { player: 'DAYVID', goals: 3 },
-      { player: 'HENRIQUE', goals: 1 },
-      { player: 'MARLOM', goals: 1 },
-      { player: 'GLEISOM', goals: 1 },
-      { player: 'MAILOM', goals: 2 },
-    ],
-    'Time 03': [
-      { player: 'SEVERINO', goals: 0 },
-      { player: 'PITBUL', goals: 2 },
-      { player: 'RAFAEL (RAFA)', goals: 2 },
-      { player: 'JASOM', goals: 0 },
-      { player: 'YAGO', goals: 1, isSub: true },
-    ],
-    'Time 04': [
-      { player: 'TEI (SUJO)', goals: 0 },
-      { player: 'MELQUIZ', goals: 4 },
-      { player: 'JUACY', goals: 1 },
-      { player: 'DEDA', goals: 0 },
-      { player: 'ELIZEU (ZEU)', goals: 1, isSub: true },
-    ],
-  },
-  highlightGoals: [
-    { player: 'SEVERINO', time: '21:31' },
-    { player: 'JUNIOR (GANSO)', time: '22:04' },
-    { player: 'MELQUIZ', time: '22:05' },
-  ],
-};
+export const buildDefaultArrivalList = (): SumulaData['arrivalList'] => [];
 
-export const ALL_SUMULAS_STORAGE_KEY = 'futplay_todas_sumulas_peladas_v1';
-
+/**
+ * Retorna apenas as súmulas reais cadastradas, expurgando automaticamente a súmula antiga de teste
+ */
 export const getStoredSumulas = (): SumulaData[] => {
   try {
     const listRaw = localStorage.getItem(ALL_SUMULAS_STORAGE_KEY);
     if (listRaw !== null) {
       const parsed = JSON.parse(listRaw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        // Remove sumula de teste/demonstração legada
+        const realSumulas = parsed.filter(
+          (s) => s && s.id && s.id !== 'pelada-rodada-atual' && s.id !== 'demo-sumula' && s.id !== 'template'
+        );
+        if (realSumulas.length !== parsed.length) {
+          localStorage.setItem(ALL_SUMULAS_STORAGE_KEY, JSON.stringify(realSumulas));
+        }
+        return realSumulas;
+      }
     }
   } catch (e) {
     console.warn('Erro ao ler todas as súmulas:', e);
   }
-  // Se não existir lista ainda, tenta a súmula legada ou a padrão
+
+  // Limpa também do storage legado ativo se for a de demonstração
   try {
     const legacy = localStorage.getItem(STORAGE_KEY);
     if (legacy) {
       const parsedLegacy = JSON.parse(legacy);
-      if (parsedLegacy && parsedLegacy.id) {
-        return [parsedLegacy];
+      if (
+        parsedLegacy &&
+        (parsedLegacy.id === 'pelada-rodada-atual' ||
+          parsedLegacy.id === 'demo-sumula' ||
+          parsedLegacy.id === 'template')
+      ) {
+        localStorage.removeItem(STORAGE_KEY);
       }
     }
   } catch {}
-  return [DEFAULT_INITIAL_SUMULA];
+
+  return [];
 };
 
 export const saveSumulaToList = (sumulaToSave: SumulaData) => {
@@ -310,97 +249,83 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   sumulaId,
   isNew,
 }) => {
-  const { currentUser, sumulaStopwatch } = useLeague();
+  const { currentUser, sumulaStopwatch, profiles, currentPlayerProfile } = useLeague();
   const isCoachOrAdmin =
     currentUser?.role === 'admin' ||
     currentUser?.role === 'coach' ||
     currentUser?.isTeamOwner === true;
 
   const isDeletedRef = useRef<boolean>(false);
+  const userTeam = currentUser?.teamName || currentPlayerProfile?.teamName || 'Real Planalto FC';
 
-  // Carrega a súmula específica ou cria uma nova com id único
+  // Carrega a súmula específica ou cria uma nova com id único para o time correspondente
   const [sumula, setSumula] = useState<SumulaData>(() => {
+    // Busca atletas reais cadastrados no time atual
+    const teamProfiles = profiles.filter((p) => {
+      const pTeam = (p.teamName || '').trim().toLowerCase();
+      return pTeam === userTeam.trim().toLowerCase();
+    });
+
+    const activeAthletes = teamProfiles.length > 0
+      ? teamProfiles
+      : (currentPlayerProfile ? [currentPlayerProfile] : []);
+
+    const teamArrivals: SumulaData['arrivalList'] = activeAthletes.map((p, idx) => ({
+      order: idx + 1,
+      playerName: p.displayName.trim().toUpperCase(),
+      confirmed: p.userId === currentUser.id,
+      isGuest: false,
+      isGoalkeeper: p.position === 'goleiro',
+      note: p.position === 'goleiro' ? 'Goleiro' : undefined,
+    }));
+
     if (isNew) {
       const newId = `sumula-pelada-${Date.now()}`;
-      const freshArrivals = buildDefaultArrivalList();
-      const fresh: SumulaData = {
-        ...DEFAULT_INITIAL_SUMULA,
+      return createCleanSumula({
         id: newId,
-        matchDate: new Date().toLocaleDateString('pt-BR'),
-        startTime: '20:15',
-        lastUpdated: new Date().toISOString(),
-        arrivalList: freshArrivals,
-        goalkeepers: syncFixedGoalkeepers(freshArrivals),
-      };
-      return fresh;
+        teamName: userTeam,
+        createdByUserId: currentUser.id,
+        createdByName: currentPlayerProfile?.displayName || currentUser.email.split('@')[0],
+        arrivalList: teamArrivals,
+      });
     }
 
     const all = getStoredSumulas();
-    let current: SumulaData = DEFAULT_INITIAL_SUMULA;
+    let current: SumulaData | undefined;
     if (sumulaId) {
-      const found = all.find((s) => s.id === sumulaId);
-      if (found) current = found;
-    } else if (all[0]) {
+      current = all.find((s) => s.id === sumulaId);
+    } else if (all.length > 0) {
       current = all[0];
     }
 
+    if (!current) {
+      return createCleanSumula({
+        teamName: userTeam,
+        createdByUserId: currentUser.id,
+        createdByName: currentPlayerProfile?.displayName || currentUser.email.split('@')[0],
+        arrivalList: teamArrivals,
+      });
+    }
+
     // Merge defensivo garantindo que todas as propriedades da súmula existam
-    let sanitized: SumulaData = {
+    const arrivalListToUse = current.arrivalList && current.arrivalList.length > 0
+      ? current.arrivalList
+      : teamArrivals;
+
+    const sanitized: SumulaData = {
       ...DEFAULT_INITIAL_SUMULA,
       ...current,
-      arrivalList: current.arrivalList || DEFAULT_INITIAL_SUMULA.arrivalList,
+      teamName: current.teamName || userTeam,
+      arrivalList: arrivalListToUse,
       teamsGrid: current.teamsGrid || DEFAULT_INITIAL_SUMULA.teamsGrid,
       teamLineups: current.teamLineups || DEFAULT_INITIAL_SUMULA.teamLineups,
-      yellowCards: current.yellowCards || DEFAULT_INITIAL_SUMULA.yellowCards,
-      blueCards: current.blueCards || DEFAULT_INITIAL_SUMULA.blueCards,
-      redCards: current.redCards || DEFAULT_INITIAL_SUMULA.redCards,
-      goalkeepers: current.goalkeepers || DEFAULT_INITIAL_SUMULA.goalkeepers,
-      highlightGoals: current.highlightGoals || DEFAULT_INITIAL_SUMULA.highlightGoals,
+      yellowCards: current.yellowCards || [],
+      blueCards: current.blueCards || [],
+      redCards: current.redCards || [],
+      goalkeepers: current.goalkeepers || syncFixedGoalkeepers(arrivalListToUse),
+      highlightGoals: current.highlightGoals || [],
     };
 
-    if (sanitized && sanitized.arrivalList) {
-      const hasGksInArrival = sanitized.arrivalList.some((a) =>
-        isGoalkeeperPlayer(a.playerName, a.isGoalkeeper)
-      );
-      let updatedArrivalList = sanitized.arrivalList;
-      if (!hasGksInArrival) {
-        // Se a súmula não continha os goleiros na lista de chegada, adiciona os 4 oficiais no início
-        const gksToAdd = OFFICIAL_GOALKEEPER_NAMES.map((name, i) => ({
-          order: i + 1,
-          playerName: name,
-          confirmed: true,
-          isGuest: false,
-          isGoalkeeper: true,
-        }));
-        updatedArrivalList = [
-          ...gksToAdd,
-          ...updatedArrivalList.map((a, i) => ({
-            ...a,
-            order: gksToAdd.length + i + 1,
-            isGoalkeeper: isGoalkeeperPlayer(a.playerName, a.isGoalkeeper),
-          })),
-        ];
-      } else {
-        updatedArrivalList = updatedArrivalList.map((a) => ({
-          ...a,
-          isGoalkeeper: isGoalkeeperPlayer(a.playerName, a.isGoalkeeper),
-          note: a.note === '*' ? undefined : a.note,
-        }));
-      }
-
-      sanitized = {
-        ...sanitized,
-        arrivalList: updatedArrivalList,
-        goalkeepers: syncFixedGoalkeepers(updatedArrivalList),
-        teamsGrid: (sanitized.teamsGrid || DEFAULT_INITIAL_SUMULA.teamsGrid).map((row) => {
-          const matches = [...row.matches];
-          while (matches.length < 15) {
-            matches.push('-');
-          }
-          return { ...row, matches: matches.slice(0, 15) };
-        }),
-      };
-    }
     return sanitized;
   });
 
@@ -468,37 +393,36 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   const [newTeamPlayerName, setNewTeamPlayerName] = useState('');
   const [newTeamPlayerIsSub, setNewTeamPlayerIsSub] = useState(false);
 
-  // Lista unificada de sugestões para os times (Presenças confirmadas + Elenco oficial + Goleiros)
+  // Lista unificada de sugestões para os times (Presenças confirmadas + Atletas reais do elenco cadastrados no banco)
   const availableTeamPlayerSuggestions = useMemo(() => {
     const list: string[] = [];
     // 1. Presenças confirmadas na súmula
-    sumula.arrivalList
+    (sumula.arrivalList || [])
       .filter((a) => a.confirmed && a.playerName)
       .forEach((a) => {
         const up = a.playerName.trim().toUpperCase();
         if (!list.includes(up)) list.push(up);
       });
-    // 2. Elenco oficial
-    OFFICIAL_ELENCO_PLAYERS.forEach((name) => {
-      const up = name.trim().toUpperCase();
-      if (!list.includes(up)) list.push(up);
-    });
-    // 3. Goleiros
-    OFFICIAL_GOALKEEPER_NAMES.forEach((name) => {
-      const up = name.trim().toUpperCase();
-      if (!list.includes(up)) list.push(up);
-    });
+    // 2. Todos os atletas reais do time cadastrados no banco de dados
+    const sumulaTeam = (sumula.teamName || userTeam || '').trim().toLowerCase();
+    profiles
+      .filter((p) => !sumulaTeam || (p.teamName || '').trim().toLowerCase() === sumulaTeam)
+      .forEach((p) => {
+        const up = p.displayName.trim().toUpperCase();
+        if (!list.includes(up)) list.push(up);
+      });
     return list;
-  }, [sumula.arrivalList]);
+  }, [sumula.arrivalList, sumula.teamName, userTeam, profiles]);
 
   // 1. Lista de Presença
   const handleAddArrival = () => {
     if (!newArrivalName.trim()) return;
     const name = newArrivalName.trim().toUpperCase();
-    const isGk = newArrivalIsGoalkeeper || isGoalkeeperPlayer(name);
-    const isOfficial =
-      OFFICIAL_ELENCO_PLAYERS.some((p) => p.toUpperCase() === name) ||
-      OFFICIAL_GOALKEEPER_NAMES.some((p) => p.toUpperCase() === name);
+    const matchedProfile = profiles.find(
+      (p) => p.displayName.trim().toUpperCase() === name
+    );
+    const isGk = newArrivalIsGoalkeeper || matchedProfile?.position === 'goleiro' || isGoalkeeperPlayer(name);
+    const isOfficial = Boolean(matchedProfile);
 
     setSumula((prev) => {
       const updatedArrivals = [
@@ -799,14 +723,32 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   // Reiniciar súmula
   const handleReset = () => {
     if (window.confirm('Deseja reiniciar a súmula para uma nova rodada em branco?')) {
-      const fresh: SumulaData = {
-        ...DEFAULT_INITIAL_SUMULA,
-        id: `pelada-${Date.now()}`,
-        matchDate: new Date().toLocaleDateString('pt-BR'),
-        lastUpdated: new Date().toISOString(),
-      };
+      const teamProfiles = profiles.filter((p) => {
+        const pTeam = (p.teamName || '').trim().toLowerCase();
+        return pTeam === userTeam.trim().toLowerCase();
+      });
+      const activeAthletes = teamProfiles.length > 0
+        ? teamProfiles
+        : (currentPlayerProfile ? [currentPlayerProfile] : []);
+
+      const teamArrivals: SumulaData['arrivalList'] = activeAthletes.map((p, idx) => ({
+        order: idx + 1,
+        playerName: p.displayName.trim().toUpperCase(),
+        confirmed: p.userId === currentUser.id,
+        isGuest: false,
+        isGoalkeeper: p.position === 'goleiro',
+        note: p.position === 'goleiro' ? 'Goleiro' : undefined,
+      }));
+
+      const fresh: SumulaData = createCleanSumula({
+        id: `sumula-pelada-${Date.now()}`,
+        teamName: userTeam,
+        createdByUserId: currentUser.id,
+        createdByName: currentPlayerProfile?.displayName || currentUser.email.split('@')[0],
+        arrivalList: teamArrivals,
+      });
       setSumula(fresh);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+      saveSumulaToList(fresh);
     }
   };
 

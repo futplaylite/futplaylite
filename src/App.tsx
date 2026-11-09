@@ -10,6 +10,7 @@ import {
   QrCode,
   RotateCcw,
   Search,
+  ShieldCheck,
   Smartphone,
   Swords,
   Trash2,
@@ -512,6 +513,25 @@ const MainMobileShell: React.FC = () => {
                         </div>
                         <span className="font-mono text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
                           PIX & Caixa
+                        </span>
+                      </button>
+                    )}
+
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowProfileMenu(false);
+                          handleNavigate('admin');
+                        }}
+                        className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 transition text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="h-3.5 w-3.5 text-purple-600" />
+                          <span>Painel do Administrador</span>
+                        </div>
+                        <span className="font-mono text-[9px] font-black text-purple-700 bg-purple-100 border border-purple-200 px-1.5 py-0.2 rounded-full">
+                          ADMIN
                         </span>
                       </button>
                     )}

@@ -165,6 +165,32 @@ export const MatchesAndValidationView: React.FC<
     return getStoredSumulas();
   }, [sumulasVersion]);
 
+  const userTeam = (
+    currentUser.teamName ||
+    currentPlayerProfile?.teamName ||
+    ''
+  ).trim().toLowerCase();
+
+  const isAdmin = currentUser.role === 'admin';
+
+  // Cada jogador e treinador vê apenas as súmulas do seu time; administrador vê todas
+  const visibleSumulas = useMemo(() => {
+    return allSavedSumulas.filter((s) => {
+      if (isAdmin) return true;
+      const sTeam = (s.teamName || '').trim().toLowerCase();
+      if (sTeam && userTeam) {
+        if (sTeam === userTeam) return true;
+      }
+      if (s.createdByUserId && s.createdByUserId === currentUser.id) return true;
+      const myNameUpper = (currentPlayerProfile?.displayName || '').trim().toUpperCase();
+      if (myNameUpper && s.arrivalList?.some((a) => a.playerName.trim().toUpperCase() === myNameUpper)) {
+        return true;
+      }
+      if (!sTeam && userTeam === 'real planalto fc') return true;
+      return false;
+    });
+  }, [allSavedSumulas, isAdmin, userTeam, currentUser.id, currentPlayerProfile?.displayName]);
+
   const [venueName, setVenueName] = useState('Arena Planalto Society');
   const [neighborhood, setNeighborhood] = useState('Centro - Planalto');
   const [format, setFormat] = useState<MatchFormat>('7v7');
@@ -424,7 +450,7 @@ export const MatchesAndValidationView: React.FC<
                   : 'bg-slate-100 text-slate-600'
               }`}
             >
-              {allSavedSumulas.length} súmulas
+              {visibleSumulas.length} súmulas
             </span>
           </div>
 
@@ -530,7 +556,7 @@ export const MatchesAndValidationView: React.FC<
             </span>
             <span className="text-[10px] text-slate-400 font-normal">
               {matchCategory === 'treino'
-                ? `${allSavedSumulas.length} súmula(s)`
+                ? `${visibleSumulas.length} súmula(s)`
                 : `${matches.length} jogo(s)`}
             </span>
           </div>
@@ -548,12 +574,12 @@ export const MatchesAndValidationView: React.FC<
                 return isNaN(t) ? 0 : t;
               };
 
-              const filteredSumulas = allSavedSumulas
+              const filteredSumulas = visibleSumulas
                 .slice()
                 .sort((a, b) => {
                   const tA = parseDateHelper(a.matchDate) || (a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0);
                   const tB = parseDateHelper(b.matchDate) || (b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0);
-                  return tA - tB;
+                  return tB - tA;
                 });
 
               return (
