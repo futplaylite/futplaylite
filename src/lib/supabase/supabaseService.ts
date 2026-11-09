@@ -95,17 +95,18 @@ export const supabaseService = {
         const res = await supabase
           .from('users')
           .select('*')
-          .eq('email', trimmed)
+          .ilike('email', trimmed)
           .limit(1)
           .maybeSingle();
         data = res.data;
       } else {
-        // Tenta buscar por whatsapp_number exato, com DDD, ou email gerado com os dígitos
+        // Tenta buscar por whatsapp_number (apenas dígitos para não quebrar parser do PostgREST com parênteses) ou email gerado
+        const last8 = digits.length > 8 ? digits.slice(-8) : digits;
         const orFilter = [
           `email.ilike.${digits}%`,
           `whatsapp_number.eq.${digits}`,
-          `whatsapp_number.eq.${trimmed}`,
           `whatsapp_number.ilike.%${digits}%`,
+          `whatsapp_number.ilike.%${last8}`,
         ].join(',');
 
         const res = await supabase
@@ -115,7 +116,7 @@ export const supabaseService = {
           .limit(1)
           .maybeSingle();
 
-        if (res.error && res.error.message?.includes('does not exist')) {
+        if (res.error) {
           const fallbackRes = await supabase
             .from('users')
             .select('*')
@@ -125,6 +126,17 @@ export const supabaseService = {
           data = fallbackRes.data;
         } else {
           data = res.data;
+        }
+
+        // Fallback caso o número tenha sido salvo com máscara literal
+        if (!data && trimmed) {
+          const maskRes = await supabase
+            .from('users')
+            .select('*')
+            .eq('whatsapp_number', identifier.trim())
+            .limit(1)
+            .maybeSingle();
+          data = maskRes.data;
         }
       }
 
@@ -220,7 +232,6 @@ export const supabaseService = {
           const orFilter = [
             `email.eq.${userEmail}`,
             `whatsapp_number.eq.${cleanDigits}`,
-            `whatsapp_number.eq.${params.user.whatsappNumber}`,
             `whatsapp_number.ilike.%${cleanDigits}%`,
           ].join(',');
           lookup = lookup.or(orFilter);

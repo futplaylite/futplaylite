@@ -161,14 +161,11 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
     setIsSubmitting(true);
 
-    // 1. Procura usuário cadastrado localmente por e-mail ou telefone
-    let existingUser = findUserByIdentifier(trimmed);
-    let matchedProfile = existingUser
-      ? profiles.find((p) => p.userId === existingUser?.id)
-      : undefined;
+    let existingUser: User | undefined;
+    let matchedProfile: PlayerProfile | undefined;
 
-    // 2. Se não encontrou em memória (ex: acessando de outro celular ou nova aba), busca direto no Supabase
-    if (!existingUser && isSupabaseConfigured()) {
+    // 1. Consulta SEMPRE o Supabase primeiro como fonte oficial da verdade
+    if (isSupabaseConfigured()) {
       try {
         const remoteMatch = await supabaseService.findUserByIdentifier(trimmed);
         if (remoteMatch) {
@@ -200,6 +197,14 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       } catch (err) {
         console.warn('Falha ao consultar Supabase no login:', err);
       }
+    }
+
+    // 2. Fallback local (apenas caso esteja sem conexão com o Supabase)
+    if (!existingUser) {
+      existingUser = findUserByIdentifier(trimmed);
+      matchedProfile = existingUser
+        ? profiles.find((p) => p.userId === existingUser?.id)
+        : undefined;
     }
 
     setIsSubmitting(false);
@@ -516,10 +521,20 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer"
+                disabled={isSubmitting}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer disabled:opacity-60"
               >
-                <span>Entrar na Liga</span>
-                <ArrowRight className="h-4 w-4" />
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Consultando banco de dados...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Entrar na Liga</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </button>
 
               <div className="pt-2 text-center">

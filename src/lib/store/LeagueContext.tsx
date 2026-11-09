@@ -388,58 +388,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
-    // 1. Sincroniza usuários do Supabase e migra contas locais pré-existentes
+    // 1. Sincroniza usuários a partir do Supabase (fonte oficial da verdade)
     supabaseService.getUsers().then((remoteUsers) => {
-      const remoteUserList = remoteUsers || [];
-      const remoteEmails = new Set(
-        remoteUserList.map((u) => u.email.toLowerCase())
-      );
-
-      // Se houver contas criadas localmente que ainda não foram para o Supabase, envia automaticamente agora
-      if (state.users.length > 0) {
-        try {
-          const storedPasswords = JSON.parse(
-            localStorage.getItem('futplay_user_passwords') || '{}'
-          );
-          state.users.forEach((localUser) => {
-            if (!remoteEmails.has(localUser.email.toLowerCase())) {
-              const localProfile = state.profiles.find(
-                (p) => p.userId === localUser.id || p.id === localUser.id
-              );
-              if (localProfile) {
-                const pwd =
-                  storedPasswords[localUser.id] ||
-                  storedPasswords[localUser.email?.toLowerCase()] ||
-                  (localUser.whatsappNumber
-                    ? storedPasswords[localUser.whatsappNumber.replace(/\D/g, '')]
-                    : undefined);
-                supabaseService.registerAthleteInSupabase({
-                  user: localUser,
-                  profile: localProfile,
-                  password: pwd,
-                });
-              }
-            }
-          });
-        } catch {
-          // Ignore
-        }
-      }
-
-      if (remoteUserList.length > 0) {
+      if (!remoteUsers) return;
+      if (remoteUsers.length > 0) {
         setState((prev) => {
-          const existingIds = new Set(prev.users.map((u) => u.id));
-          const existingEmails = new Set(
-            prev.users.map((u) => u.email.toLowerCase())
-          );
-          const toAdd = remoteUserList.filter(
-            (u) =>
-              !existingIds.has(u.id) &&
-              !existingEmails.has(u.email.toLowerCase())
-          );
-          return toAdd.length > 0
-            ? { ...prev, users: [...prev.users, ...toAdd] }
-            : prev;
+          const localMap = new Map(prev.users.map((u) => [u.id, u]));
+          const merged = remoteUsers.map((ru) => {
+            const loc = localMap.get(ru.id);
+            return loc ? { ...loc, ...ru } : ru;
+          });
+          return { ...prev, users: merged };
         });
       }
     });
@@ -448,11 +407,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     supabaseService.getProfiles().then((remoteProfiles) => {
       if (remoteProfiles && remoteProfiles.length > 0) {
         setState((prev) => {
-          const existingIds = new Set(prev.profiles.map((p) => p.id));
-          const toAdd = remoteProfiles.filter((p) => !existingIds.has(p.id));
-          return toAdd.length > 0
-            ? { ...prev, profiles: [...prev.profiles, ...toAdd] }
-            : prev;
+          const localMap = new Map(prev.profiles.map((p) => [p.id, p]));
+          const merged = remoteProfiles.map((rp) => {
+            const loc = localMap.get(rp.id);
+            return loc ? { ...loc, ...rp } : rp;
+          });
+          return { ...prev, profiles: merged };
         });
       }
     });
