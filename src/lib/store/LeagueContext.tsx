@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import {
   AuditLog,
   City,
@@ -289,10 +289,17 @@ function getInitialState(): LeagueState {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed: LeagueState = JSON.parse(saved);
+      const rawProfiles: PlayerProfile[] = parsed.profiles || [];
+      const cleanProfiles = rawProfiles.filter(
+        (p) =>
+          p.displayName.trim().toUpperCase() !== 'ADMIN' &&
+          p.id !== 'a0000000-0000-4000-8000-000000000002' &&
+          p.userId !== 'a0000000-0000-4000-8000-000000000001'
+      );
       return {
         ...parsed,
         users: parsed.users || [],
-        profiles: parsed.profiles || [],
+        profiles: cleanProfiles,
         matches: parsed.matches || [],
         peerEvaluations: parsed.peerEvaluations || [],
         monthlyPayments: parsed.monthlyPayments || [],
@@ -437,15 +444,46 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       });
     });
 
-    // 2. Sincroniza perfis esportivos do Supabase
+    // 2. Sincroniza perfis esportivos do Supabase (excluindo qualquer conta de administrador)
     supabaseService.getProfiles().then((remoteProfiles) => {
       if (!remoteProfiles) return;
       setState((prev) => {
-        const localMap = new Map(prev.profiles.map((p) => [p.id, p]));
-        const merged = remoteProfiles.map((rp) => {
+        const adminIds = new Set(
+          prev.users
+            .filter(
+              (u) =>
+                u.role === 'admin' ||
+                (u.email && u.email.toLowerCase() === 'futplaylite@gmail.com') ||
+                u.id === 'a0000000-0000-4000-8000-000000000001'
+            )
+            .map((u) => u.id)
+        );
+
+        const filteredRemote = remoteProfiles.filter(
+          (rp) =>
+            !adminIds.has(rp.userId) &&
+            rp.displayName.trim().toUpperCase() !== 'ADMIN' &&
+            rp.id !== 'a0000000-0000-4000-8000-000000000002' &&
+            rp.userId !== 'a0000000-0000-4000-8000-000000000001'
+        );
+
+        const localMap = new Map(
+          prev.profiles
+            .filter(
+              (p) =>
+                !adminIds.has(p.userId) &&
+                p.displayName.trim().toUpperCase() !== 'ADMIN' &&
+                p.id !== 'a0000000-0000-4000-8000-000000000002' &&
+                p.userId !== 'a0000000-0000-4000-8000-000000000001'
+            )
+            .map((p) => [p.id, p])
+        );
+
+        const merged = filteredRemote.map((rp) => {
           const loc = localMap.get(rp.id);
           return loc ? { ...loc, ...rp } : rp;
         });
+
         const next = { ...prev, profiles: merged };
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
@@ -519,9 +557,50 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     : rawCurrentUser;
 
-  const currentPlayerProfile = state.profiles.find(
-    (p) => p.userId === currentUser.id
-  );
+  // Contas de administradores nunca participam de jogos e não aparecem em nenhuma lista de atletas
+  const adminUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    state.users.forEach((u) => {
+      if (
+        u.role === 'admin' ||
+        (u.email && u.email.toLowerCase() === 'futplaylite@gmail.com') ||
+        u.id === 'a0000000-0000-4000-8000-000000000001'
+      ) {
+        ids.add(u.id);
+      }
+    });
+    return ids;
+  }, [state.users]);
+
+  const athleteProfiles = useMemo(() => {
+    return state.profiles.filter(
+      (p) =>
+        !adminUserIds.has(p.userId) &&
+        p.displayName.trim().toUpperCase() !== 'ADMIN' &&
+        p.id !== 'a0000000-0000-4000-8000-000000000002' &&
+        p.userId !== 'a0000000-0000-4000-8000-000000000001'
+    );
+  }, [state.profiles, adminUserIds]);
+
+  const athleteSeasonEntries = useMemo(() => {
+    const adminProfileIds = new Set(
+      state.profiles
+        .filter(
+          (p) =>
+            adminUserIds.has(p.userId) ||
+            p.displayName.trim().toUpperCase() === 'ADMIN' ||
+            p.id === 'a0000000-0000-4000-8000-000000000002' ||
+            p.userId === 'a0000000-0000-4000-8000-000000000001'
+        )
+        .map((p) => p.id)
+    );
+    return state.seasonEntries.filter((se) => !adminProfileIds.has(se.playerId));
+  }, [state.seasonEntries, state.profiles, adminUserIds]);
+
+  const currentPlayerProfile =
+    currentUser.role === 'admin'
+      ? undefined
+      : athleteProfiles.find((p: PlayerProfile) => p.userId === currentUser.id);
 
   const switchActiveUser = (userId: string) => {
     const target = state.users.find((u) => u.id === userId);
@@ -2433,6 +2512,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     <LeagueContext.Provider
       value={{
         ...state,
+        profiles: athleteProfiles,
+        seasonEntries: athleteSeasonEntries,
         currentUser,
         currentPlayerProfile,
         selectedCityId,

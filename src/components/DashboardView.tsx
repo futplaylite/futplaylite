@@ -19,8 +19,10 @@ import {
   MapPin,
   Share2,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Star,
+  Swords,
   Trophy,
   Users,
   X,
@@ -772,8 +774,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     activeSumula?.arrivalList?.filter((a) => a.confirmed).length || 0;
   const totalRosterCount = activeSumula?.arrivalList?.length || 0;
 
-  // Alternar presença do atleta diretamente no Card
+  // Alternar presença do atleta diretamente no Card (conta admin não participa)
   const handleToggleMyPresence = () => {
+    if (isAdmin) return;
     try {
       const all = getStoredSumulas();
       let current = myTeamSumulas[0];
@@ -1113,8 +1116,66 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         />
       )}
 
-      {/* 2. CARTÃO DIGITAL DE ATLETA (CARD OFICIAL COMPACTO) */}
-      <div className="w-full rounded-2xl border border-blue-200/80 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-950 p-3.5 text-white shadow-md relative overflow-hidden">
+      {/* 2. PAINEL DE CONTROLE (ADMIN) OU CARTÃO OFICIAL DE ATLETA (JOGADOR) */}
+      {isAdmin ? (
+        <div className="w-full rounded-2xl border border-purple-300/80 bg-gradient-to-b from-purple-800 via-indigo-900 to-slate-950 p-4 text-white shadow-md relative overflow-hidden">
+          <div className="absolute inset-0 z-0 bg-gradient-to-b from-purple-950/70 via-indigo-950/80 to-slate-950/95 pointer-events-none" />
+          <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-purple-500/20 blur-2xl pointer-events-none" />
+          <div className="absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-indigo-500/15 blur-2xl pointer-events-none" />
+
+          <div className="relative z-10 space-y-3">
+            <div className="flex items-center justify-between border-b border-white/15 pb-2.5">
+              <div className="flex items-center gap-2">
+                <div className="rounded-xl bg-purple-500/20 p-2 text-purple-300 border border-purple-400/30">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black uppercase text-purple-200 tracking-wide">
+                    Painel do Administrador
+                  </h2>
+                  <p className="text-[10px] text-purple-300/80">
+                    Conta Gestora da Liga · {currentUser.email}
+                  </p>
+                </div>
+              </div>
+              <span className="rounded-full bg-purple-500/30 text-purple-200 border border-purple-400/30 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider">
+                ADMIN
+              </span>
+            </div>
+
+            <div className="rounded-xl bg-white/10 backdrop-blur-xs p-3 border border-white/10 text-xs text-purple-100 font-medium leading-relaxed">
+              Você possui acesso administrativo completo para gerenciar e auditar súmulas, partidas e configurações de todos os times. <strong>Esta conta não participa como atleta</strong> e não é listada em súmulas ou rankings esportivos.
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => onNavigate('admin')}
+                className="flex items-center gap-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white p-2.5 text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer text-left"
+              >
+                <ShieldCheck className="h-4 w-4 shrink-0 text-purple-200" />
+                <div>
+                  <div className="leading-tight">Homologação</div>
+                  <div className="text-[9px] text-purple-200 font-normal">Auditar resultados</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigate('matches')}
+                className="flex items-center gap-2 rounded-xl bg-white/15 hover:bg-white/25 text-white p-2.5 text-xs font-bold border border-white/20 shadow-xs transition active:scale-95 cursor-pointer text-left"
+              >
+                <Swords className="h-4 w-4 shrink-0 text-amber-300" />
+                <div>
+                  <div className="leading-tight">Todas as Súmulas</div>
+                  <div className="text-[9px] text-blue-200 font-normal">Acessar partidas</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="w-full rounded-2xl border border-blue-200/80 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-950 p-3.5 text-white shadow-md relative overflow-hidden">
         {/* Imagem de Fundo Oficial do Estádio com Refletores */}
         <div
           className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none opacity-80"
@@ -1319,6 +1380,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           </div>
         </div>
       </div>
+      )}
 
       {/* ================================================================= */}
       {/* 2. CARD DO DIA DA PELADA COM DATA ATUAL OU CONTAGEM EM HORAS     */}
@@ -1755,28 +1817,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
               </span>
             </div>
 
-            {/* Botão Interativo com a Frase: Clique aqui para confirmar presença -> Presença confirmada! */}
-            <button
-              type="button"
-              onClick={handleToggleMyPresence}
-              className={`mt-2 w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-black transition-all active:scale-[0.98] shadow-sm cursor-pointer ${
-                isMyPresenceConfirmed
-                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-950/40 ring-1 ring-emerald-300'
-                  : 'bg-white/15 hover:bg-white/25 text-white border border-white/25 hover:border-white/40'
-              }`}
-            >
-              {isMyPresenceConfirmed ? (
-                <>
-                  <Check className="h-4 w-4 stroke-[3] text-white" />
-                  <span>Presença confirmada!</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 text-blue-200" />
-                  <span>Clique aqui para confirmar presença</span>
-                </>
-              )}
-            </button>
+            {/* Botão Interativo: Para atletas confirma presença; Para admin abre a súmula */}
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={() => onNavigate('matches')}
+                className="mt-2 w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-black bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition-all active:scale-[0.98] cursor-pointer"
+              >
+                <ShieldCheck className="h-4 w-4 text-purple-200" />
+                <span>Gerenciar Súmula da Partida (Admin)</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleToggleMyPresence}
+                className={`mt-2 w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-black transition-all active:scale-[0.98] shadow-sm cursor-pointer ${
+                  isMyPresenceConfirmed
+                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-950/40 ring-1 ring-emerald-300'
+                    : 'bg-white/15 hover:bg-white/25 text-white border border-white/25 hover:border-white/40'
+                }`}
+              >
+                {isMyPresenceConfirmed ? (
+                  <>
+                    <Check className="h-4 w-4 stroke-[3] text-white" />
+                    <span>Presença confirmada!</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-blue-200" />
+                    <span>Clique aqui para confirmar presença</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {/* Atalho Rápido para Mensalidades da Pelada */}
             <button

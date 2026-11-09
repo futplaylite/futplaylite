@@ -163,7 +163,8 @@ export const supabaseService = {
         .maybeSingle();
 
       let profile: PlayerProfile | undefined = undefined;
-      if (pData) {
+      // Contas de administradores não possuem perfil de atleta e não participam de jogos
+      if (pData && user.role !== 'admin' && user.email.toLowerCase() !== 'futplaylite@gmail.com') {
         profile = {
           id: pData.id,
           userId: pData.user_id,
@@ -467,7 +468,27 @@ export const supabaseService = {
       return null;
     }
 
-    return data.map((p) => ({
+    // Contas de administradores nunca participam de jogos e não aparecem em listas de atletas
+    const { data: usersData } = await supabase.from('users').select('id, role, email');
+    const adminUserIds = new Set(
+      (usersData || [])
+        .filter(
+          (u) =>
+            u.role === 'admin' ||
+            (u.email && u.email.toLowerCase() === 'futplaylite@gmail.com')
+        )
+        .map((u) => u.id)
+    );
+
+    const athleteRows = data.filter((p) => {
+      if (adminUserIds.has(p.user_id)) return false;
+      if ((p.display_name || '').trim().toUpperCase() === 'ADMIN') return false;
+      if (p.id === 'a0000000-0000-4000-8000-000000000002') return false;
+      if (p.user_id === 'a0000000-0000-4000-8000-000000000001') return false;
+      return true;
+    });
+
+    return athleteRows.map((p) => ({
       id: p.id,
       userId: p.user_id,
       displayName: p.display_name,
