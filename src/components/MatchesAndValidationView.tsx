@@ -52,7 +52,8 @@ export const MatchesAndValidationView: React.FC<
   const isCoachOrAdmin =
     currentUser.role === 'admin' ||
     currentUser.role === 'coach' ||
-    currentUser.isTeamOwner === true;
+    currentUser.isTeamOwner === true ||
+    currentPlayerProfile?.isTeamOwner === true;
 
   // Categoria de Partida: 'treino' (via Súmula) ou 'oficial' (Time vs Time cadastrado)
   const [matchCategory, setMatchCategory] = useState<'treino' | 'oficial'>('treino');
@@ -559,20 +560,22 @@ export const MatchesAndValidationView: React.FC<
 
               return (
                 <div className="space-y-2.5">
-                  {/* Botão de Criação de Súmula no INÍCIO da lista */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreatingNewSumula(true);
-                      setSelectedSumulaId(undefined);
-                      setActiveSumulaView('pelada');
-                    }}
-                    className="w-full py-2.5 px-3 rounded-xl border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/60 hover:bg-blue-50 text-blue-700 font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.99] transition cursor-pointer mb-1"
-                    title="Abrir nova súmula de treino"
-                  >
-                    <PlusCircle className="h-4 w-4 text-blue-600" />
-                    <span>Nova Súmula</span>
-                  </button>
+                  {/* Botão de Criação de Súmula no INÍCIO da lista (Disponível apenas para Treinadores/Admin) */}
+                  {isCoachOrAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingNewSumula(true);
+                        setSelectedSumulaId(undefined);
+                        setActiveSumulaView('pelada');
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/60 hover:bg-blue-50 text-blue-700 font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.99] transition cursor-pointer mb-1"
+                      title="Abrir nova súmula de treino"
+                    >
+                      <PlusCircle className="h-4 w-4 text-blue-600" />
+                      <span>Nova Súmula</span>
+                    </button>
+                  )}
 
                   {filteredSumulas.map((s, idx) => {
                     const totalGoals = Object.values(s.teamLineups || {}).reduce(
@@ -668,21 +671,25 @@ export const MatchesAndValidationView: React.FC<
                           Nenhuma súmula ativa no momento.
                         </p>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          Toque abaixo para abrir e preencher a súmula da rodada.
+                          {isCoachOrAdmin
+                            ? 'Toque abaixo para abrir e preencher a súmula da rodada.'
+                            : 'Aguarde o treinador da sua equipe abrir a súmula da rodada.'}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCreatingNewSumula(true);
-                          setSelectedSumulaId(undefined);
-                          setActiveSumulaView('pelada');
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-95 transition cursor-pointer"
-                      >
-                        <PlusCircle className="h-4 w-4" />
-                        <span>Abrir Nova Súmula</span>
-                      </button>
+                      {isCoachOrAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCreatingNewSumula(true);
+                            setSelectedSumulaId(undefined);
+                            setActiveSumulaView('pelada');
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-95 transition cursor-pointer"
+                        >
+                          <PlusCircle className="h-4 w-4" />
+                          <span>Abrir Nova Súmula</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
