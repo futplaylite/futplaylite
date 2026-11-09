@@ -559,21 +559,19 @@ export const MatchesAndValidationView: React.FC<
               return (
                 <div className="space-y-2.5">
                   {/* Botão de Criação de Súmula no INÍCIO da lista */}
-                  {isCoachOrAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCreatingNewSumula(true);
-                        setSelectedSumulaId(undefined);
-                        setActiveSumulaView('pelada');
-                      }}
-                      className="w-full py-2.5 px-3 rounded-xl border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/60 hover:bg-blue-50 text-blue-700 font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.99] transition cursor-pointer mb-1"
-                      title="Abrir nova súmula de treino"
-                    >
-                      <PlusCircle className="h-4 w-4 text-blue-600" />
-                      <span>Nova Súmula</span>
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCreatingNewSumula(true);
+                      setSelectedSumulaId(undefined);
+                      setActiveSumulaView('pelada');
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/60 hover:bg-blue-50 text-blue-700 font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:shadow-xs active:scale-[0.99] transition cursor-pointer mb-1"
+                    title="Abrir nova súmula de treino"
+                  >
+                    <PlusCircle className="h-4 w-4 text-blue-600" />
+                    <span>Nova Súmula</span>
+                  </button>
 
                   {filteredSumulas.map((s, idx) => {
                     const totalGoals = Object.values(s.teamLineups).reduce(
@@ -593,12 +591,6 @@ export const MatchesAndValidationView: React.FC<
                       <div
                         key={s.id || idx}
                         onClick={() => {
-                          if (!isCoachOrAdmin && s.status === 'em_andamento') {
-                            setBlockedSumulaNotice(
-                              'Esta súmula de treino ainda está em andamento. Como jogador, você terá acesso completo para visualizar as estatísticas assim que for validada pelo treinador.'
-                            );
-                            return;
-                          }
                           setSelectedSumulaId(s.id);
                           setIsCreatingNewSumula(false);
                           setActiveSumulaView('pelada');
@@ -614,8 +606,8 @@ export const MatchesAndValidationView: React.FC<
                             <span
                               className={`flex h-2 w-2 shrink-0 rounded-full ${
                                 s.status === 'em_andamento'
-                                  ? 'bg-emerald-500 animate-pulse'
-                                  : 'bg-blue-600'
+                                   ? 'bg-emerald-500 animate-pulse'
+                                   : 'bg-blue-600'
                               }`}
                             ></span>
                             <span className="text-xs font-black text-slate-900 truncate">
@@ -647,13 +639,7 @@ export const MatchesAndValidationView: React.FC<
                               </button>
                             )}
                             <span className="text-[11px] font-bold text-blue-600 flex items-center">
-                              {!isCoachOrAdmin && s.status === 'em_andamento' ? (
-                                <span className="text-slate-400 flex items-center gap-0.5">
-                                  <Lock className="h-3 w-3" /> Em andamento
-                                </span>
-                              ) : (
-                                'Abrir Súmula →'
-                              )}
+                              Abrir Súmula →
                             </span>
                           </div>
                         </div>
@@ -674,11 +660,28 @@ export const MatchesAndValidationView: React.FC<
                   })}
 
                   {filteredSumulas.length === 0 && (
-                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
-                      <ClipboardList className="mx-auto h-7 w-7 text-slate-300" />
-                      <p className="text-xs font-bold text-slate-700 mt-2">
-                        Nenhuma súmula encontrada neste filtro.
-                      </p>
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center space-y-3">
+                      <ClipboardList className="mx-auto h-8 w-8 text-blue-400" />
+                      <div>
+                        <p className="text-xs font-bold text-slate-800">
+                          Nenhuma súmula ativa no momento.
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Toque abaixo para abrir e preencher a súmula da rodada.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCreatingNewSumula(true);
+                          setSelectedSumulaId(undefined);
+                          setActiveSumulaView('pelada');
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-95 transition cursor-pointer"
+                      >
+                        <PlusCircle className="h-4 w-4" />
+                        <span>Abrir Nova Súmula</span>
+                      </button>
                     </div>
                   )}
                 </div>
