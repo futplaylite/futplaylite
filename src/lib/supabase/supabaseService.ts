@@ -6,6 +6,7 @@ import {
   PlayerPosition,
   PlayerProfile,
   ProfileVisibility,
+  TeamModality,
   User,
 } from '../../types/league';
 
@@ -70,6 +71,12 @@ export const supabaseService = {
         id: u.id,
         email: u.email,
         whatsappNumber: u.whatsapp_number || undefined,
+        teamName: u.team_name || undefined,
+        teamCrestUrl: u.team_crest_url || undefined,
+        teamCity: u.team_city || undefined,
+        teamModality: u.team_modality || undefined,
+        teamInviteCode: u.team_invite_code || undefined,
+        isTeamOwner: Boolean(u.is_team_owner),
         role: u.role || 'player',
         status: u.status || 'ativa',
         createdAt: u.created_at,
@@ -149,6 +156,12 @@ export const supabaseService = {
         id: data.id,
         email: data.email,
         whatsappNumber: data.whatsapp_number || undefined,
+        teamName: data.team_name || undefined,
+        teamCrestUrl: data.team_crest_url || undefined,
+        teamCity: data.team_city || undefined,
+        teamModality: data.team_modality || undefined,
+        teamInviteCode: data.team_invite_code || undefined,
+        isTeamOwner: Boolean(data.is_team_owner),
         role: data.role || 'player',
         status: data.status || 'ativa',
         createdAt: data.created_at,
@@ -170,6 +183,12 @@ export const supabaseService = {
           userId: pData.user_id,
           displayName: pData.display_name,
           avatarUrl: pData.avatar_path || undefined,
+          teamName: pData.team_name || data.team_name || undefined,
+          teamCrestUrl: pData.team_crest_url || data.team_crest_url || undefined,
+          teamCity: pData.team_city || data.team_city || undefined,
+          teamModality: pData.team_modality || data.team_modality || undefined,
+          teamInviteCode: pData.team_invite_code || data.team_invite_code || undefined,
+          isTeamOwner: Boolean(pData.is_team_owner || data.is_team_owner),
           avatarColor: '#1D4ED8',
           cityId: pData.city_id,
           neighborhood: 'Centro',
@@ -254,7 +273,7 @@ export const supabaseService = {
       let uErr: any = null;
       const whatsappToStore = cleanDigits || params.user.whatsappNumber || null;
 
-      const { error: fullErr } = await supabase.from('users').upsert({
+      const userPayloadFull: Record<string, any> = {
         id: finalUserId,
         email: userEmail,
         whatsapp_number: whatsappToStore,
@@ -262,10 +281,39 @@ export const supabaseService = {
         role: params.user.role || 'player',
         status: params.user.status || 'ativa',
         updated_at: new Date().toISOString(),
-      });
+      };
+      if (params.user.teamName || params.profile.teamName) {
+        userPayloadFull.team_name = params.user.teamName || params.profile.teamName;
+      }
+      if (params.user.teamCrestUrl || params.profile.teamCrestUrl) {
+        userPayloadFull.team_crest_url = params.user.teamCrestUrl || params.profile.teamCrestUrl;
+      }
+      if (params.user.teamCity || params.profile.teamCity) {
+        userPayloadFull.team_city = params.user.teamCity || params.profile.teamCity;
+      }
+      if (params.user.teamModality || params.profile.teamModality) {
+        userPayloadFull.team_modality = params.user.teamModality || params.profile.teamModality;
+      }
+      if (params.user.teamInviteCode || params.profile.teamInviteCode) {
+        userPayloadFull.team_invite_code = params.user.teamInviteCode || params.profile.teamInviteCode;
+      }
+      if (params.user.isTeamOwner !== undefined || params.profile.isTeamOwner !== undefined) {
+        userPayloadFull.is_team_owner = Boolean(params.user.isTeamOwner || params.profile.isTeamOwner);
+      }
+
+      const { error: fullErr } = await supabase.from('users').upsert(userPayloadFull);
 
       if (fullErr) {
-        if (fullErr.message?.includes('does not exist')) {
+        const { error: fallbackErr } = await supabase.from('users').upsert({
+          id: finalUserId,
+          email: userEmail,
+          whatsapp_number: whatsappToStore,
+          password_hash: params.password || null,
+          role: params.user.role || 'player',
+          status: params.user.status || 'ativa',
+          updated_at: new Date().toISOString(),
+        });
+        if (fallbackErr) {
           const { error: baseErr } = await supabase.from('users').upsert({
             id: finalUserId,
             email: userEmail,
@@ -275,7 +323,7 @@ export const supabaseService = {
           });
           uErr = baseErr;
         } else {
-          uErr = fullErr;
+          uErr = null;
         }
       }
 
@@ -311,7 +359,7 @@ export const supabaseService = {
         : '22222222-2222-4222-8222-222222222201';
 
       // 2. Inserir ou atualizar perfil de atleta
-      const { error: pErr } = await supabase.from('player_profiles').upsert({
+      const profilePayloadFull: Record<string, any> = {
         id: finalProfileId,
         user_id: finalUserId,
         display_name: params.profile.displayName,
@@ -324,11 +372,52 @@ export const supabaseService = {
         is_provisional: true,
         current_division_id: finalDivisionId,
         updated_at: new Date().toISOString(),
-      });
+      };
+      if (params.profile.avatarUrl) {
+        profilePayloadFull.avatar_path = params.profile.avatarUrl;
+      }
+      if (params.profile.teamName || params.user.teamName) {
+        profilePayloadFull.team_name = params.profile.teamName || params.user.teamName;
+      }
+      if (params.profile.teamCrestUrl || params.user.teamCrestUrl) {
+        profilePayloadFull.team_crest_url = params.profile.teamCrestUrl || params.user.teamCrestUrl;
+      }
+      if (params.profile.teamCity || params.user.teamCity) {
+        profilePayloadFull.team_city = params.profile.teamCity || params.user.teamCity;
+      }
+      if (params.profile.teamModality || params.user.teamModality) {
+        profilePayloadFull.team_modality = params.profile.teamModality || params.user.teamModality;
+      }
+      if (params.profile.teamInviteCode || params.user.teamInviteCode) {
+        profilePayloadFull.team_invite_code = params.profile.teamInviteCode || params.user.teamInviteCode;
+      }
+      if (params.profile.isTeamOwner !== undefined || params.user.isTeamOwner !== undefined) {
+        profilePayloadFull.is_team_owner = Boolean(params.profile.isTeamOwner || params.user.isTeamOwner);
+      }
+
+      const { error: pErr } = await supabase.from('player_profiles').upsert(profilePayloadFull);
 
       if (pErr) {
-        console.error('Erro ao cadastrar perfil no Supabase:', pErr);
-        return { success: false, error: pErr.message };
+        // Fallback básico caso colunas de time ainda não tenham sido criadas
+        const { error: basePErr } = await supabase.from('player_profiles').upsert({
+          id: finalProfileId,
+          user_id: finalUserId,
+          display_name: params.profile.displayName,
+          avatar_path: params.profile.avatarUrl || null,
+          city_id: finalCityId,
+          position: params.profile.position,
+          dominant_foot: params.profile.dominantFoot,
+          profile_visibility: params.profile.profileVisibility || 'publico',
+          current_rating: params.profile.currentRating || 1000,
+          rating_uncertainty: 100,
+          is_provisional: true,
+          current_division_id: finalDivisionId,
+          updated_at: new Date().toISOString(),
+        });
+        if (basePErr) {
+          console.error('Erro ao cadastrar perfil no Supabase:', basePErr);
+          return { success: false, error: basePErr.message };
+        }
       }
 
       // 3. Inserir participação na temporada oficial
@@ -412,7 +501,7 @@ export const supabaseService = {
   },
 
   /**
-   * Atualiza dados do perfil esportivo no Supabase (foto, nome, posição, pé dominante)
+   * Atualiza dados do perfil esportivo e time no Supabase (foto, nome, posição, pé dominante, time, escudo)
    */
   async updateProfile(
     userId: string,
@@ -422,6 +511,12 @@ export const supabaseService = {
       position?: PlayerPosition;
       dominantFoot?: DominantFoot;
       profileVisibility?: ProfileVisibility;
+      teamName?: string;
+      teamCrestUrl?: string;
+      teamCity?: string;
+      teamModality?: TeamModality;
+      teamInviteCode?: string;
+      isTeamOwner?: boolean;
     }
   ): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase || !userId) return false;
@@ -436,16 +531,44 @@ export const supabaseService = {
       if (updates.profileVisibility !== undefined) {
         payload.profile_visibility = updates.profileVisibility;
       }
+      if (updates.teamName !== undefined) payload.team_name = updates.teamName;
+      if (updates.teamCrestUrl !== undefined) payload.team_crest_url = updates.teamCrestUrl;
+      if (updates.teamCity !== undefined) payload.team_city = updates.teamCity;
+      if (updates.teamModality !== undefined) payload.team_modality = updates.teamModality;
+      if (updates.teamInviteCode !== undefined) payload.team_invite_code = updates.teamInviteCode;
+      if (updates.isTeamOwner !== undefined) payload.is_team_owner = updates.isTeamOwner;
 
-      const { error } = await supabase
+      const { error: pError } = await supabase
         .from('player_profiles')
         .update(payload)
         .eq('user_id', userId);
 
-      if (error) {
-        console.warn('Aviso ao atualizar perfil no Supabase:', error);
-        return false;
+      if (pError) {
+        // Fallback sem colunas de time caso a migração ainda não tenha sido rodada
+        const basePayload: Record<string, any> = { updated_at: new Date().toISOString() };
+        if (updates.displayName !== undefined) basePayload.display_name = updates.displayName;
+        if (updates.avatarUrl !== undefined) basePayload.avatar_path = updates.avatarUrl;
+        if (updates.position !== undefined) basePayload.position = updates.position;
+        if (updates.dominantFoot !== undefined) basePayload.dominant_foot = updates.dominantFoot;
+        if (updates.profileVisibility !== undefined) basePayload.profile_visibility = updates.profileVisibility;
+        await supabase.from('player_profiles').update(basePayload).eq('user_id', userId);
       }
+
+      // Atualiza também na tabela users
+      const userPayload: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (updates.teamName !== undefined) userPayload.team_name = updates.teamName;
+      if (updates.teamCrestUrl !== undefined) userPayload.team_crest_url = updates.teamCrestUrl;
+      if (updates.teamCity !== undefined) userPayload.team_city = updates.teamCity;
+      if (updates.teamModality !== undefined) userPayload.team_modality = updates.teamModality;
+      if (updates.teamInviteCode !== undefined) userPayload.team_invite_code = updates.teamInviteCode;
+      if (updates.isTeamOwner !== undefined) userPayload.is_team_owner = updates.isTeamOwner;
+
+      try {
+        await supabase.from('users').update(userPayload).eq('id', userId);
+      } catch {
+        // Ignora caso users ainda não tenha colunas de time
+      }
+
       return true;
     } catch (err) {
       console.warn('Erro ao atualizar perfil no Supabase:', err);
@@ -493,6 +616,12 @@ export const supabaseService = {
       userId: p.user_id,
       displayName: p.display_name,
       avatarUrl: p.avatar_path || undefined,
+      teamName: p.team_name || undefined,
+      teamCrestUrl: p.team_crest_url || undefined,
+      teamCity: p.team_city || undefined,
+      teamModality: p.team_modality || undefined,
+      teamInviteCode: p.team_invite_code || undefined,
+      isTeamOwner: Boolean(p.is_team_owner),
       avatarColor: '#1D4ED8',
       cityId: p.city_id,
       neighborhood: 'Centro',

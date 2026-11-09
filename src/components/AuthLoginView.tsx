@@ -235,15 +235,58 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         // Ignora falha local
       }
 
-      // Ativa o usuário e perfil no estado da liga e persiste sessão
-      setActiveUserWithData(
-        {
-          ...existingUser,
-          onboardingCompleted: true,
-          onboardingStep: 4,
-        },
-        matchedProfile
-      );
+      // Ativa o usuário e perfil no estado da liga e persiste sessão, preservando dados do time
+      const localUser = findUserByIdentifier(trimmed);
+      const localProfile = localUser
+        ? profiles.find((p) => p.userId === localUser.id)
+        : undefined;
+
+      const finalUserToActivate: User = {
+        ...existingUser,
+        teamName: existingUser.teamName || localUser?.teamName,
+        teamCrestUrl: existingUser.teamCrestUrl || localUser?.teamCrestUrl,
+        teamCity: existingUser.teamCity || localUser?.teamCity,
+        teamModality: existingUser.teamModality || localUser?.teamModality,
+        teamInviteCode: existingUser.teamInviteCode || localUser?.teamInviteCode,
+        isTeamOwner:
+          existingUser.isTeamOwner !== undefined
+            ? existingUser.isTeamOwner
+            : localUser?.isTeamOwner,
+        onboardingCompleted: true,
+        onboardingStep: 4,
+      };
+
+      const finalProfileToActivate: PlayerProfile | undefined = matchedProfile
+        ? {
+            ...matchedProfile,
+            teamName:
+              matchedProfile.teamName ||
+              localProfile?.teamName ||
+              finalUserToActivate.teamName,
+            teamCrestUrl:
+              matchedProfile.teamCrestUrl ||
+              localProfile?.teamCrestUrl ||
+              finalUserToActivate.teamCrestUrl,
+            teamCity:
+              matchedProfile.teamCity ||
+              localProfile?.teamCity ||
+              finalUserToActivate.teamCity,
+            teamModality:
+              matchedProfile.teamModality ||
+              localProfile?.teamModality ||
+              finalUserToActivate.teamModality,
+            teamInviteCode:
+              matchedProfile.teamInviteCode ||
+              localProfile?.teamInviteCode ||
+              finalUserToActivate.teamInviteCode,
+            isTeamOwner:
+              matchedProfile.isTeamOwner !== undefined
+                ? matchedProfile.isTeamOwner
+                : (localProfile?.isTeamOwner ?? finalUserToActivate.isTeamOwner),
+          }
+        : localProfile;
+
+      setActiveUserWithData(finalUserToActivate, finalProfileToActivate);
       onAuthenticated();
       return;
     }

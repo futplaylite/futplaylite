@@ -432,7 +432,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         const localMap = new Map(prev.users.map((u) => [u.id, u]));
         const merged = remoteUsers.map((ru) => {
           const loc = localMap.get(ru.id);
-          return loc ? { ...loc, ...ru } : ru;
+          if (!loc) return ru;
+          return {
+            ...loc,
+            ...ru,
+            teamName: ru.teamName || loc.teamName,
+            teamCrestUrl: ru.teamCrestUrl || loc.teamCrestUrl,
+            teamCity: ru.teamCity || loc.teamCity,
+            teamModality: ru.teamModality || loc.teamModality,
+            teamInviteCode: ru.teamInviteCode || loc.teamInviteCode,
+            isTeamOwner: ru.isTeamOwner !== undefined ? ru.isTeamOwner : loc.isTeamOwner,
+          };
         });
         const next = { ...prev, users: merged };
         try {
@@ -481,7 +491,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
         const merged = filteredRemote.map((rp) => {
           const loc = localMap.get(rp.id);
-          return loc ? { ...loc, ...rp } : rp;
+          if (!loc) return rp;
+          return {
+            ...loc,
+            ...rp,
+            teamName: rp.teamName || loc.teamName,
+            teamCrestUrl: rp.teamCrestUrl || loc.teamCrestUrl,
+            teamCity: rp.teamCity || loc.teamCity,
+            teamModality: rp.teamModality || loc.teamModality,
+            teamInviteCode: rp.teamInviteCode || loc.teamInviteCode,
+            isTeamOwner: rp.isTeamOwner !== undefined ? rp.isTeamOwner : loc.isTeamOwner,
+          };
         });
 
         const next = { ...prev, profiles: merged };
@@ -625,7 +645,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       const userIdx = prev.users.findIndex((u) => u.id === user.id);
       const newUsers = [...prev.users];
       if (userIdx >= 0) {
-        newUsers[userIdx] = { ...newUsers[userIdx], ...user };
+        const prevU = newUsers[userIdx];
+        newUsers[userIdx] = {
+          ...prevU,
+          ...user,
+          teamName: user.teamName || prevU.teamName,
+          teamCrestUrl: user.teamCrestUrl || prevU.teamCrestUrl,
+          teamCity: user.teamCity || prevU.teamCity,
+          teamModality: user.teamModality || prevU.teamModality,
+          teamInviteCode: user.teamInviteCode || prevU.teamInviteCode,
+          isTeamOwner: user.isTeamOwner !== undefined ? user.isTeamOwner : prevU.isTeamOwner,
+        };
       } else {
         newUsers.push(user);
       }
@@ -636,7 +666,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           (p) => p.id === profile.id || p.userId === user.id
         );
         if (profIdx >= 0) {
-          newProfiles[profIdx] = { ...newProfiles[profIdx], ...profile };
+          const prevP = newProfiles[profIdx];
+          newProfiles[profIdx] = {
+            ...prevP,
+            ...profile,
+            teamName: profile.teamName || prevP.teamName,
+            teamCrestUrl: profile.teamCrestUrl || prevP.teamCrestUrl,
+            teamCity: profile.teamCity || prevP.teamCity,
+            teamModality: profile.teamModality || prevP.teamModality,
+            teamInviteCode: profile.teamInviteCode || prevP.teamInviteCode,
+            isTeamOwner: profile.isTeamOwner !== undefined ? profile.isTeamOwner : prevP.isTeamOwner,
+          };
         } else {
           newProfiles.push(profile);
         }
@@ -935,6 +975,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         profiles: updatedProfiles,
       };
     });
+
+    if (isSupabaseConfigured() && currentUser?.id) {
+      supabaseService.updateProfile(currentUser.id, {
+        teamName: trimmedTeam,
+        teamCity: trimmedCity,
+        teamCrestUrl: params.teamCrestUrl,
+        teamModality: params.teamModality,
+        isTeamOwner: true,
+      });
+    }
 
     notify(
       'success',
@@ -2468,8 +2518,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       ),
     }));
 
-    if (isSupabaseConfigured() && position) {
-      supabaseService.updateProfile(currentUser.id, { position });
+    if (isSupabaseConfigured() && currentUser?.id) {
+      supabaseService.updateProfile(currentUser.id, {
+        position: position || undefined,
+        teamName: trimmedTeam,
+        teamCity: trimmedCity,
+        teamCrestUrl: teamCrestUrl || undefined,
+        teamModality,
+        teamInviteCode: generatedCode,
+        isTeamOwner: mode === 'create',
+      });
     }
 
     notify(
