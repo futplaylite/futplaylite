@@ -6,13 +6,95 @@ export interface SumulaReceiptImageData {
   venueName?: string;
 }
 
+export interface GeneratedSumulaReceipt {
+  dataUrl: string; // PNG Data URL
+  file: File; // PNG File object
+  pdfBlob: Blob; // PDF Blob object
+  pdfUrl: string; // PDF Object URL
+  pdfFile: File; // PDF File object
+}
+
+// Construtor binário nativo de PDF 1.4 A4 para embutir o Canvas renderizado
+export function createPdfBlobFromJpeg(
+  jpegBuffer: Uint8Array,
+  width: number,
+  height: number
+): Blob {
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 14;
+  const maxWidth = pageWidth - margin * 2;
+  const maxHeight = pageHeight - margin * 2;
+  const imgAspect = width / height;
+  const pageAspect = maxWidth / maxHeight;
+  let renderWidth = maxWidth;
+  let renderHeight = maxWidth / imgAspect;
+  if (renderHeight > maxHeight) {
+    renderHeight = maxHeight;
+    renderWidth = maxHeight * imgAspect;
+  }
+  const xOffset = margin + (maxWidth - renderWidth) / 2;
+  const yOffset = margin + (maxHeight - renderHeight) / 2;
+
+  const chunks: (Uint8Array | string)[] = [];
+  const offsets: number[] = [];
+
+  let totalLen = 0;
+  function add(strOrBuf: string | Uint8Array) {
+    if (typeof strOrBuf === 'string') {
+      const enc = new TextEncoder().encode(strOrBuf);
+      chunks.push(enc);
+      totalLen += enc.length;
+    } else {
+      chunks.push(strOrBuf);
+      totalLen += strOrBuf.length;
+    }
+  }
+
+  add('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n');
+
+  offsets.push(totalLen);
+  add('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
+  offsets.push(totalLen);
+  add('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+
+  offsets.push(totalLen);
+  add(
+    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /XObject << /Im1 4 0 R >> /ProcSet [/PDF /ImageC] >> /Contents 5 0 R >>\nendobj\n`
+  );
+
+  offsets.push(totalLen);
+  add(
+    `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBuffer.length} >>\nstream\n`
+  );
+  add(jpegBuffer);
+  add('\nendstream\nendobj\n');
+
+  offsets.push(totalLen);
+  const streamContent = `q\n${renderWidth.toFixed(2)} 0 0 ${renderHeight.toFixed(2)} ${xOffset.toFixed(2)} ${yOffset.toFixed(2)} cm\n/Im1 Do\nQ\n`;
+  const streamLen = new TextEncoder().encode(streamContent).length;
+  add(`5 0 obj\n<< /Length ${streamLen} >>\nstream\n${streamContent}endstream\nendobj\n`);
+
+  const startXref = totalLen;
+  let xref = `xref\n0 6\n0000000000 65535 f \n`;
+  for (const off of offsets) {
+    xref += String(off).padStart(10, '0') + ' 00000 n \n';
+  }
+  xref += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${startXref}\n%%EOF\n`;
+  add(xref);
+
+  return new Blob(chunks, { type: 'application/pdf' });
+}
+
 export async function generateSumulaReceiptImage(
   data: SumulaReceiptImageData
-): Promise<{ dataUrl: string; file: File }> {
-  const { sumula, teamName = sumula.teamName || 'Meu Time', venueName = 'Arena Society' } = data;
+): Promise<GeneratedSumulaReceipt> {
+  const { sumula, teamName = sumula.teamName || 'Pelada Oficial', venueName = 'Arena Society' } = data;
 
-  const width = 1080;
-  const height = 1520;
+  // Dimensões A4 em alta definição (1200 x 1700)
+  const width = 1200;
+  const height = 1700;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -22,292 +104,600 @@ export async function generateSumulaReceiptImage(
     throw new Error('Não foi possível obter o contexto 2D do Canvas');
   }
 
-  // 1. Fundo Gradiente Escuro com Profundidade
-  const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-  bgGrad.addColorStop(0, '#0a1738');
-  bgGrad.addColorStop(0.35, '#071126');
-  bgGrad.addColorStop(0.7, '#040916');
-  bgGrad.addColorStop(1, '#02050c');
-  ctx.fillStyle = bgGrad;
+  // 1. Fundo da Prancheta Física
+  ctx.fillStyle = '#0f172a'; // Fundo externo escuro moderno
   ctx.fillRect(0, 0, width, height);
 
-  // Efeito Refletor Luminoso Superior
-  const glowGrad = ctx.createRadialGradient(width / 2, 0, 10, width / 2, 0, 600);
-  glowGrad.addColorStop(0, 'rgba(59, 130, 246, 0.45)');
-  glowGrad.addColorStop(0.5, 'rgba(37, 99, 235, 0.15)');
-  glowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = glowGrad;
-  ctx.fillRect(0, 0, width, 700);
+  // Folha da Prancheta (Margem interna elegante)
+  const padX = 24;
+  const padY = 24;
+  const sheetW = width - padX * 2;
+  const sheetH = height - padY * 2;
 
-  // Linhas geométricas de campo decorativas sutis
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, padX, padY, sheetW, sheetH, 16);
+  ctx.fill();
+
+  ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 2;
+  roundRect(ctx, padX, padY, sheetW, sheetH, 16);
+  ctx.stroke();
+
+  // 2. CABEÇALHO DA SÚMULA (Slate-900 com identidade oficial)
+  const headH = 145;
+  ctx.save();
   ctx.beginPath();
-  ctx.arc(width / 2, height / 2, 280, 0, Math.PI * 2);
-  ctx.stroke();
+  roundRect(ctx, padX, padY, sheetW, headH, 16);
+  ctx.clip();
 
-  // Borda externa com chanfro
-  ctx.strokeStyle = 'rgba(245, 158, 11, 0.5)';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(28, 28, width - 56, height - 56);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.fillStyle = '#090d16';
+  ctx.fillRect(padX, padY, sheetW, headH);
+
+  // Gradiente sutil no cabeçalho
+  const headGrad = ctx.createLinearGradient(padX, padY, padX + sheetW, padY + headH);
+  headGrad.addColorStop(0, 'rgba(30, 58, 138, 0.35)');
+  headGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+  ctx.fillStyle = headGrad;
+  ctx.fillRect(padX, padY, sheetW, headH);
+  ctx.restore();
+
+  // Borda inferior do cabeçalho
+  ctx.strokeStyle = '#1e293b';
   ctx.lineWidth = 1;
-  ctx.strokeRect(36, 36, width - 72, height - 72);
-
-  // 2. Cabeçalho Oficial
-  // Badge Superior
-  ctx.fillStyle = 'rgba(245, 158, 11, 0.18)';
-  roundRect(ctx, width / 2 - 200, 56, 400, 38, 19);
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)';
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, width / 2 - 200, 56, 400, 38, 19);
+  ctx.beginPath();
+  ctx.moveTo(padX, padY + headH);
+  ctx.lineTo(padX + sheetW, padY + headH);
   ctx.stroke();
 
-  ctx.fillStyle = '#fde68a';
+  // Linha 1 do Cabeçalho: Título Oficial & Status
+  ctx.fillStyle = '#38bdf8';
   ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.letterSpacing = '2px';
-  ctx.fillText('⚽ COMPROVANTE OFICIAL DE SÚMULA ⚽', width / 2, 81);
+  ctx.textAlign = 'left';
+  ctx.fillText('⚽ ROSÁLIA ESPORTES · SÚMULA OFICIAL DE TREINO / PELADA', padX + 24, padY + 38);
 
-  // Título da Liga
   ctx.fillStyle = '#ffffff';
-  ctx.font = '900 40px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText('FUTPLAY LITE · ROSÁLIA ESPORTES', width / 2, 138);
+  ctx.font = '900 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(teamName.toUpperCase(), padX + 24, padY + 70);
 
-  // Subtítulo e Time
-  ctx.fillStyle = '#93c5fd';
-  ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(`Pelada Oficial · ${teamName}`, width / 2, 172);
+  // Badge de Status à Direita
+  const isFinalized = sumula.status === 'finalizada';
+  const badgeW = isFinalized ? 240 : 180;
+  const badgeX = padX + sheetW - badgeW - 24;
+  const badgeY = padY + 28;
 
-  // Card com Data, Horário e Local
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-  roundRect(ctx, 60, 202, width - 120, 68, 16);
+  ctx.fillStyle = isFinalized ? '#064e3b' : '#1e3a8a';
+  roundRect(ctx, badgeX, badgeY, badgeW, 34, 17);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = 1;
-  roundRect(ctx, 60, 202, width - 120, 68, 16);
+  ctx.strokeStyle = isFinalized ? '#10b981' : '#60a5fa';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, badgeX, badgeY, badgeW, 34, 17);
   ctx.stroke();
 
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = isFinalized ? '#a7f3d0' : '#dbeafe';
+  ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText(
-    `📅 Data: ${sumula.matchDate || 'Hoje'}   ·   ⏰ Início: ${sumula.startTime || '16:00'}h   ·   📍 ${venueName}`,
-    width / 2,
-    243
+    isFinalized ? '🔒 FINALIZADA & HOMOLOGADA' : '● SÚMULA ATIVA',
+    badgeX + badgeW / 2,
+    badgeY + 22
   );
 
-  // 3. Cálculo de Resultados da Súmula
-  const teamsStats = (sumula.teamsGrid || []).map((row) => {
-    const wins = (row.matches || []).filter((m) => m === 'V').length;
-    const draws = (row.matches || []).filter((m) => m === 'E').length;
-    const points = wins * 3 + draws * 1;
+  // Linha 2 do Cabeçalho: Caixas de Data, Horário e Local
+  const boxY = padY + 90;
+  const boxH = 38;
+  const box1W = 220;
+  const box2W = 180;
+  const box3W = sheetW - box1W - box2W - 48 - 20;
 
-    const lineup = (sumula.teamLineups && sumula.teamLineups[row.teamName]) || [];
-    const totalGoals = lineup.reduce((acc, p) => acc + (Number(p.goals) || 0), 0);
+  // Caixa 1: Data
+  ctx.fillStyle = '#1e293b';
+  roundRect(ctx, padX + 24, boxY, box1W, boxH, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#334155';
+  ctx.lineWidth = 1;
+  roundRect(ctx, padX + 24, boxY, box1W, boxH, 8);
+  ctx.stroke();
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('📅 DATA:', padX + 36, boxY + 24);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 14px "Courier New", monospace';
+  ctx.fillText(sumula.matchDate || 'Hoje', padX + 100, boxY + 24);
 
-    return {
-      teamName: row.teamName,
-      wins,
-      draws,
-      points,
-      totalGoals,
-      lineup,
-    };
-  });
+  // Caixa 2: Horário de Início
+  ctx.fillStyle = '#1e293b';
+  roundRect(ctx, padX + 24 + box1W + 10, boxY, box2W, boxH, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#334155';
+  roundRect(ctx, padX + 24 + box1W + 10, boxY, box2W, boxH, 8);
+  ctx.stroke();
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('⏰ INÍCIO:', padX + 24 + box1W + 22, boxY + 24);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 14px "Courier New", monospace';
+  ctx.fillText(sumula.startTime || '19:30', padX + 24 + box1W + 95, boxY + 24);
 
-  // Ordena por Pontos > Vitórias > Gols
-  teamsStats.sort((a, b) => b.points - a.points || b.wins - a.wins || b.totalGoals - a.totalGoals);
+  // Caixa 3: Local
+  ctx.fillStyle = '#1e293b';
+  roundRect(ctx, padX + 24 + box1W + box2W + 20, boxY, box3W, boxH, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#334155';
+  roundRect(ctx, padX + 24 + box1W + box2W + 20, boxY, box3W, boxH, 8);
+  ctx.stroke();
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('📍 LOCAL:', padX + 24 + box1W + box2W + 32, boxY + 24);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(venueName, padX + 24 + box1W + box2W + 100, boxY + 24);
 
-  const championTeam = teamsStats[0];
+  // 3. SEÇÃO 1: LISTA DE PRESENÇA & GOLEIROS FIXOS
+  let curY = padY + headH + 16;
+  const sec1H = 210;
 
-  // 4. Card Destaque: Time Campeão / Super Capas
-  let currentY = 295;
-  if (championTeam) {
-    const champGrad = ctx.createLinearGradient(60, currentY, width - 60, currentY + 130);
-    champGrad.addColorStop(0, '#854d0e');
-    champGrad.addColorStop(0.5, '#ca8a04');
-    champGrad.addColorStop(1, '#a16207');
-    ctx.fillStyle = champGrad;
-    roundRect(ctx, 60, currentY, width - 120, 120, 18);
-    ctx.fill();
+  // Card Esquerdo: Lista de Presença
+  const presW = 720;
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, padX + 24, curY, presW, sec1H, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, padX + 24, curY, presW, sec1H, 12);
+  ctx.stroke();
 
-    ctx.strokeStyle = '#fef08a';
-    ctx.lineWidth = 2;
-    roundRect(ctx, 60, currentY, width - 120, 120, 18);
-    ctx.stroke();
+  // Cabeçalho da Lista de Presença
+  ctx.fillStyle = '#f8fafc';
+  roundRect(ctx, padX + 25, curY + 1, presW - 2, 34, 11);
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.beginPath();
+  ctx.moveTo(padX + 24, curY + 35);
+  ctx.lineTo(padX + 24 + presW, curY + 35);
+  ctx.stroke();
 
-    ctx.fillStyle = '#fef9c3';
-    ctx.font = '900 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText('🏆 TIME CAMPEÃO DA SÚMULA / SUPER CAPAS', 90, currentY + 38);
+  const arrivals = sumula.arrivalList || [];
+  const confirmedCount = arrivals.filter((a) => a.confirmed).length;
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(championTeam.teamName.toUpperCase(), 90, currentY + 84);
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`📋 LISTA DE PRESENÇA DOS ATLETAS`, padX + 38, curY + 23);
 
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#fef08a';
-    ctx.font = '900 30px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(`${championTeam.points} PONTOS`, width - 90, currentY + 68);
+  ctx.fillStyle = '#0369a1';
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${confirmedCount} de ${arrivals.length} Confirmados`, padX + presW + 10, curY + 23);
 
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(`${championTeam.wins}V · ${championTeam.draws}E · ${championTeam.totalGoals} Gols`, width - 90, currentY + 96);
+  // Grid de Atletas Confirmados (3 Colunas x até 6 linhas = até 18 atletas)
+  const confirmedAthletes = arrivals.filter((a) => a.confirmed).slice(0, 18);
+  const colW = (presW - 40) / 3;
+  let pIdx = 0;
+  for (let c = 0; c < 3; c++) {
+    for (let r = 0; r < 6; r++) {
+      if (pIdx >= confirmedAthletes.length) break;
+      const athlete = confirmedAthletes[pIdx];
+      const aX = padX + 36 + c * colW;
+      const aY = curY + 44 + r * 26;
+
+      ctx.fillStyle = '#059669';
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('✓', aX, aY + 14);
+
+      ctx.fillStyle = '#1e293b';
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      const maxChars = athlete.isGoalkeeper ? 14 : 18;
+      const displayName = athlete.playerName.length > maxChars
+        ? athlete.playerName.slice(0, maxChars) + '..'
+        : athlete.playerName;
+      ctx.fillText(displayName, aX + 14, aY + 14);
+
+      if (athlete.isGoalkeeper) {
+        ctx.fillStyle = '#2563eb';
+        ctx.font = '900 9px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('🧤 GK', aX + colW - 35, aY + 14);
+      }
+
+      pIdx++;
+    }
   }
 
-  currentY += 140;
+  // Card Direito: Goleiros Fixos
+  const gkX = padX + 24 + presW + 14;
+  const gkW = sheetW - presW - 62;
 
-  // 5. Tabela de Classificação dos Times
-  ctx.fillStyle = '#fde68a';
-  ctx.font = '900 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('📊 CLASSIFICAÇÃO GERAL DOS TIMES', 64, currentY + 16);
-
-  currentY += 30;
-
-  // Cabeçalho da Tabela
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-  roundRect(ctx, 60, currentY, width - 120, 36, 10);
+  ctx.fillStyle = '#f0fdf4';
+  roundRect(ctx, gkX, curY, gkW, sec1H, 12);
   ctx.fill();
+  ctx.strokeStyle = '#bbf7d0';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, gkX, curY, gkW, sec1H, 12);
+  ctx.stroke();
 
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText('POS / TIME', 84, currentY + 23);
-  ctx.textAlign = 'center';
-  ctx.fillText('V', 660, currentY + 23);
-  ctx.fillText('E', 740, currentY + 23);
-  ctx.fillText('GOLS', 830, currentY + 23);
-  ctx.fillText('PTS', 940, currentY + 23);
+  // Cabeçalho Goleiros Fixos
+  ctx.fillStyle = '#166534';
+  ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('🧤 GOLEIROS FIXOS', gkX + 16, curY + 24);
 
-  currentY += 44;
-
-  // Linhas dos Times
-  teamsStats.forEach((t, idx) => {
-    ctx.fillStyle = idx % 2 === 0 ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)';
-    roundRect(ctx, 60, currentY, width - 120, 48, 10);
-    ctx.fill();
-
-    // Pos
-    ctx.fillStyle = idx === 0 ? '#fbbf24' : '#e2e8f0';
-    ctx.font = '900 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`${idx + 1}º`, 84, currentY + 30);
-
-    // Nome do Time
+  const goalkeepers = sumula.goalkeepers || [];
+  goalkeepers.forEach((gk, i) => {
+    const boxGkY = curY + 40 + i * 39;
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(t.teamName, 130, currentY + 30);
+    roundRect(ctx, gkX + 14, boxGkY, gkW - 28, 32, 8);
+    ctx.fill();
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+    roundRect(ctx, gkX + 14, boxGkY, gkW - 28, 32, 8);
+    ctx.stroke();
 
-    // Números
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(String(t.wins), 660, currentY + 30);
-    ctx.fillText(String(t.draws), 740, currentY + 30);
-    ctx.fillText(String(t.totalGoals), 830, currentY + 30);
+    ctx.fillStyle = '#2563eb';
+    ctx.font = '900 12px "Courier New", monospace';
+    ctx.fillText(gk.num || `G${i + 1}`, gkX + 24, boxGkY + 20);
 
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = '900 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(String(t.points), 940, currentY + 30);
+    ctx.fillStyle = gk.name?.trim() ? '#0f172a' : '#94a3b8';
+    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(gk.name?.trim() ? gk.name.toUpperCase() : 'Não escalado', gkX + 52, boxGkY + 20);
 
-    currentY += 56;
+    if (gk.name?.trim()) {
+      ctx.fillStyle = '#10b981';
+      ctx.font = '900 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText('✓', gkX + gkW - 32, boxGkY + 20);
+    }
   });
 
-  currentY += 20;
+  // 4. SEÇÃO 2: GRADE DE PONTOS E PARTIDAS DOS TIMES (J1 A J15)
+  curY += sec1H + 16;
+  const gridH = 260;
 
-  // 6. Artilharia & Gols da Rodada
-  const allScorers: { name: string; goals: number; team: string }[] = [];
-  Object.entries(sumula.teamLineups || {}).forEach(([team, players]) => {
-    players.forEach((p) => {
-      const g = Number(p.goals) || 0;
-      if (g > 0) {
-        allScorers.push({ name: p.player, goals: g, team });
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, padX + 24, curY, sheetW - 48, gridH, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, padX + 24, curY, sheetW - 48, gridH, 12);
+  ctx.stroke();
+
+  // Cabeçalho da Grade
+  ctx.fillStyle = '#f8fafc';
+  roundRect(ctx, padX + 25, curY + 1, sheetW - 50, 36, 11);
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.beginPath();
+  ctx.moveTo(padX + 24, curY + 37);
+  ctx.lineTo(padX + sheetW - 24, curY + 37);
+  ctx.stroke();
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('⚽ PONTOS E PARTIDAS DOS TIMES (JOGOS J1 A J15)', padX + 38, curY + 24);
+
+  // Tabela da Grade
+  const tableX = padX + 36;
+  const tableY = curY + 48;
+  const teamColW = 140;
+  const matchColW = 54;
+  const statColW = 50;
+
+  // Linha do Cabeçalho da Tabela
+  ctx.fillStyle = '#0f172a';
+  roundRect(ctx, tableX, tableY, sheetW - 72, 30, 6);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('TIME', tableX + 12, tableY + 20);
+
+  ctx.textAlign = 'center';
+  for (let j = 0; j < 15; j++) {
+    ctx.fillText(`J${j + 1}`, tableX + teamColW + j * matchColW + matchColW / 2, tableY + 20);
+  }
+
+  ctx.fillStyle = '#34d399';
+  ctx.fillText('V', tableX + teamColW + 15 * matchColW + statColW / 2, tableY + 20);
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillText('E', tableX + teamColW + 15 * matchColW + statColW + statColW / 2, tableY + 20);
+  ctx.fillStyle = '#38bdf8';
+  ctx.fillText('PTS', tableX + teamColW + 15 * matchColW + statColW * 2 + statColW / 2, tableY + 20);
+
+  // 4 Linhas dos Times
+  const teamsGrid = sumula.teamsGrid || [];
+  teamsGrid.forEach((row, tIdx) => {
+    const rowY = tableY + 36 + tIdx * 42;
+
+    ctx.fillStyle = tIdx % 2 === 0 ? '#f8fafc' : '#ffffff';
+    roundRect(ctx, tableX, rowY, sheetW - 72, 38, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    roundRect(ctx, tableX, rowY, sheetW - 72, 38, 6);
+    ctx.stroke();
+
+    // Nome do Time
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(row.teamName, tableX + 12, rowY + 24);
+
+    let vCount = 0;
+    let eCount = 0;
+
+    // 15 Partidas
+    for (let mIdx = 0; mIdx < 15; mIdx++) {
+      const res = row.matches?.[mIdx] || '-';
+      const cellX = tableX + teamColW + mIdx * matchColW + 8;
+      const cellY = rowY + 5;
+      const cellW = matchColW - 16;
+      const cellH = 28;
+
+      if (res === 'V') {
+        vCount++;
+        ctx.fillStyle = '#059669';
+        roundRect(ctx, cellX, cellY, cellW, cellH, 6);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('V', cellX + cellW / 2, cellY + 19);
+      } else if (res === 'E') {
+        eCount++;
+        ctx.fillStyle = '#f59e0b';
+        roundRect(ctx, cellX, cellY, cellW, cellH, 6);
+        ctx.fill();
+        ctx.fillStyle = '#78350f';
+        ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('E', cellX + cellW / 2, cellY + 19);
+      } else {
+        ctx.fillStyle = '#f1f5f9';
+        roundRect(ctx, cellX, cellY, cellW, cellH, 6);
+        ctx.fill();
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('-', cellX + cellW / 2, cellY + 19);
+      }
+    }
+
+    // Totais: V, E, PTS
+    const pts = vCount * 3 + eCount * 1;
+    ctx.textAlign = 'center';
+
+    ctx.fillStyle = '#059669';
+    ctx.font = '900 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(String(vCount), tableX + teamColW + 15 * matchColW + statColW / 2, rowY + 24);
+
+    ctx.fillStyle = '#d97706';
+    ctx.font = '900 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(String(eCount), tableX + teamColW + 15 * matchColW + statColW + statColW / 2, rowY + 24);
+
+    ctx.fillStyle = '#0284c7';
+    ctx.font = '900 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(String(pts), tableX + teamColW + 15 * matchColW + statColW * 2 + statColW / 2, rowY + 24);
+  });
+
+  // 5. SEÇÃO 3: ESCALAÇÃO & GOLS POR TIME (Grid 2x2)
+  curY += gridH + 16;
+  const rosterBoxW = (sheetW - 48 - 14) / 2;
+  const rosterBoxH = 260;
+
+  const teamLineupEntries = Object.entries(sumula.teamLineups || {});
+  teamLineupEntries.forEach(([tName, players], idx) => {
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const boxX = padX + 24 + col * (rosterBoxW + 14);
+    const boxY = curY + row * (rosterBoxH + 12);
+
+    ctx.fillStyle = '#ffffff';
+    roundRect(ctx, boxX, boxY, rosterBoxW, rosterBoxH, 12);
+    ctx.fill();
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, boxX, boxY, rosterBoxW, rosterBoxH, 12);
+    ctx.stroke();
+
+    // Cabeçalho do Time
+    const totalGoals = players.reduce((acc, p) => acc + (Number(p.goals) || 0), 0);
+    ctx.fillStyle = '#f8fafc';
+    roundRect(ctx, boxX + 1, boxY + 1, rosterBoxW - 2, 34, 11);
+    ctx.fill();
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.beginPath();
+    ctx.moveTo(boxX, boxY + 35);
+    ctx.lineTo(boxX + rosterBoxW, boxY + 35);
+    ctx.stroke();
+
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(tName.toUpperCase(), boxX + 14, boxY + 23);
+
+    ctx.fillStyle = '#059669';
+    ctx.font = '900 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`⚽ ${totalGoals} Gol${totalGoals !== 1 ? 's' : ''}`, boxX + rosterBoxW - 14, boxY + 23);
+
+    // Lista de Jogadores escalados (até 8 atletas)
+    const displayPlayers = players.slice(0, 8);
+    displayPlayers.forEach((p, pI) => {
+      const pY = boxY + 44 + pI * 26;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText(`• ${p.player}`, boxX + 14, pY + 14);
+
+      if (p.isSub) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'italic 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText('(Res)', boxX + 200, pY + 14);
+      }
+
+      if (Number(p.goals) > 0) {
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#059669';
+        ctx.font = '900 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.fillText(`⚽ ${p.goals}`, boxX + rosterBoxW - 14, pY + 14);
       }
     });
   });
 
-  allScorers.sort((a, b) => b.goals - a.goals);
+  // 6. SEÇÃO 4: CARTÕES E GOLS DESTAQUE (Lado a Lado)
+  curY += rosterBoxH * 2 + 24;
+  const cardSecH = 150;
+  const halfW = (sheetW - 48 - 14) / 2;
 
-  ctx.fillStyle = '#fde68a';
-  ctx.font = '900 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.textAlign = 'left';
-  ctx.fillText('🎯 ARTILHARIA & GOLS REGISTRADOS', 64, currentY + 16);
-
-  currentY += 30;
-
-  if (allScorers.length === 0) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-    roundRect(ctx, 60, currentY, width - 120, 50, 10);
-    ctx.fill();
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = 'italic 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('Nenhum gol individual anotado nesta súmula.', width / 2, currentY + 31);
-    currentY += 60;
-  } else {
-    // Exibe até os 5 maiores artilheiros
-    const topScorers = allScorers.slice(0, 5);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-    const boxHeight = topScorers.length * 42 + 20;
-    roundRect(ctx, 60, currentY, width - 120, boxHeight, 14);
-    ctx.fill();
-
-    let scorerY = currentY + 30;
-    topScorers.forEach((sc, i) => {
-      ctx.textAlign = 'left';
-      ctx.fillStyle = i === 0 ? '#f59e0b' : '#cbd5e1';
-      ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(`${i + 1}. ${sc.name.toUpperCase()}`, 84, scorerY);
-
-      ctx.fillStyle = '#64748b';
-      ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(`(${sc.team})`, 320, scorerY);
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#34d399';
-      ctx.font = '900 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(`⚽ ${sc.goals} gol${sc.goals > 1 ? 's' : ''}`, width - 84, scorerY);
-
-      scorerY += 40;
-    });
-
-    currentY += boxHeight + 20;
-  }
-
-  // 7. Rodapé com Selo Oficial de Autenticidade
-  const stampY = height - 190;
-  ctx.fillStyle = 'rgba(16, 185, 129, 0.12)';
-  roundRect(ctx, 60, stampY, width - 120, 100, 16);
+  // Caixa Esquerda: Cartões Aplicados
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, padX + 24, curY, halfW, cardSecH, 12);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)';
+  ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 1.5;
-  roundRect(ctx, 60, stampY, width - 120, 100, 16);
+  roundRect(ctx, padX + 24, curY, halfW, cardSecH, 12);
   ctx.stroke();
 
-  // Carimbo Verde
-  ctx.fillStyle = '#10b981';
-  ctx.font = '900 17px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = '#f8fafc';
+  roundRect(ctx, padX + 25, curY + 1, halfW - 2, 32, 11);
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.beginPath();
+  ctx.moveTo(padX + 24, curY + 33);
+  ctx.lineTo(padX + 24 + halfW, curY + 33);
+  ctx.stroke();
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '900 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText('✅ REGISTRO GRAVADO E VALIDADO OFICIALMENTE', 90, stampY + 38);
+  ctx.fillText('🟨 🟦 🟥 CARTÕES APLICADOS NA RODADA', padX + 36, curY + 22);
+
+  const allCards: { name: string; type: 'amarelo' | 'azul' | 'vermelho' }[] = [
+    ...(sumula.yellowCards || []).map((name) => ({ name, type: 'amarelo' as const })),
+    ...(sumula.blueCards || []).map((name) => ({ name, type: 'azul' as const })),
+    ...(sumula.redCards || []).map((name) => ({ name, type: 'vermelho' as const })),
+  ];
+
+  if (allCards.length === 0) {
+    ctx.fillStyle = '#059669';
+    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('✓ Jogo Limpo · Nenhum cartão registrado na súmula.', padX + 24 + halfW / 2, curY + 85);
+  } else {
+    allCards.slice(0, 4).forEach((c, cI) => {
+      const cY = curY + 42 + cI * 25;
+      const cardIcon = c.type === 'vermelho' ? '🟥 Vermelho' : c.type === 'azul' ? '🟦 Azul' : '🟨 Amarelo';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText(`${cardIcon}: ${c.name}`, padX + 36, cY + 14);
+    });
+  }
+
+  // Caixa Direita: Gols Destaque
+  const destX = padX + 24 + halfW + 14;
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, destX, curY, halfW, cardSecH, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, destX, curY, halfW, cardSecH, 12);
+  ctx.stroke();
+
+  ctx.fillStyle = '#f8fafc';
+  roundRect(ctx, destX + 1, curY + 1, halfW - 2, 32, 11);
+  ctx.fill();
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.beginPath();
+  ctx.moveTo(destX, curY + 33);
+  ctx.lineTo(destX + halfW, curY + 33);
+  ctx.stroke();
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '900 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('⭐ GOLS DESTAQUE DA RODADA', destX + 16, curY + 22);
+
+  const highlights = sumula.highlightGoals || [];
+  if (highlights.length === 0) {
+    ctx.fillStyle = '#64748b';
+    ctx.font = 'italic 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Nenhum gol destaque registrado nesta rodada.', destX + halfW / 2, curY + 85);
+  } else {
+    highlights.slice(0, 4).forEach((h, hI) => {
+      const hY = curY + 42 + hI * 25;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillText(`⚽ ${h.player}`, destX + 16, hY + 14);
+
+      ctx.fillStyle = '#0284c7';
+      ctx.font = 'bold 11px "Courier New", monospace';
+      ctx.fillText(`Horário: ${h.time}`, destX + 220, hY + 14);
+    });
+  }
+
+  // 7. SEÇÃO 5: RODAPÉ COM CERTIFICADO E HOMOLOGAÇÃO
+  curY += cardSecH + 16;
+  const certH = 95;
+
+  ctx.fillStyle = '#f0fdf4';
+  roundRect(ctx, padX + 24, curY, sheetW - 48, certH, 12);
+  ctx.fill();
+  ctx.strokeStyle = '#10b981';
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, padX + 24, curY, sheetW - 48, certH, 12);
+  ctx.stroke();
+
+  // Selo
+  ctx.fillStyle = '#065f46';
+  ctx.font = '900 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('✅ REGISTRO GRAVADO E VALIDADO OFICIALMENTE', padX + 42, curY + 34);
 
   const hashId = `SUM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
   const now = new Date();
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(`Código de Autenticação: ${hashId}   ·   Gravado às ${timeStr}`, 90, stampY + 68);
+  ctx.fillStyle = '#047857';
+  ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(
+    `Código de Autenticação: ${hashId}   ·   Homologado às ${timeStr}`,
+    padX + 42,
+    curY + 62
+  );
 
-  // Link inferior
-  ctx.textAlign = 'center';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('ROSÁLIA ESPORTES · FUTPLAY LITE', padX + sheetW - 48, curY + 38);
+
   ctx.fillStyle = '#64748b';
-  ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText('Sistema FutPlay Lite · Liga Oficial de Futebol Society e Peladas', width / 2, height - 42);
+  ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText('Liga Oficial de Futebol Society e Peladas', padX + sheetW - 48, curY + 62);
 
-  // Exportar Data URL e File
-  const dataUrl = canvas.toDataURL('image/png', 0.95);
+  // 8. Exportação da Imagem (PNG) e do Documento (PDF)
+  const pngDataUrl = canvas.toDataURL('image/png', 0.95);
+  const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+  // Extrai bytes JPEG para o PDF
+  const base64Jpeg = jpegDataUrl.split(',')[1];
+  const binaryJpeg = atob(base64Jpeg);
+  const jpegBytes = new Uint8Array(binaryJpeg.length);
+  for (let i = 0; i < binaryJpeg.length; i++) {
+    jpegBytes[i] = binaryJpeg.charCodeAt(i);
+  }
+
+  // Gera PDF padrão A4
+  const pdfBlob = createPdfBlobFromJpeg(jpegBytes, width, height);
+  const pdfUrl = URL.createObjectURL(pdfBlob);
+
+  const fileNameBase = `comprovante-sumula-${sumula.matchDate ? sumula.matchDate.replace(/\//g, '-') : 'oficial'}`;
+  const pdfFile = new File([pdfBlob], `${fileNameBase}.pdf`, {
+    type: 'application/pdf',
+  });
 
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -316,10 +706,16 @@ export async function generateSumulaReceiptImage(
           reject(new Error('Erro ao converter Canvas em Blob'));
           return;
         }
-        const file = new File([blob], `comprovante-sumula-${sumula.id || 'oficial'}.png`, {
+        const file = new File([blob], `${fileNameBase}.png`, {
           type: 'image/png',
         });
-        resolve({ dataUrl, file });
+        resolve({
+          dataUrl: pngDataUrl,
+          file,
+          pdfBlob,
+          pdfUrl,
+          pdfFile,
+        });
       },
       'image/png',
       0.95
