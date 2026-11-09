@@ -57,8 +57,10 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 }) => {
   const {
     users,
+    profiles,
     selectedCityId,
     switchActiveUser,
+    setActiveUserWithData,
     registerNewAthlete,
     notify,
   } = useLeague();
@@ -152,6 +154,9 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
     // 1. Procura usuário cadastrado localmente por e-mail ou telefone
     let existingUser = findUserByIdentifier(trimmed);
+    let matchedProfile = existingUser
+      ? profiles.find((p) => p.userId === existingUser?.id)
+      : undefined;
 
     // 2. Se não encontrou em memória (ex: acessando de outro celular ou nova aba), busca direto no Supabase
     if (!existingUser && isSupabaseConfigured()) {
@@ -159,6 +164,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         const remoteMatch = await supabaseService.findUserByIdentifier(trimmed);
         if (remoteMatch) {
           existingUser = remoteMatch.user;
+          matchedProfile = remoteMatch.profile;
 
           // Se tiver senha salva no banco Supabase, valida
           if (remoteMatch.password && remoteMatch.password !== loginPassword.trim()) {
@@ -207,7 +213,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         // Ignora falha local
       }
 
-      switchActiveUser(existingUser.id);
+      // Ativa o usuário e perfil no estado da liga e persiste sessão
+      setActiveUserWithData(existingUser, matchedProfile);
       onAuthenticated();
       return;
     }
@@ -338,17 +345,35 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             password: regPassword.trim(),
           });
           if (!supSync.success) {
-            console.warn('Aviso de sincronização no Supabase:', supSync.error);
+            console.error('Falha de sincronização no Supabase:', supSync.error);
+            setIsSubmitting(false);
+            setLoginError(`Erro ao salvar no banco de dados: ${supSync.error || 'Falha na resposta do servidor'}`);
+            return;
           }
         } catch (syncErr) {
-          console.warn('Erro ao conectar com Supabase durante registro:', syncErr);
+          console.error('Erro ao conectar com Supabase durante registro:', syncErr);
+          setIsSubmitting(false);
+          setLoginError(`Erro de conexão com o Supabase: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`);
+          return;
         }
       }
+
+      setActiveUserWithData(
+        {
+          id: created.userId,
+          email: finalEmail,
+          whatsappNumber: finalWhatsapp,
+          role: 'player',
+          status: 'ativa',
+          createdAt: new Date().toISOString(),
+        },
+        created
+      );
 
       notify(
         'success',
         'Conta criada com sucesso!',
-        `Bem-vindo à liga, ${trimmedName}! Seu cartão de atleta oficial foi ativado e sincronizado.`
+        `Bem-vindo à liga, ${trimmedName}! Seu cartão de atleta oficial foi ativado e sincronizado com o Supabase.`
       );
       onAuthenticated();
     } else {

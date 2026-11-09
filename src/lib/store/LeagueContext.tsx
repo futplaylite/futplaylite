@@ -141,6 +141,7 @@ interface LeagueContextValue extends LeagueState {
   setSelectedCityId: (cityId: string) => void;
   setSelectedSeasonId: (seasonId: string) => void;
   switchActiveUser: (userId: string) => void;
+  setActiveUserWithData: (user: User, profile?: PlayerProfile) => void;
   clearNotification: () => void;
   notify: (
     type: NotificationBanner['type'],
@@ -520,12 +521,54 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     const target = state.users.find((u) => u.id === userId);
     if (target) {
       setCurrentUserId(target.id);
+      try {
+        localStorage.setItem(ACTIVE_USER_STORAGE_KEY, target.id);
+      } catch {
+        // Ignore
+      }
       const prof = state.profiles.find((p) => p.userId === target.id);
       notify(
         'info',
         `Sessão alternada: ${prof ? prof.displayName : 'Moderador Oficial'}`,
         `Papel ativo no servidor: ${target.role.toUpperCase()} (${target.email})`
       );
+    }
+  };
+
+  const setActiveUserWithData = (user: User, profile?: PlayerProfile) => {
+    setState((prev) => {
+      const userIdx = prev.users.findIndex((u) => u.id === user.id);
+      const newUsers = [...prev.users];
+      if (userIdx >= 0) {
+        newUsers[userIdx] = { ...newUsers[userIdx], ...user };
+      } else {
+        newUsers.push(user);
+      }
+
+      let newProfiles = [...prev.profiles];
+      if (profile) {
+        const profIdx = newProfiles.findIndex(
+          (p) => p.id === profile.id || p.userId === user.id
+        );
+        if (profIdx >= 0) {
+          newProfiles[profIdx] = { ...newProfiles[profIdx], ...profile };
+        } else {
+          newProfiles.push(profile);
+        }
+      }
+
+      return {
+        ...prev,
+        users: newUsers,
+        profiles: newProfiles,
+      };
+    });
+
+    setCurrentUserId(user.id);
+    try {
+      localStorage.setItem(ACTIVE_USER_STORAGE_KEY, user.id);
+    } catch {
+      // Ignore
     }
   };
 
@@ -2258,6 +2301,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         setSelectedCityId,
         setSelectedSeasonId,
         switchActiveUser,
+        setActiveUserWithData,
         clearNotification,
         notify,
         registerNewAthlete,

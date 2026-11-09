@@ -100,13 +100,18 @@ export const supabaseService = {
           .maybeSingle();
         data = res.data;
       } else {
-        // Tenta buscar por whatsapp_number ou email com dígitos
+        // Tenta buscar por whatsapp_number exato, com DDD, ou email gerado com os dígitos
+        const orFilter = [
+          `email.ilike.${digits}%`,
+          `whatsapp_number.eq.${digits}`,
+          `whatsapp_number.eq.${trimmed}`,
+          `whatsapp_number.ilike.%${digits}%`,
+        ].join(',');
+
         const res = await supabase
           .from('users')
           .select('*')
-          .or(
-            `whatsapp_number.ilike.%${digits}%,email.ilike.${digits}%`
-          )
+          .or(orFilter)
           .limit(1)
           .maybeSingle();
 
@@ -212,7 +217,13 @@ export const supabaseService = {
       try {
         let lookup = supabase.from('users').select('id, email, whatsapp_number').limit(1);
         if (cleanDigits && cleanDigits.length >= 8) {
-          lookup = lookup.or(`email.eq.${userEmail},whatsapp_number.ilike.%${cleanDigits}%`);
+          const orFilter = [
+            `email.eq.${userEmail}`,
+            `whatsapp_number.eq.${cleanDigits}`,
+            `whatsapp_number.eq.${params.user.whatsappNumber}`,
+            `whatsapp_number.ilike.%${cleanDigits}%`,
+          ].join(',');
+          lookup = lookup.or(orFilter);
         } else {
           lookup = lookup.eq('email', userEmail);
         }
@@ -226,10 +237,12 @@ export const supabaseService = {
 
       // 1. Inserir ou atualizar na tabela users (com fallback caso colunas estendidas ainda não existam)
       let uErr: any = null;
+      const whatsappToStore = cleanDigits || params.user.whatsappNumber || null;
+
       const { error: fullErr } = await supabase.from('users').upsert({
         id: finalUserId,
         email: userEmail,
-        whatsapp_number: params.user.whatsappNumber || null,
+        whatsapp_number: whatsappToStore,
         password_hash: params.password || null,
         role: params.user.role || 'player',
         status: params.user.status || 'ativa',

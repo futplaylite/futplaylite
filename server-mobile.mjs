@@ -53,6 +53,11 @@ const server = http.createServer((req, res) => {
     const raw = fs.readFileSync(filePath);
     const acceptEncoding = req.headers['accept-encoding'] || '';
 
+    const isNoCache = ext === '.html' || urlPath.endsWith('sw.js') || urlPath.endsWith('manifest.json');
+    const cacheControlHeader = isNoCache
+      ? 'no-cache, no-store, must-revalidate, max-age=0'
+      : 'public, max-age=31536000, immutable';
+
     if (
       acceptEncoding.includes('gzip') &&
       (ext === '.html' || ext === '.js' || ext === '.css' || ext === '.svg')
@@ -61,13 +66,13 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, {
         'Content-Type': contentType,
         'Content-Encoding': 'gzip',
-        'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000',
+        'Cache-Control': cacheControlHeader,
       });
       res.end(compressed);
     } else {
       res.writeHead(200, {
         'Content-Type': contentType,
-        'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000',
+        'Cache-Control': cacheControlHeader,
       });
       res.end(raw);
     }
