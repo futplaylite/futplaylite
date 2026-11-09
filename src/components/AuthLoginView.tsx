@@ -18,7 +18,7 @@ import { useLeague } from '../lib/store/LeagueContext';
 import { supabaseService, isSupabaseConfigured } from '../lib/supabase';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PWAInstallBanner } from './PWAInstallBanner';
-import { DominantFoot, PlayerPosition, ProfileVisibility } from '../types/league';
+import { DominantFoot, PlayerPosition, ProfileVisibility, User, PlayerProfile } from '../types/league';
 
 interface AuthLoginViewProps {
   onAuthenticated: () => void;
@@ -219,7 +219,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     setRegConfirmIdentifier(trimmed);
   };
 
-  const handleCreateAccount = (e: React.FormEvent) => {
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
@@ -260,20 +260,26 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       return;
     }
 
-    // Verifica se já existe uma conta cadastrada com esse e-mail ou telefone
-    const existing = findUserByIdentifier(trimmedIdentifier);
-    if (existing) {
-      switchActiveUser(existing.id);
-      notify(
-        'info',
-        'Conta já existente!',
-        'Identificamos seu cadastro e conectamos você diretamente à sua conta.'
-      );
-      onAuthenticated();
-      return;
+    setIsSubmitting(true);
+
+    // Verifica se já existe uma conta cadastrada localmente
+    let existing = findUserByIdentifier(trimmedIdentifier);
+    if (!existing && isSupabaseConfigured()) {
+      try {
+        const supAccount = await supabaseService.findUserByIdentifier(trimmedIdentifier);
+        if (supAccount) {
+          existing = supAccount.user;
+        }
+      } catch {
+        // Ignora falha de consulta
+      }
     }
 
-    setIsSubmitting(true);
+    if (existing) {
+      setIsSubmitting(false);
+      setLoginError('Já existe uma conta cadastrada com este e-mail ou telefone. Toque na aba "Já Tenho Conta" para entrar.');
+      return;
+    }
 
     const finalEmail = isEmail
       ? trimmedIdentifier.toLowerCase()
@@ -283,7 +289,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       ? formatIdentifierInput(digits)
       : undefined;
 
-    // Registra diretamente o novo atleta na liga (com celular ou e-mail e senha)
+    // Registra o novo atleta no estado da liga
     const created = registerNewAthlete({
       displayName: trimmedName,
       email: finalEmail,
@@ -297,7 +303,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     });
 
     if (created) {
-      // Salva a senha com segurança localmente para próximos logins
+      // Salva a senha com segurança localmente para próximos logins offline
       try {
         const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
         stored[created.userId] = regPassword.trim();
@@ -312,10 +318,37 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         // Ignora falha local
       }
 
+      // Sincroniza e aguarda explicitamente o salvamento no Supabase
+      if (isSupabaseConfigured()) {
+        const supUser: User = {
+          id: created.userId,
+          email: finalEmail,
+          whatsappNumber: finalWhatsapp,
+          role: 'player',
+          status: 'ativa',
+          createdAt: new Date().toISOString(),
+        };
+        const supProfile: PlayerProfile = {
+          ...created,
+        };
+        try {
+          const supSync = await supabaseService.registerAthleteInSupabase({
+            user: supUser,
+            profile: supProfile,
+            password: regPassword.trim(),
+          });
+          if (!supSync.success) {
+            console.warn('Aviso de sincronização no Supabase:', supSync.error);
+          }
+        } catch (syncErr) {
+          console.warn('Erro ao conectar com Supabase durante registro:', syncErr);
+        }
+      }
+
       notify(
         'success',
         'Conta criada com sucesso!',
-        `Bem-vindo à liga, ${trimmedName}! Seu cartão de atleta oficial foi ativado.`
+        `Bem-vindo à liga, ${trimmedName}! Seu cartão de atleta oficial foi ativado e sincronizado.`
       );
       onAuthenticated();
     } else {

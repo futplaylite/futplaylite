@@ -201,24 +201,34 @@ export const supabaseService = {
             )
         );
 
-      const finalUserId = isValidUUID(params.user.id)
+      let finalUserId = isValidUUID(params.user.id)
         ? params.user.id
         : generateUUID();
-      const finalProfileId = isValidUUID(params.profile.id)
-        ? params.profile.id
-        : generateUUID();
-      const finalCityId = isValidUUID(params.profile.cityId)
-        ? params.profile.cityId
-        : '11111111-1111-4111-8111-111111111101';
-      const finalDivisionId = isValidUUID(params.profile.currentDivisionId)
-        ? params.profile.currentDivisionId
-        : '22222222-2222-4222-8222-222222222201';
+
+      const userEmail = params.user.email.toLowerCase().trim();
+      const cleanDigits = params.user.whatsappNumber?.replace(/\D/g, '');
+
+      // 0. Verifica se o usuário já existe no Supabase por e-mail ou celular para evitar conflito de chave única
+      try {
+        let lookup = supabase.from('users').select('id, email, whatsapp_number').limit(1);
+        if (cleanDigits && cleanDigits.length >= 8) {
+          lookup = lookup.or(`email.eq.${userEmail},whatsapp_number.ilike.%${cleanDigits}%`);
+        } else {
+          lookup = lookup.eq('email', userEmail);
+        }
+        const { data: existingUser } = await lookup.maybeSingle();
+        if (existingUser?.id) {
+          finalUserId = existingUser.id;
+        }
+      } catch {
+        // Ignora erro no lookup prévio
+      }
 
       // 1. Inserir ou atualizar na tabela users (com fallback caso colunas estendidas ainda não existam)
       let uErr: any = null;
       const { error: fullErr } = await supabase.from('users').upsert({
         id: finalUserId,
-        email: params.user.email.toLowerCase(),
+        email: userEmail,
         whatsapp_number: params.user.whatsappNumber || null,
         password_hash: params.password || null,
         role: params.user.role || 'player',
@@ -230,7 +240,7 @@ export const supabaseService = {
         if (fullErr.message?.includes('does not exist')) {
           const { error: baseErr } = await supabase.from('users').upsert({
             id: finalUserId,
-            email: params.user.email.toLowerCase(),
+            email: userEmail,
             role: params.user.role || 'player',
             status: params.user.status || 'ativa',
             updated_at: new Date().toISOString(),
@@ -245,6 +255,32 @@ export const supabaseService = {
         console.error('Erro ao cadastrar usuário no Supabase:', uErr);
         return { success: false, error: uErr.message };
       }
+
+      // 1.1. Verifica se já existe um perfil associado a este finalUserId
+      let finalProfileId = isValidUUID(params.profile.id)
+        ? params.profile.id
+        : generateUUID();
+
+      try {
+        const { data: existingProf } = await supabase
+          .from('player_profiles')
+          .select('id')
+          .eq('user_id', finalUserId)
+          .limit(1)
+          .maybeSingle();
+        if (existingProf?.id) {
+          finalProfileId = existingProf.id;
+        }
+      } catch {
+        // Ignora erro no lookup
+      }
+
+      const finalCityId = isValidUUID(params.profile.cityId)
+        ? params.profile.cityId
+        : '11111111-1111-4111-8111-111111111101';
+      const finalDivisionId = isValidUUID(params.profile.currentDivisionId)
+        ? params.profile.currentDivisionId
+        : '22222222-2222-4222-8222-222222222201';
 
       // 2. Inserir ou atualizar perfil de atleta
       const { error: pErr } = await supabase.from('player_profiles').upsert({
@@ -272,8 +308,8 @@ export const supabaseService = {
         await supabase.from('season_entries').upsert({
           id: generateUUID(),
           season_id: '33333333-3333-4333-8333-333333333301',
-          player_id: params.profile.id,
-          division_id: '22222222-2222-4222-8222-222222222201',
+          player_id: finalProfileId,
+          division_id: finalDivisionId,
           status: 'provisorio',
           updated_at: new Date().toISOString(),
         });
