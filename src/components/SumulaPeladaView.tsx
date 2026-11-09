@@ -364,6 +364,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   const [savedBadge, setSavedBadge] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
+  const [gridWarning, setGridWarning] = useState<string | null>(null);
 
   // Auto-salvar no localStorage a cada alteração
   useEffect(() => {
@@ -640,53 +641,104 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // 4. Grade de Pontos (V / E / -)
+  // 4. Grade de Pontos (V / E / -) com Anti-Erro de Coluna e Bloqueio Total da Coluna em 30s
   const handleGridResultToggle = (tIdx: number, mIdx: number) => {
     if (!canEdit) return;
-    const cellKey = `${tIdx}_${mIdx}`;
-    const cellTimer = sumula.gridTimers?.[cellKey];
+    const colKey = `col_${mIdx}`;
+    const colTimer = sumula.gridTimers?.[colKey];
+    const colMatches = sumula.teamsGrid.map((row) => row.matches[mIdx]);
+    const hasAnyMark = colMatches.some((m) => m === 'V' || m === 'E');
+    const elapsed = colTimer?.updatedAt ? nowTime - colTimer.updatedAt : 999999;
     
-    // Se a célula já estiver travada (passou 30s), impede a troca simples por clique
-    const isLocked =
-      cellTimer?.isLocked ||
-      (cellTimer?.updatedAt && nowTime - cellTimer.updatedAt >= 30000);
+    // Se passaram 30s da marcação, toda a coluna fica bloqueada!
+    const isColLocked = Boolean(
+      hasAnyMark && (colTimer?.isLocked || (colTimer?.updatedAt && elapsed >= 30000))
+    );
 
-    if (isLocked) {
-      // Travado silenciosamente, não troca por clique e não emite popup
+    if (isColLocked) {
+      setGridWarning(`Jogo J${mIdx + 1} está bloqueado. Pressione e segure por 3s na coluna para liberar para remarcação.`);
+      setTimeout(() => setGridWarning(null), 3500);
       return;
+    }
+
+    const cur = sumula.teamsGrid[tIdx].matches[mIdx];
+    const otherMatches = sumula.teamsGrid
+      .filter((_, idx) => idx !== tIdx)
+      .map((row) => row.matches[mIdx]);
+
+    const otherVCount = otherMatches.filter((m) => m === 'V').length;
+    const otherECount = otherMatches.filter((m) => m === 'E').length;
+
+    let next = '-';
+
+    if (cur === '-') {
+      // Regra 1: Somente 1 V de vitória por coluna
+      if (otherVCount >= 1) {
+        setGridWarning(`Jogo J${mIdx + 1}: Já existe 1 time vencedor (V). Cada partida só tem 1 vencedor.`);
+        setTimeout(() => setGridWarning(null), 3000);
+        return;
+      }
+      // Regra 2: Somente 2 E de empate por coluna (2 times jogando)
+      if (otherECount >= 2) {
+        setGridWarning(`Jogo J${mIdx + 1}: Já existem 2 times empatados (E). Apenas 2 times se enfrentam por partida.`);
+        setTimeout(() => setGridWarning(null), 3000);
+        return;
+      }
+      if (otherECount === 1) {
+        // Já tem 1 time empatado, este vira o segundo time do empate
+        next = 'E';
+      } else {
+        // Coluna limpa: primeiro toque marca Vitória
+        next = 'V';
+      }
+    } else if (cur === 'V') {
+      // De Vitória passa para Empate (se não houver já 2 empates)
+      if (otherECount >= 2) {
+        next = '-';
+      } else {
+        next = 'E';
+      }
+    } else if (cur === 'E') {
+      // De Empate volta para vazio
+      next = '-';
     }
 
     setSumula((prev) => {
       const copy = [...prev.teamsGrid];
       const mCopy = [...copy[tIdx].matches];
-      const cur = mCopy[mIdx];
-      // Alterna apenas entre vazio/derrota ('-'), Vitória ('V') e Empate ('E')
-      const next = cur === '-' ? 'V' : cur === 'V' ? 'E' : '-';
       mCopy[mIdx] = next;
       copy[tIdx] = { ...copy[tIdx], matches: mCopy };
 
+      const nextColMatches = copy.map((row) => row.matches[mIdx]);
+      const stillHasMarks = nextColMatches.some((m) => m === 'V' || m === 'E');
+
       const timers = { ...(prev.gridTimers || {}) };
-      if (next === 'V' || next === 'E') {
-        timers[cellKey] = {
-          updatedAt: Date.now(),
+      if (stillHasMarks) {
+        // Inicia ou mantém a contagem dos 30s para bloquear TODA a coluna
+        timers[colKey] = {
+          updatedAt: timers[colKey]?.updatedAt || Date.now(),
           isLocked: false,
         };
       } else {
-        // Se voltou para '-' (normal/sem cor), remove o timer
-        delete timers[cellKey];
+        // Se a coluna voltou a ficar toda vazia ('-'), cancela o timer da coluna
+        delete timers[colKey];
       }
 
       return { ...prev, teamsGrid: copy, gridTimers: timers };
     });
   };
 
-  // Iniciar pressão para desbloqueio (3 segundos)
-  const handleStartHold = (cellKey: string) => {
+  // Iniciar pressão para desbloqueio da coluna inteira (3 segundos)
+  const handleStartHold = (colIdx: number) => {
     if (!canEdit) return;
-    const cellTimer = sumula.gridTimers?.[cellKey];
-    const isLocked =
-      cellTimer?.isLocked ||
-      (cellTimer?.updatedAt && nowTime - cellTimer.updatedAt >= 30000);
+    const colKey = `col_${colIdx}`;
+    const colTimer = sumula.gridTimers?.[colKey];
+    const colMatches = sumula.teamsGrid.map((row) => row.matches[colIdx]);
+    const hasAnyMark = colMatches.some((m) => m === 'V' || m === 'E');
+    const elapsed = colTimer?.updatedAt ? nowTime - colTimer.updatedAt : 999999;
+    const isLocked = Boolean(
+      hasAnyMark && (colTimer?.isLocked || (colTimer?.updatedAt && elapsed >= 30000))
+    );
 
     if (!isLocked) return;
 
@@ -696,28 +748,32 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     }
 
     let progress = 0;
-    setUnlockingCell({ key: cellKey, progress: 0 });
+    setUnlockingCell({ key: colKey, progress: 0 });
 
     const intervalId = setInterval(() => {
-      progress += 3.34; // a cada 100ms sobe ~3.34% (100% em 3s)
-      setUnlockingCell({ key: cellKey, progress: Math.min(100, progress) });
+      progress += 3.34; // 100% em 3 segundos
+      setUnlockingCell({ key: colKey, progress: Math.min(100, progress) });
     }, 100);
 
     const timeoutId = setTimeout(() => {
       clearInterval(intervalId);
       setUnlockingCell(null);
-      // Destrava a célula diretamente sem popups/avisos
+      // Destrava a coluna inteira para remarcação e concede novos 30s
       setSumula((prev) => {
         const timers = { ...(prev.gridTimers || {}) };
-        delete timers[cellKey];
+        timers[colKey] = {
+          updatedAt: Date.now(),
+          isLocked: false,
+        };
         return { ...prev, gridTimers: timers };
       });
+      setGridWarning(`✓ Jogo J${colIdx + 1} destravado com sucesso para remarcação!`);
+      setTimeout(() => setGridWarning(null), 3000);
     }, 3000);
 
-    pressTimerRef.current = { timeoutId, intervalId, key: cellKey };
+    pressTimerRef.current = { timeoutId, intervalId, key: colKey };
   };
 
-  // Cancelar pressão se soltar antes de 5 segundos
   const handleEndHold = () => {
     if (pressTimerRef.current) {
       clearTimeout(pressTimerRef.current.timeoutId);
@@ -1116,22 +1172,84 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
           {/* Seção 3: Grade de Pontos (Time 01 a 04 com V / E / -) */}
           <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs">
-            <div className="font-bold text-slate-800 border-b border-slate-100 pb-1 mb-2">
+            <div className="font-bold text-slate-800 border-b border-slate-100 pb-1 mb-2 flex items-center justify-between">
               <span className="text-[11px] uppercase tracking-wide">
                 Pontos e Partidas dos Times
               </span>
+              <span className="text-[9px] text-slate-400 font-medium">
+                Anti-erro: 30s | Segure 3s na coluna p/ remarcar
+              </span>
             </div>
+
+            {/* Alerta de Anti-Erro da Grade */}
+            {gridWarning && (
+              <div className="mb-2 p-2 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-bold flex items-center gap-1.5 shadow-2xs animate-pulse">
+                <span className="text-sm shrink-0">⚠️</span>
+                <span>{gridWarning}</span>
+              </div>
+            )}
 
             <div className="overflow-x-auto no-scrollbar">
               <table className="w-full text-center border-collapse">
                 <thead>
                   <tr className="bg-slate-100 text-[10px] font-bold text-slate-600">
                     <th className="p-1 text-left">Time</th>
-                    {Array.from({ length: 15 }).map((_, i) => (
-                      <th key={i} className="p-1 w-6">
-                        J{i + 1}
-                      </th>
-                    ))}
+                    {Array.from({ length: 15 }).map((_, i) => {
+                      const colKey = `col_${i}`;
+                      const colTimer = sumula.gridTimers?.[colKey];
+                      const colMatches = sumula.teamsGrid.map((row) => row.matches[i]);
+                      const hasAnyMark = colMatches.some((m) => m === 'V' || m === 'E');
+                      const elapsed = colTimer?.updatedAt ? nowTime - colTimer.updatedAt : 999999;
+                      const isColLocked = Boolean(
+                        hasAnyMark && (colTimer?.isLocked || (colTimer?.updatedAt && elapsed >= 30000))
+                      );
+                      const secondsLeft = Math.max(0, Math.ceil((30000 - elapsed) / 1000));
+                      const isUnlockingThisCol = unlockingCell?.key === colKey;
+
+                      return (
+                        <th
+                          key={i}
+                          onMouseDown={() => handleStartHold(i)}
+                          onMouseUp={handleEndHold}
+                          onMouseLeave={handleEndHold}
+                          onTouchStart={() => handleStartHold(i)}
+                          onTouchEnd={handleEndHold}
+                          onTouchCancel={handleEndHold}
+                          className={`p-1 w-6 relative select-none transition ${
+                            isColLocked
+                              ? 'bg-slate-200/90 text-slate-700 cursor-pointer hover:bg-amber-100'
+                              : hasAnyMark && secondsLeft > 0
+                              ? 'bg-blue-50 text-blue-700'
+                              : ''
+                          }`}
+                          title={
+                            isColLocked
+                              ? `Jogo J${i + 1} bloqueado. Segure pressionado por 3s para liberar para remarcação.`
+                              : hasAnyMark && secondsLeft > 0
+                              ? `Bloqueando coluna em ${secondsLeft}s...`
+                              : `Jogo J${i + 1}`
+                          }
+                        >
+                          {isUnlockingThisCol && (
+                            <div
+                              className="absolute inset-0 bg-amber-400/80 transition-all z-20 pointer-events-none rounded"
+                              style={{ width: `${unlockingCell.progress}%` }}
+                            />
+                          )}
+                          <div className="flex flex-col items-center justify-center relative z-10">
+                            <span className="flex items-center gap-0.5">
+                              J{i + 1}
+                              {isColLocked && <span className="text-[8px]">🔒</span>}
+                            </span>
+                            {hasAnyMark && !isColLocked && secondsLeft > 0 && (
+                              <span className="text-[7px] text-blue-600 font-mono leading-none">
+                                {secondsLeft}s
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
@@ -1141,51 +1259,46 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                         {row.teamName}
                       </td>
                       {row.matches.map((res, mIdx) => {
-                        const cellKey = `${tIdx}_${mIdx}`;
-                        const cellTimer = sumula.gridTimers?.[cellKey];
-                        const isMarked = res !== '-';
-                        const elapsed = cellTimer?.updatedAt
-                          ? nowTime - cellTimer.updatedAt
+                        const colKey = `col_${mIdx}`;
+                        const colTimer = sumula.gridTimers?.[colKey];
+                        const colMatches = sumula.teamsGrid.map((r) => r.matches[mIdx]);
+                        const hasAnyMark = colMatches.some((m) => m === 'V' || m === 'E');
+                        const elapsed = colTimer?.updatedAt
+                          ? nowTime - colTimer.updatedAt
                           : 999999;
-                        const isLocked =
-                          cellTimer?.isLocked || (cellTimer?.updatedAt && elapsed >= 30000);
-                        const isUnlockingThis = unlockingCell?.key === cellKey;
+                        const isColLocked = Boolean(
+                          hasAnyMark && (colTimer?.isLocked || (colTimer?.updatedAt && elapsed >= 30000))
+                        );
+                        const isUnlockingThisCol = unlockingCell?.key === colKey;
                         const secondsLeft = Math.max(0, Math.ceil((30000 - elapsed) / 1000));
 
-                        // Definição de cores:
-                        // Se estiver travado (>30s):
-                        //   V = VERDE definitivo
-                        //   E = AMARELO definitivo
-                        //   - (derrota/vazio) = NORMAL sem cor
-                        // Se estiver nos primeiros 30s de contagem:
-                        //   V = Azul pulsante
-                        //   E = Amarelo pulsante
                         let buttonClasses = 'text-slate-400 bg-slate-50 border border-slate-200';
 
-                        if (isLocked) {
+                        if (isColLocked) {
                           if (res === 'V') {
                             buttonClasses = 'bg-emerald-600 text-white border border-emerald-700 shadow-2xs font-extrabold';
                           } else if (res === 'E') {
                             buttonClasses = 'bg-amber-400 text-amber-950 border border-amber-500 shadow-2xs font-extrabold';
                           } else {
-                            // Derrota fica normal sem cor
-                            buttonClasses = 'text-slate-400 bg-slate-50 border border-slate-200';
+                            buttonClasses = 'text-slate-300 bg-slate-100/70 border border-slate-200 opacity-60';
                           }
-                        } else if (cellTimer?.updatedAt && isMarked) {
-                          // Em contagem regressiva dos 30s (ainda editável)
+                        } else if (colTimer?.updatedAt && hasAnyMark) {
+                          // Em contagem regressiva dos 30s da coluna (ainda editável)
                           if (res === 'V') {
                             buttonClasses = 'bg-emerald-500 text-white shadow-xs ring-2 ring-emerald-300 animate-pulse';
                           } else if (res === 'E') {
                             buttonClasses = 'bg-amber-300 text-amber-950 border border-amber-400 ring-2 ring-amber-200 animate-pulse';
+                          } else {
+                            buttonClasses = 'text-slate-500 bg-white border border-slate-300 hover:border-blue-400';
                           }
                         } else {
-                          // Legado ou padrão inicial
+                          // Coluna limpa sem marcações
                           if (res === 'V') {
                             buttonClasses = 'bg-emerald-600 text-white shadow-2xs font-bold';
                           } else if (res === 'E') {
                             buttonClasses = 'bg-amber-400 text-amber-950 border border-amber-500 font-bold';
                           } else {
-                            buttonClasses = 'text-slate-400 bg-slate-50 border border-slate-200';
+                            buttonClasses = 'text-slate-400 bg-slate-50 border border-slate-200 hover:bg-slate-100';
                           }
                         }
 
@@ -1194,25 +1307,25 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                             <button
                               type="button"
                               onClick={() => handleGridResultToggle(tIdx, mIdx)}
-                              onMouseDown={() => handleStartHold(cellKey)}
+                              onMouseDown={() => handleStartHold(mIdx)}
                               onMouseUp={handleEndHold}
                               onMouseLeave={handleEndHold}
-                              onTouchStart={() => handleStartHold(cellKey)}
+                              onTouchStart={() => handleStartHold(mIdx)}
                               onTouchEnd={handleEndHold}
                               onTouchCancel={handleEndHold}
                               className={`w-6 h-6 rounded text-[10px] font-bold transition flex items-center justify-center relative overflow-hidden ${buttonClasses}`}
                               title={
-                                isLocked
-                                  ? 'Travado definitivo. Segure por 3s para liberar.'
-                                  : cellTimer?.updatedAt
-                                  ? `Validando em ${secondsLeft}s...`
+                                isColLocked
+                                  ? 'Coluna bloqueada. Segure por 3s em qualquer célula para liberar para remarcação.'
+                                  : colTimer?.updatedAt && hasAnyMark
+                                  ? `Coluna bloqueia em ${secondsLeft}s...`
                                   : 'Toque para marcar'
                               }
                             >
-                              {/* Barra de progresso de 3s quando está segurando para destravar */}
-                              {isUnlockingThis && (
+                              {/* Barra de progresso de 3s quando está segurando para destravar a coluna */}
+                              {isUnlockingThisCol && (
                                 <div
-                                  className="absolute bottom-0 left-0 top-0 bg-amber-400/80 transition-all"
+                                  className="absolute bottom-0 left-0 top-0 bg-amber-400/80 transition-all pointer-events-none"
                                   style={{ width: `${unlockingCell.progress}%` }}
                                 />
                               )}
@@ -1220,19 +1333,12 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                               <span className="relative z-10">{res}</span>
 
                               {/* Ícone discreto de cadeado se travado */}
-                              {isLocked && (
+                              {isColLocked && (res === 'V' || res === 'E') && (
                                 <span className="absolute -top-0.5 -right-0.5 text-[7px] leading-none text-white/90">
                                   🔒
                                 </span>
                               )}
                             </button>
-
-                            {/* Contador regressivo dos 30s abaixo da célula */}
-                            {!isLocked && cellTimer?.updatedAt && secondsLeft > 0 && (
-                              <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 text-[7px] font-mono text-blue-700 font-bold leading-none pointer-events-none">
-                                {secondsLeft}s
-                              </span>
-                            )}
                           </td>
                         );
                       })}
