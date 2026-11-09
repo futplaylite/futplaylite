@@ -343,6 +343,19 @@ export const supabaseService = {
   async deleteUser(userId: string): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
+      // 1. Localiza o perfil esportivo para obter o player_id
+      const { data: prof } = await supabase
+        .from('player_profiles')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      // 2. Remove primeiro os vínculos em season_entries para não violar foreign key constraint
+      if (prof?.id) {
+        await supabase.from('season_entries').delete().eq('player_id', prof.id);
+      }
+
+      // 3. Remove perfil e usuário
       await supabase.from('player_profiles').delete().eq('user_id', userId);
       await supabase.from('users').delete().eq('id', userId);
       return true;
