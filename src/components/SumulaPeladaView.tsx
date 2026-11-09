@@ -15,6 +15,8 @@ import {
   UserCheck,
   Lock,
   Unlock,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { ShareSumulaReceiptModal } from './ShareSumulaReceiptModal';
@@ -390,29 +392,117 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   // Estado para adicionar jogador aos times (Time 01, Time 02, etc.)
   const [activeAddTeam, setActiveAddTeam] = useState<string | null>(null);
+  const [openTeamDropdown, setOpenTeamDropdown] = useState<string | null>(null);
   const [newTeamPlayerName, setNewTeamPlayerName] = useState('');
   const [newTeamPlayerIsSub, setNewTeamPlayerIsSub] = useState(false);
 
-  // Lista unificada de sugestões para os times (Presenças confirmadas + Atletas reais do elenco cadastrados no banco)
-  const availableTeamPlayerSuggestions = useMemo(() => {
-    const list: string[] = [];
-    // 1. Presenças confirmadas na súmula
-    (sumula.arrivalList || [])
-      .filter((a) => a.confirmed && a.playerName)
-      .forEach((a) => {
-        const up = a.playerName.trim().toUpperCase();
-        if (!list.includes(up)) list.push(up);
-      });
-    // 2. Todos os atletas reais do time cadastrados no banco de dados
+  // Lista rica de atletas disponíveis para os times (com posição, pé dominante e presença)
+  const availableTeamPlayers = useMemo(() => {
     const sumulaTeam = (sumula.teamName || userTeam || '').trim().toLowerCase();
+
+    const positionMap: Record<string, { label: string; icon: string }> = {
+      atacante: { label: 'Atacante', icon: '⚡' },
+      'meio-campista': { label: 'Meio-campista', icon: '🎯' },
+      defensor: { label: 'Defensor', icon: '🛡️' },
+      goleiro: { label: 'Goleiro', icon: '🧤' },
+    };
+
+    const footMap: Record<string, string> = {
+      direito: 'Destro',
+      esquerdo: 'Canhoto',
+      ambos: 'Ambidestro',
+    };
+
+    const map = new Map<
+      string,
+      {
+        name: string;
+        positionLabel: string;
+        positionEmoji: string;
+        footLabel: string;
+        avatarUrl?: string;
+        isConfirmedArrival: boolean;
+        isGoalkeeper: boolean;
+        assignedTeam?: string;
+      }
+    >();
+
+    // 1. Todos os atletas reais do time cadastrados no banco de dados (excluindo conta admin)
     profiles
-      .filter((p) => !sumulaTeam || (p.teamName || '').trim().toLowerCase() === sumulaTeam)
+      .filter((p) => {
+        const isUserAdmin =
+          p.userId === 'admin' ||
+          p.id === 'admin' ||
+          (p.whatsappNumber || '').includes('futplaylite@gmail.com');
+        if (isUserAdmin) return false;
+        return !sumulaTeam || (p.teamName || '').trim().toLowerCase() === sumulaTeam;
+      })
       .forEach((p) => {
         const up = p.displayName.trim().toUpperCase();
-        if (!list.includes(up)) list.push(up);
+        const posKey = (p.position || '').toLowerCase();
+        const footKey = (p.dominantFoot || '').toLowerCase();
+        const pos = positionMap[posKey] || { label: 'Atleta', icon: '⚽' };
+        const foot = footMap[footKey] || 'Não informado';
+
+        map.set(up, {
+          name: up,
+          positionLabel: pos.label,
+          positionEmoji: pos.icon,
+          footLabel: foot,
+          avatarUrl: p.avatarUrl,
+          isConfirmedArrival: false,
+          isGoalkeeper: p.position === 'goleiro',
+        });
       });
-    return list;
-  }, [sumula.arrivalList, sumula.teamName, userTeam, profiles]);
+
+    // 2. Presenças da súmula (arrivalList)
+    (sumula.arrivalList || []).forEach((a) => {
+      if (!a.playerName) return;
+      const up = a.playerName.trim().toUpperCase();
+      const existing = map.get(up);
+      const isGk = a.isGoalkeeper || existing?.isGoalkeeper || false;
+
+      if (existing) {
+        existing.isConfirmedArrival = Boolean(a.confirmed);
+        if (isGk && !existing.isGoalkeeper) {
+          existing.isGoalkeeper = true;
+          existing.positionLabel = 'Goleiro';
+          existing.positionEmoji = '🧤';
+        }
+      } else {
+        map.set(up, {
+          name: up,
+          positionLabel: isGk ? 'Goleiro' : (a.isGuest ? 'Convidado' : 'Atleta'),
+          positionEmoji: isGk ? '🧤' : (a.isGuest ? '👤' : '⚽'),
+          footLabel: 'Não informado',
+          avatarUrl: undefined,
+          isConfirmedArrival: Boolean(a.confirmed),
+          isGoalkeeper: isGk,
+        });
+      }
+    });
+
+    // 3. Identificar se o atleta já está em algum time na súmula atual
+    const result = Array.from(map.values()).map((player) => {
+      let assignedTeam: string | undefined = undefined;
+      for (const [teamKey, lineup] of Object.entries(sumula.teamLineups || {})) {
+        if ((lineup || []).some((item) => item.player.trim().toUpperCase() === player.name)) {
+          assignedTeam = teamKey;
+          break;
+        }
+      }
+      return { ...player, assignedTeam };
+    });
+
+    // Ordenação inteligente: primeiro confirmados sem time, depois cadastrados sem time, depois os já escalados
+    return result.sort((a, b) => {
+      if (!a.assignedTeam && b.assignedTeam) return -1;
+      if (a.assignedTeam && !b.assignedTeam) return 1;
+      if (a.isConfirmedArrival && !b.isConfirmedArrival) return -1;
+      if (!a.isConfirmedArrival && b.isConfirmedArrival) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [sumula.arrivalList, sumula.teamName, sumula.teamLineups, userTeam, profiles]);
 
   // 1. Lista de Presença
   const handleAddArrival = () => {
@@ -639,9 +729,15 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   };
 
   // Adicionar jogador a um Time da súmula
-  const handleAddPlayerToTeam = (teamKey: string) => {
-    const name = newTeamPlayerName.trim().toUpperCase();
+  const handleAddPlayerToTeam = (
+    teamKey: string,
+    specificPlayerName?: string,
+    specificIsSub?: boolean
+  ) => {
+    const name = (specificPlayerName || newTeamPlayerName).trim().toUpperCase();
     if (!name) return;
+
+    const isSub = specificIsSub !== undefined ? specificIsSub : newTeamPlayerIsSub;
 
     setSumula((prev) => {
       const currentList = prev.teamLineups[teamKey] || [];
@@ -659,7 +755,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
         {
           player: name,
           goals: 0,
-          isSub: newTeamPlayerIsSub,
+          isSub: isSub,
         },
       ];
 
@@ -675,6 +771,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     setNewTeamPlayerName('');
     setNewTeamPlayerIsSub(false);
     setActiveAddTeam(null);
+    setOpenTeamDropdown(null);
   };
 
   // Remover jogador de um Time da súmula
@@ -1103,7 +1200,9 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
               return (
                 <div
                   key={tName}
-                  className="rounded-xl border border-slate-200 bg-white p-2 shadow-2xs flex flex-col justify-between"
+                  className={`rounded-xl border border-slate-200 bg-white p-2 shadow-2xs flex flex-col justify-between ${
+                    activeAddTeam === tName ? 'relative z-30' : 'relative z-10'
+                  }`}
                 >
                   <div>
                     <div className="flex items-center justify-between border-b border-slate-100 pb-1 mb-1 gap-1">
@@ -1174,27 +1273,178 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                   {/* Formulário / Botão para Adicionar Jogador ao Time */}
                   {activeAddTeam === tName ? (
                     <div className="mt-2 pt-1.5 border-t border-slate-100 space-y-1.5 bg-slate-50 p-1.5 rounded-lg">
-                      <div>
-                        <input
-                          type="text"
-                          list={`team-suggestions-${tName}`}
-                          value={newTeamPlayerName}
-                          onChange={(e) => setNewTeamPlayerName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddPlayerToTeam(tName);
+                      <div className="relative">
+                        {/* Seletor Customizado Inline com Seta (Estilo Criar Conta) */}
+                        <div className="flex items-center rounded-lg border border-slate-300 bg-white shadow-2xs focus-within:border-blue-600 focus-within:ring-1 focus-within:ring-blue-600 transition">
+                          <input
+                            type="text"
+                            value={newTeamPlayerName}
+                            onChange={(e) => {
+                              setNewTeamPlayerName(e.target.value);
+                              setOpenTeamDropdown(tName);
+                            }}
+                            onFocus={() => setOpenTeamDropdown(tName)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddPlayerToTeam(tName);
+                              }
+                            }}
+                            placeholder="Buscar ou digitar atleta..."
+                            className="w-full text-[10px] uppercase font-bold px-2 py-1 text-slate-800 placeholder:normal-case placeholder:font-normal focus:outline-none bg-transparent"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenTeamDropdown((prev) => (prev === tName ? null : tName))
                             }
-                          }}
-                          placeholder="Nome do atleta..."
-                          className="w-full text-[10px] uppercase font-bold px-1.5 py-1 rounded border border-slate-300 bg-white text-slate-800 placeholder:normal-case placeholder:font-normal focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                          autoFocus
-                        />
-                        <datalist id={`team-suggestions-${tName}`}>
-                          {availableTeamPlayerSuggestions.map((name) => (
-                            <option key={name} value={name} />
-                          ))}
-                        </datalist>
+                            title="Ver atletas disponíveis"
+                            className="px-1.5 py-1 text-slate-400 hover:text-blue-600 transition cursor-pointer flex items-center justify-center shrink-0"
+                          >
+                            <ChevronDown
+                              className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                                openTeamDropdown === tName ? 'rotate-180 text-blue-600' : ''
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Dropdown com Lista Inline dos Atletas Disponíveis (com Posição e Pé) */}
+                        {openTeamDropdown === tName && (
+                          <div className="absolute left-0 top-full mt-1.5 w-[240px] max-w-[85vw] rounded-xl border border-slate-200 bg-white p-1 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 max-h-56 overflow-y-auto">
+                            {(() => {
+                              const query = newTeamPlayerName.trim().toUpperCase();
+                              const filtered = availableTeamPlayers.filter((p) => {
+                                if (!query) return true;
+                                return (
+                                  p.name.includes(query) ||
+                                  p.positionLabel.toUpperCase().includes(query) ||
+                                  p.footLabel.toUpperCase().includes(query)
+                                );
+                              });
+
+                              return (
+                                <>
+                                  {filtered.length === 0 ? (
+                                    <div className="p-2 text-center text-[9px] text-slate-400 italic">
+                                      Nenhum atleta cadastrado encontrado
+                                    </div>
+                                  ) : (
+                                    filtered.map((player) => {
+                                      const isAlreadyInThisTeam = player.assignedTeam === tName;
+                                      return (
+                                        <div
+                                          key={player.name}
+                                          className={`w-full flex items-center justify-between rounded-lg p-1.5 text-xs transition border-b border-slate-50 last:border-b-0 ${
+                                            isAlreadyInThisTeam
+                                              ? 'bg-slate-50 opacity-60'
+                                              : 'hover:bg-blue-50/70 cursor-pointer'
+                                          }`}
+                                          onClick={() => {
+                                            if (isAlreadyInThisTeam) return;
+                                            setNewTeamPlayerName(player.name);
+                                            setOpenTeamDropdown(null);
+                                          }}
+                                        >
+                                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                            {/* Avatar / Inicial */}
+                                            <div className="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-[8px] shrink-0 overflow-hidden">
+                                              {player.avatarUrl ? (
+                                                <img
+                                                  src={player.avatarUrl}
+                                                  alt={player.name}
+                                                  className="w-full h-full object-cover"
+                                                />
+                                              ) : (
+                                                player.name.slice(0, 2)
+                                              )}
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex items-center gap-1 flex-wrap">
+                                                <span className="font-bold text-slate-800 text-[10px] truncate uppercase leading-tight">
+                                                  {player.name}
+                                                </span>
+                                                {player.isConfirmedArrival && (
+                                                  <span className="inline-flex items-center px-1 py-0.2 rounded text-[7px] font-extrabold bg-emerald-100 text-emerald-800">
+                                                    Presente
+                                                  </span>
+                                                )}
+                                                {player.assignedTeam &&
+                                                  player.assignedTeam !== tName && (
+                                                    <span className="inline-flex items-center px-1 py-0.2 rounded text-[7px] font-semibold bg-amber-100 text-amber-800">
+                                                      {player.assignedTeam}
+                                                    </span>
+                                                  )}
+                                              </div>
+
+                                              {/* Posição e Pé Dominante (Igual ao criar conta) */}
+                                              <div className="flex items-center gap-1.5 text-[8px] text-slate-500 mt-0.5">
+                                                <span className="inline-flex items-center gap-0.5 font-medium text-slate-700 bg-slate-100 px-1 py-0.2 rounded">
+                                                  <span>{player.positionEmoji}</span>
+                                                  <span>{player.positionLabel}</span>
+                                                </span>
+                                                <span className="inline-flex items-center gap-0.5 text-slate-600 bg-slate-100 px-1 py-0.2 rounded">
+                                                  <span>👟</span>
+                                                  <span>
+                                                    Pé:{' '}
+                                                    <strong className="text-slate-700">
+                                                      {player.footLabel}
+                                                    </strong>
+                                                  </span>
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Botão de escalação rápida */}
+                                          <div className="shrink-0 ml-1">
+                                            {isAlreadyInThisTeam ? (
+                                              <span className="text-[8px] font-semibold text-slate-400">
+                                                Neste time
+                                              </span>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleAddPlayerToTeam(tName, player.name);
+                                                }}
+                                                className="px-1.5 py-0.5 text-[8px] font-bold bg-blue-600 hover:bg-blue-700 text-white rounded shadow-2xs transition active:scale-95"
+                                              >
+                                                + Escalar
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+
+                                  {/* Opção para adicionar atleta digitado caso não exista */}
+                                  {query &&
+                                    !availableTeamPlayers.some((p) => p.name === query) && (
+                                      <div
+                                        className="p-1.5 rounded-lg bg-blue-50/80 border border-blue-200 flex items-center justify-between text-xs cursor-pointer hover:bg-blue-100 transition mt-1"
+                                        onClick={() => handleAddPlayerToTeam(tName, query)}
+                                      >
+                                        <div className="flex items-center gap-1 text-[9px] text-blue-900 font-bold truncate">
+                                          <Plus className="h-3 w-3 text-blue-600 shrink-0" />
+                                          <span className="truncate">
+                                            Adicionar "{query}" como convidado
+                                          </span>
+                                        </div>
+                                        <span className="text-[8px] font-bold text-blue-700 bg-white px-1.5 py-0.5 rounded shadow-2xs shrink-0 ml-1">
+                                          + Escalar
+                                        </span>
+                                      </div>
+                                    )}
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex items-center justify-between gap-1">
@@ -1213,6 +1463,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                             type="button"
                             onClick={() => {
                               setActiveAddTeam(null);
+                              setOpenTeamDropdown(null);
                               setNewTeamPlayerName('');
                               setNewTeamPlayerIsSub(false);
                             }}
@@ -1235,6 +1486,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                       type="button"
                       onClick={() => {
                         setActiveAddTeam(tName);
+                        setOpenTeamDropdown(tName);
                         setNewTeamPlayerName('');
                         setNewTeamPlayerIsSub(false);
                       }}
