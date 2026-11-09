@@ -779,11 +779,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     if (isAdmin) return;
     try {
       const all = getStoredSumulas();
-      let current = myTeamSumulas[0];
+      let current = all.find(
+        (s) => (s.teamName || '').trim().toLowerCase() === userTeamNameLower && s.status === 'em_andamento'
+      ) || myTeamSumulas.find((s) => s.status === 'em_andamento') || myTeamSumulas[0];
       const isGk = activeProfile.position === 'goleiro';
 
       if (!current) {
-        // Se ainda não existir súmula para o time, cria uma nova limpa com os atletas reais do time
+        // Se ainda não existir súmula para o time E o usuário NÃO for treinador/coach, NÃO cria súmula!
+        if (!isCoach) {
+          setPresenceFeedback('Aguarde o treinador abrir a súmula da rodada.');
+          setTimeout(() => setPresenceFeedback(null), 3000);
+          return;
+        }
+
+        // Se for treinador, cria a súmula oficial do time:
         const teamProfiles = profiles.filter((p) => {
           const pTeam = (p.teamName || '').trim().toLowerCase();
           return pTeam === userTeamNameLower;

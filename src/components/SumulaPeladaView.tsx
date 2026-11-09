@@ -120,10 +120,42 @@ export const getStoredSumulas = (): SumulaData[] => {
         const realSumulas = parsed.filter(
           (s) => s && s.id && s.id !== 'pelada-rodada-atual' && s.id !== 'demo-sumula' && s.id !== 'template'
         );
-        if (realSumulas.length !== parsed.length) {
-          localStorage.setItem(ALL_SUMULAS_STORAGE_KEY, JSON.stringify(realSumulas));
+
+        // Deduplicação: se houver mais de uma súmula 'em_andamento' para a mesma equipe,
+        // mantém apenas a principal (com mais confirmações ou mais recente) e mescla presenças
+        const activeByTeam: Record<string, SumulaData> = {};
+        const deduplicated: SumulaData[] = [];
+
+        for (const s of realSumulas) {
+          const teamKey = (s.teamName || '').trim().toLowerCase();
+          if (s.status === 'em_andamento' && teamKey) {
+            if (!activeByTeam[teamKey]) {
+              activeByTeam[teamKey] = s;
+              deduplicated.push(s);
+            } else {
+              // Já existe uma súmula ativa para esse time: mescla confirmações da arrivalList
+              const existing = activeByTeam[teamKey];
+              (s.arrivalList || []).forEach((dupArrival: SumulaData['arrivalList'][number]) => {
+                const match = (existing.arrivalList || []).find(
+                  (a) => a.playerName.trim().toUpperCase() === dupArrival.playerName.trim().toUpperCase()
+                );
+                if (match) {
+                  if (dupArrival.confirmed) match.confirmed = true;
+                } else {
+                  existing.arrivalList = [...(existing.arrivalList || []), dupArrival];
+                }
+              });
+              // Descarta a duplicata
+            }
+          } else {
+            deduplicated.push(s);
+          }
         }
-        return realSumulas;
+
+        if (deduplicated.length !== parsed.length) {
+          localStorage.setItem(ALL_SUMULAS_STORAGE_KEY, JSON.stringify(deduplicated));
+        }
+        return deduplicated;
       }
     }
   } catch (e) {

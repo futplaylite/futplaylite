@@ -173,18 +173,10 @@ export const MatchesAndValidationView: React.FC<
     return allSavedSumulas.filter((s) => {
       if (isAdmin) return true;
       const sTeam = (s.teamName || '').trim().toLowerCase();
-      if (sTeam && userTeam) {
-        if (sTeam === userTeam) return true;
-      }
-      if (s.createdByUserId && s.createdByUserId === currentUser.id) return true;
-      const myNameUpper = (currentPlayerProfile?.displayName || '').trim().toUpperCase();
-      if (myNameUpper && s.arrivalList?.some((a) => a.playerName.trim().toUpperCase() === myNameUpper)) {
-        return true;
-      }
-      if (!sTeam && !userTeam) return true;
-      return false;
+      if (!userTeam) return false;
+      return sTeam === userTeam;
     });
-  }, [allSavedSumulas, isAdmin, userTeam, currentUser.id, currentPlayerProfile?.displayName]);
+  }, [allSavedSumulas, isAdmin, userTeam]);
 
   const [venueName, setVenueName] = useState('Arena Planalto Society');
   const [neighborhood, setNeighborhood] = useState('Centro - Planalto');
