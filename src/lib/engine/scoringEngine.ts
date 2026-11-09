@@ -84,66 +84,11 @@ export function compareSeasonRanking(
 }
 
 /**
- * Nota experimental de desempenho por posição de 0 a 100 (Seção 3.3).
- * Identificada como EXPERIMENTAL no MVP: não altera divisão nem rating Elo.
+ * Desativado a pedido: sistema de pontuação experimental por posição.
  */
 export function calculateExperimentalPositionScore(
-  profile: PlayerProfile,
-  entry: SeasonEntry
+  _profile: PlayerProfile,
+  _entry: SeasonEntry
 ): number | null {
-  if (entry.matchesPlayed < 2) {
-    return null; // Amostra insuficiente
-  }
-
-  const winRate = entry.wins / entry.matchesPlayed;
-  const goalsPerMatch = entry.goals / entry.matchesPlayed;
-  const assistsPerMatch = entry.assists / entry.matchesPlayed;
-  const defensivePerMatch = entry.defensiveActions / entry.matchesPlayed;
-  const cleanSheetRate = entry.cleanSheets / entry.matchesPlayed;
-
-  let rawScore = 60;
-
-  switch (profile.position) {
-    case 'atacante':
-      rawScore =
-        52 +
-        goalsPerMatch * 22 +
-        assistsPerMatch * 12 +
-        winRate * 14 +
-        entry.mvpCount * 2.5;
-      break;
-    case 'meio-campista':
-      rawScore =
-        54 +
-        assistsPerMatch * 22 +
-        goalsPerMatch * 12 +
-        defensivePerMatch * 5 +
-        winRate * 16 +
-        entry.mvpCount * 2;
-      break;
-    case 'defensor':
-      rawScore =
-        55 +
-        defensivePerMatch * 12 +
-        cleanSheetRate * 22 +
-        winRate * 18 +
-        assistsPerMatch * 6;
-      break;
-    case 'goleiro':
-      rawScore =
-        56 +
-        cleanSheetRate * 26 +
-        defensivePerMatch * 10 +
-        winRate * 16 +
-        entry.mvpCount * 2.5;
-      break;
-    default:
-      rawScore =
-        54 +
-        (goalsPerMatch + assistsPerMatch) * 14 +
-        defensivePerMatch * 6 +
-        winRate * 16;
-  }
-
-  return Math.min(99, Math.max(35, Math.round(rawScore)));
+  return null;
 }

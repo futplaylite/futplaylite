@@ -542,29 +542,6 @@ export const AthleteProfileAndCardView: React.FC<
             </div>
           </div>
 
-          {/* Conquistas e Nota por Posição */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-900">
-                Nota na Posição (Experimental)
-              </span>
-              <span className="rounded-full bg-blue-50 px-2.5 py-0.5 font-mono text-xs font-extrabold text-blue-700">
-                {targetProfile.experimentalPositionScore ?? '--'} / 100
-              </span>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5 border-t border-slate-100 pt-2.5">
-              {(targetProfile.badges || []).map((b) => (
-                <span
-                  key={b}
-                  className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-800"
-                >
-                  ★ {b}
-                </span>
-              ))}
-            </div>
-          </div>
-
           {/* Histórico de Pontos do Atleta */}
           {targetProfile.profileVisibility === 'privado' &&
           !isOwnProfile &&
