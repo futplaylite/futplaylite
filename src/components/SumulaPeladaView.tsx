@@ -312,32 +312,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 }) => {
   const { currentUser, sumulaStopwatch } = useLeague();
   const isCoachOrAdmin =
-    currentUser.role === 'admin' ||
-    currentUser.role === 'coach' ||
-    currentUser.isTeamOwner === true;
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'coach' ||
+    currentUser?.isTeamOwner === true;
 
-  // Ativa o cronômetro no cabeçalho do app enquanto a súmula estiver aberta
-  useEffect(() => {
-    sumulaStopwatch.open('Súmula de Treino', sumula.timerSeconds || 0);
-    return () => {
-      sumulaStopwatch.close();
-    };
-  }, []);
-
-  const handleExit = () => {
-    if (isDeletedRef.current) {
-      sumulaStopwatch.close();
-      onBack();
-      return;
-    }
-    setSumula((s) => ({
-      ...s,
-      timerSeconds: sumulaStopwatch.seconds,
-      isTimerRunning: sumulaStopwatch.isRunning,
-    }));
-    sumulaStopwatch.close();
-    onBack();
-  };
+  const isDeletedRef = useRef<boolean>(false);
 
   // Carrega a súmula específica ou cria uma nova com id único
   const [sumula, setSumula] = useState<SumulaData>(() => {
@@ -353,7 +332,6 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
         arrivalList: freshArrivals,
         goalkeepers: syncFixedGoalkeepers(freshArrivals),
       };
-      saveSumulaToList(fresh);
       return fresh;
     }
 
@@ -365,8 +343,21 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     } else if (all[0]) {
       current = all[0];
     }
-    // Remove asteriscos legados, garante goleiros na lista e sincroniza Goleiros Fixos
-    let sanitized = current;
+
+    // Merge defensivo garantindo que todas as propriedades da súmula existam
+    let sanitized: SumulaData = {
+      ...DEFAULT_INITIAL_SUMULA,
+      ...current,
+      arrivalList: current.arrivalList || DEFAULT_INITIAL_SUMULA.arrivalList,
+      teamsGrid: current.teamsGrid || DEFAULT_INITIAL_SUMULA.teamsGrid,
+      teamLineups: current.teamLineups || DEFAULT_INITIAL_SUMULA.teamLineups,
+      yellowCards: current.yellowCards || DEFAULT_INITIAL_SUMULA.yellowCards,
+      blueCards: current.blueCards || DEFAULT_INITIAL_SUMULA.blueCards,
+      redCards: current.redCards || DEFAULT_INITIAL_SUMULA.redCards,
+      goalkeepers: current.goalkeepers || DEFAULT_INITIAL_SUMULA.goalkeepers,
+      highlightGoals: current.highlightGoals || DEFAULT_INITIAL_SUMULA.highlightGoals,
+    };
+
     if (sanitized && sanitized.arrivalList) {
       const hasGksInArrival = sanitized.arrivalList.some((a) =>
         isGoalkeeperPlayer(a.playerName, a.isGoalkeeper)
@@ -413,9 +404,31 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     return sanitized;
   });
 
+  // Ativa o cronômetro no cabeçalho do app enquanto a súmula estiver aberta
+  useEffect(() => {
+    sumulaStopwatch.open('Súmula de Treino', sumula.timerSeconds || 0);
+    return () => {
+      sumulaStopwatch.close();
+    };
+  }, []);
+
+  const handleExit = () => {
+    if (isDeletedRef.current) {
+      sumulaStopwatch.close();
+      onBack();
+      return;
+    }
+    setSumula((s) => ({
+      ...s,
+      timerSeconds: sumulaStopwatch.seconds,
+      isTimerRunning: sumulaStopwatch.isRunning,
+    }));
+    sumulaStopwatch.close();
+    onBack();
+  };
+
   const [savedBadge, setSavedBadge] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
-  const isDeletedRef = useRef<boolean>(false);
 
   // Auto-salvar no localStorage a cada alteração
   useEffect(() => {
@@ -803,8 +816,18 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
       <div className="rounded-xl sm:rounded-2xl bg-white shadow-md border border-slate-300 text-slate-800 overflow-hidden">
         {/* CABEÇALHO DO CARD: EXCLUIR ANTES DO TÍTULO + SÚMULA DE TREINO + DATA/HORA */}
         <div className="bg-slate-900 text-white px-3 sm:px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2">
-          {/* Lado Esquerdo: Botão Excluir Súmula + Título Oficial */}
-          <div className="flex items-center gap-2 min-w-0">
+          {/* Lado Esquerdo: Botão Voltar + Excluir Súmula + Título Oficial */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              type="button"
+              onClick={handleExit}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 text-[10px] font-bold transition active:scale-95 shrink-0"
+              title="Voltar para a lista de partidas"
+            >
+              <ArrowLeft className="h-3 w-3 text-blue-400" />
+              <span>Voltar</span>
+            </button>
+
             {isCoachOrAdmin && (
               <button
                 type="button"

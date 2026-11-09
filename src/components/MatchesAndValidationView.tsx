@@ -149,6 +149,22 @@ export const MatchesAndValidationView: React.FC<
   const [blockedSumulaNotice, setBlockedSumulaNotice] = useState<string | null>(null);
   const [sumulaToDelete, setSumulaToDelete] = useState<SumulaData | null>(null);
 
+  const [sumulasVersion, setSumulasVersion] = useState<number>(0);
+
+  useEffect(() => {
+    const handleSumulasChanged = () => {
+      setSumulasVersion((v) => v + 1);
+    };
+    window.addEventListener('futplay_sumulas_changed', handleSumulasChanged);
+    return () => {
+      window.removeEventListener('futplay_sumulas_changed', handleSumulasChanged);
+    };
+  }, []);
+
+  const allSavedSumulas: SumulaData[] = useMemo(() => {
+    return getStoredSumulas();
+  }, [sumulasVersion]);
+
   const [venueName, setVenueName] = useState('Arena Planalto Society');
   const [neighborhood, setNeighborhood] = useState('Centro - Planalto');
   const [format, setFormat] = useState<MatchFormat>('7v7');
@@ -369,22 +385,6 @@ export const MatchesAndValidationView: React.FC<
     );
   }
 
-  const [sumulasVersion, setSumulasVersion] = useState<number>(0);
-
-  useEffect(() => {
-    const handleSumulasChanged = () => {
-      setSumulasVersion((v) => v + 1);
-    };
-    window.addEventListener('futplay_sumulas_changed', handleSumulasChanged);
-    return () => {
-      window.removeEventListener('futplay_sumulas_changed', handleSumulasChanged);
-    };
-  }, []);
-
-  const allSavedSumulas: SumulaData[] = useMemo(() => {
-    return getStoredSumulas();
-  }, [sumulasVersion]);
-
   return (
     <div className="space-y-4">
       {/* Toast de sucesso ao marcar jogo oficial */}
@@ -574,16 +574,16 @@ export const MatchesAndValidationView: React.FC<
                   </button>
 
                   {filteredSumulas.map((s, idx) => {
-                    const totalGoals = Object.values(s.teamLineups).reduce(
+                    const totalGoals = Object.values(s.teamLineups || {}).reduce(
                       (sum, team) =>
                         sum +
-                        team.reduce(
+                        (team || []).reduce(
                           (tSum, p) => tSum + (Number(p.goals) || 0),
                           0
                         ),
                       0
                     );
-                    const totalArrivals = s.arrivalList.filter(
+                    const totalArrivals = (s.arrivalList || []).filter(
                       (a) => a.confirmed
                     ).length;
 
