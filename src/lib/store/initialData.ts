@@ -20,7 +20,7 @@ import { DEFAULT_DIVISIONS } from '../engine/eloEngine';
 
 export const INITIAL_CITIES: City[] = [
   {
-    id: 'city-rosalia',
+    id: '11111111-1111-4111-8111-111111111101',
     name: 'Planalto',
     stateCode: 'BA',
     regionName: 'Sudoeste da Bahia',
@@ -29,7 +29,7 @@ export const INITIAL_CITIES: City[] = [
     status: 'ativa',
   },
   {
-    id: 'city-marilia',
+    id: '11111111-1111-4111-8111-111111111102',
     name: 'Poções',
     stateCode: 'BA',
     regionName: 'Sudoeste da Bahia',
@@ -38,7 +38,7 @@ export const INITIAL_CITIES: City[] = [
     status: 'em_preparacao',
   },
   {
-    id: 'city-oriente',
+    id: '11111111-1111-4111-8111-111111111103',
     name: 'Vitória da Conquista',
     stateCode: 'BA',
     regionName: 'Sudoeste da Bahia',
@@ -52,8 +52,8 @@ export const INITIAL_DIVISIONS: Division[] = DEFAULT_DIVISIONS;
 
 export const INITIAL_SEASONS: Season[] = [
   {
-    id: 'season-2026-2',
-    cityId: 'city-rosalia',
+    id: '33333333-3333-4333-8333-333333333301',
+    cityId: '11111111-1111-4111-8111-111111111101',
     name: 'Temporada 2026.2 · Liga Planalto - BA',
     startsAt: '2026-09-01T00:00:00-03:00',
     endsAt: '2026-11-10T23:59:59-03:00',

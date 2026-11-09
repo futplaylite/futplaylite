@@ -54,7 +54,7 @@ import {
   resolveDivisionForPlayer,
 } from '../engine/eloEngine';
 import { inspectMatchForFraudSignals } from '../engine/antiFraud';
-import { isSupabaseConfigured, supabaseService } from '../supabase';
+import { isSupabaseConfigured, supabaseService, generateUUID } from '../supabase';
 
 const STORAGE_KEY = 'futplay_lite_planalto_ba_v3_clean';
 const ACTIVE_USER_STORAGE_KEY = 'futplay_lite_active_user_id_v3';
@@ -151,6 +151,7 @@ interface LeagueContextValue extends LeagueState {
     displayName: string;
     email?: string;
     whatsappNumber?: string;
+    password?: string;
     cityId: string;
     neighborhood: string;
     position: PlayerPosition;
@@ -385,6 +386,40 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
 
+    // 1. Sincroniza usuários do Supabase
+    supabaseService.getUsers().then((remoteUsers) => {
+      if (remoteUsers && remoteUsers.length > 0) {
+        setState((prev) => {
+          const existingIds = new Set(prev.users.map((u) => u.id));
+          const existingEmails = new Set(
+            prev.users.map((u) => u.email.toLowerCase())
+          );
+          const toAdd = remoteUsers.filter(
+            (u) =>
+              !existingIds.has(u.id) &&
+              !existingEmails.has(u.email.toLowerCase())
+          );
+          return toAdd.length > 0
+            ? { ...prev, users: [...prev.users, ...toAdd] }
+            : prev;
+        });
+      }
+    });
+
+    // 2. Sincroniza perfis esportivos do Supabase
+    supabaseService.getProfiles().then((remoteProfiles) => {
+      if (remoteProfiles && remoteProfiles.length > 0) {
+        setState((prev) => {
+          const existingIds = new Set(prev.profiles.map((p) => p.id));
+          const toAdd = remoteProfiles.filter((p) => !existingIds.has(p.id));
+          return toAdd.length > 0
+            ? { ...prev, profiles: [...prev.profiles, ...toAdd] }
+            : prev;
+        });
+      }
+    });
+
+    // 3. Sincroniza configurações e mensalidades
     supabaseService.getMonthlyConfig().then((cfg) => {
       if (cfg) {
         setState((prev) => ({ ...prev, monthlyConfig: cfg }));
@@ -473,8 +508,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     const now = new Date().toISOString();
-    const newUserId = `user-${Date.now()}`;
-    const newPlayerId = `player-${Date.now()}`;
+    const newUserId = generateUUID();
+    const newPlayerId = generateUUID();
 
     const isFirstUser = state.users.length === 0;
 
@@ -492,6 +527,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       onboardingCompleted: false,
     };
 
+    const targetCityId = params.cityId || selectedCityId || '11111111-1111-4111-8111-111111111101';
+    const targetDivisionId = '22222222-2222-4222-8222-222222222201';
+
     const newProfile: PlayerProfile = {
       id: newPlayerId,
       userId: newUserId,
@@ -499,7 +537,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       fullNamePrivate: trimmedName,
       whatsappNumber: params.whatsappNumber?.trim() || undefined,
       avatarColor: '#126B46',
-      cityId: params.cityId || selectedCityId,
+      cityId: targetCityId,
       neighborhood: params.neighborhood.trim() || 'Centro',
       position: params.position,
       dominantFoot: params.dominantFoot,
@@ -507,7 +545,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       currentRating: 1000, // Valor inicial oficial (Seção 3.2)
       ratingUncertainty: 100,
       isProvisional: true, // Classificação provisória (Seção 2.3 / CA-021)
-      currentDivisionId: '22222222-2222-4222-8222-222222222201',
+      currentDivisionId: targetDivisionId,
       totalValidatedMatches: 0,
       isTeamOwner: isFirstUser,
       teamName: isFirstUser ? 'Real Planalto FC' : undefined,
@@ -520,14 +558,14 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const activeSeason =
       state.seasons.find(
-        (s) => s.cityId === params.cityId && s.status === 'ativa'
+        (s) => s.cityId === targetCityId && s.status === 'ativa'
       ) || state.seasons[0];
 
     const newSeasonEntry: SeasonEntry = {
-      id: `se-${Date.now()}`,
-      seasonId: activeSeason.id,
+      id: generateUUID(),
+      seasonId: activeSeason?.id || '33333333-3333-4333-8333-333333333301',
       playerId: newPlayerId,
-      divisionId: 'div-bronze',
+      divisionId: targetDivisionId,
       seasonPoints: 0,
       pendingPoints: 0,
       matchesPlayed: 0,
@@ -554,7 +592,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       reason: 'Cadastro inicial na Liga Municipal com classificação provisória (1000 Elo, Bronze).',
       afterData: {
         displayName: trimmedName,
-        cityId: params.cityId,
+        cityId: targetCityId,
         initialRating: 1000,
         isProvisional: true,
       },
@@ -568,6 +606,21 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       seasonEntries: [...prev.seasonEntries, newSeasonEntry],
       auditLogs: [newAudit, ...prev.auditLogs],
     }));
+
+    // Sincroniza diretamente com o Supabase para persistência multi-dispositivo
+    if (isSupabaseConfigured()) {
+      supabaseService
+        .registerAthleteInSupabase({
+          user: newUser,
+          profile: newProfile,
+          password: params.password,
+        })
+        .then((res) => {
+          if (!res.success) {
+            console.warn('Aviso ao sincronizar atleta com Supabase:', res.error);
+          }
+        });
+    }
 
     setCurrentUserId(newUserId);
     notify(
@@ -679,6 +732,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       } else {
         setCurrentUserId('');
       }
+    }
+
+    // Sincroniza exclusão no Supabase
+    if (isSupabaseConfigured()) {
+      supabaseService.deleteUser(userIdToDelete).catch((err) => {
+        console.warn('Erro ao excluir no Supabase:', err);
+      });
     }
 
     notify(

@@ -5,7 +5,7 @@ export const PROVISIONAL_MATCHES_THRESHOLD = 5;
 
 export const DEFAULT_DIVISIONS: Division[] = [
   {
-    id: 'div-bronze',
+    id: '22222222-2222-4222-8222-222222222201',
     name: 'Bronze',
     tier: 1,
     minRating: 0,
@@ -14,7 +14,7 @@ export const DEFAULT_DIVISIONS: Division[] = [
     rulesetVersion: 'v1.0.0',
   },
   {
-    id: 'div-prata',
+    id: '22222222-2222-4222-8222-222222222202',
     name: 'Prata',
     tier: 2,
     minRating: 1100,
@@ -23,7 +23,7 @@ export const DEFAULT_DIVISIONS: Division[] = [
     rulesetVersion: 'v1.0.0',
   },
   {
-    id: 'div-ouro',
+    id: '22222222-2222-4222-8222-222222222203',
     name: 'Ouro',
     tier: 3,
     minRating: 1250,
@@ -32,7 +32,7 @@ export const DEFAULT_DIVISIONS: Division[] = [
     rulesetVersion: 'v1.0.0',
   },
   {
-    id: 'div-platina',
+    id: '22222222-2222-4222-8222-222222222204',
     name: 'Platina',
     tier: 4,
     minRating: 1400,
@@ -41,7 +41,7 @@ export const DEFAULT_DIVISIONS: Division[] = [
     rulesetVersion: 'v1.0.0',
   },
   {
-    id: 'div-diamante',
+    id: '22222222-2222-4222-8222-222222222205',
     name: 'Diamante',
     tier: 5,
     minRating: 1550,

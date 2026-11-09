@@ -15,6 +15,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
+import { supabaseService, isSupabaseConfigured } from '../lib/supabase';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PWAInstallBanner } from './PWAInstallBanner';
 import { DominantFoot, PlayerPosition, ProfileVisibility } from '../types/league';
@@ -126,7 +127,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     });
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
@@ -147,13 +148,53 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       return;
     }
 
-    // Procura usuário cadastrado por e-mail ou telefone
-    const existingUser = findUserByIdentifier(trimmed);
+    setIsSubmitting(true);
+
+    // 1. Procura usuário cadastrado localmente por e-mail ou telefone
+    let existingUser = findUserByIdentifier(trimmed);
+
+    // 2. Se não encontrou em memória (ex: acessando de outro celular ou nova aba), busca direto no Supabase
+    if (!existingUser && isSupabaseConfigured()) {
+      try {
+        const remoteMatch = await supabaseService.findUserByIdentifier(trimmed);
+        if (remoteMatch) {
+          existingUser = remoteMatch.user;
+
+          // Se tiver senha salva no banco Supabase, valida
+          if (remoteMatch.password && remoteMatch.password !== loginPassword.trim()) {
+            setIsSubmitting(false);
+            setLoginError('Senha incorreta para este usuário.');
+            return;
+          }
+
+          // Cache local da senha para acesso offline
+          try {
+            const stored = JSON.parse(
+              localStorage.getItem('futplay_user_passwords') || '{}'
+            );
+            stored[existingUser.id] = loginPassword.trim();
+            if (digits) stored[digits] = loginPassword.trim();
+            if (existingUser.email) {
+              stored[existingUser.email.toLowerCase()] = loginPassword.trim();
+            }
+            localStorage.setItem('futplay_user_passwords', JSON.stringify(stored));
+          } catch {
+            // Ignora falha local
+          }
+        }
+      } catch (err) {
+        console.warn('Falha ao consultar Supabase no login:', err);
+      }
+    }
+
+    setIsSubmitting(false);
 
     if (existingUser) {
-      // Valida senha se houver cadastrada
+      // Valida senha se houver cadastrada localmente
       try {
-        const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
+        const stored = JSON.parse(
+          localStorage.getItem('futplay_user_passwords') || '{}'
+        );
         const expected =
           stored[existingUser.id] ||
           (digits ? stored[digits] : undefined) ||
@@ -242,11 +283,12 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       ? formatIdentifierInput(digits)
       : undefined;
 
-    // Registra diretamente o novo atleta na liga (com celular ou e-mail)
+    // Registra diretamente o novo atleta na liga (com celular ou e-mail e senha)
     const created = registerNewAthlete({
       displayName: trimmedName,
       email: finalEmail,
       whatsappNumber: finalWhatsapp,
+      password: regPassword.trim(),
       cityId: selectedCityId,
       neighborhood: regNeighborhood.trim() || 'Centro',
       position: regPosition,
