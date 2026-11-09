@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   ArrowLeft,
   Calendar,
@@ -222,9 +222,9 @@ export const ALL_SUMULAS_STORAGE_KEY = 'futplay_todas_sumulas_peladas_v1';
 export const getStoredSumulas = (): SumulaData[] => {
   try {
     const listRaw = localStorage.getItem(ALL_SUMULAS_STORAGE_KEY);
-    if (listRaw) {
+    if (listRaw !== null) {
       const parsed = JSON.parse(listRaw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.warn('Erro ao ler todas as súmulas:', e);
@@ -234,7 +234,9 @@ export const getStoredSumulas = (): SumulaData[] => {
     const legacy = localStorage.getItem(STORAGE_KEY);
     if (legacy) {
       const parsedLegacy = JSON.parse(legacy);
-      return [parsedLegacy];
+      if (parsedLegacy && parsedLegacy.id) {
+        return [parsedLegacy];
+      }
     }
   } catch {}
   return [DEFAULT_INITIAL_SUMULA];
@@ -252,6 +254,14 @@ export const saveSumulaToList = (sumulaToSave: SumulaData) => {
     }
     localStorage.setItem(ALL_SUMULAS_STORAGE_KEY, JSON.stringify(updatedList));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(sumulaToSave));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('futplay_sumulas_changed', {
+          detail: { savedId: sumulaToSave.id, count: updatedList.length },
+        })
+      );
+    }
   } catch (e) {
     console.warn('Erro ao salvar súmula na lista:', e);
   }
@@ -273,6 +283,14 @@ export const deleteSumulaFromList = (sumulaId: string) => {
           }
         }
       } catch {}
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('futplay_sumulas_changed', {
+          detail: { deletedId: sumulaId, count: updatedList.length },
+        })
+      );
     }
   } catch (e) {
     console.warn('Erro ao excluir súmula:', e);
@@ -307,6 +325,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   }, []);
 
   const handleExit = () => {
+    if (isDeletedRef.current) {
+      sumulaStopwatch.close();
+      onBack();
+      return;
+    }
     setSumula((s) => ({
       ...s,
       timerSeconds: sumulaStopwatch.seconds,
@@ -392,9 +415,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   const [savedBadge, setSavedBadge] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
+  const isDeletedRef = useRef<boolean>(false);
 
   // Auto-salvar no localStorage a cada alteração
   useEffect(() => {
+    if (isDeletedRef.current) return;
     try {
       const updated = { ...sumula, lastUpdated: new Date().toISOString() };
       saveSumulaToList(updated);
@@ -407,8 +432,10 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   }, [sumula]);
 
   const handleDeleteCurrentSumula = () => {
+    isDeletedRef.current = true;
     deleteSumulaFromList(sumula.id);
     setShowDeleteModal(false);
+    sumulaStopwatch.close();
     onBack();
   };
 

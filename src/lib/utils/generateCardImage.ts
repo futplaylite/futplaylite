@@ -172,18 +172,6 @@ export async function generateCard9x16(data: CardImageData): Promise<{
   topGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = topGlow;
   ctx.fillRect(0, 0, WIDTH, 600);
-
-  const starGlow = ctx.createRadialGradient(WIDTH - 120, 90, 5, WIDTH - 120, 90, 220);
-  starGlow.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
-  starGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = starGlow;
-  ctx.fillRect(WIDTH - 300, 0, 300, 300);
-
-  ctx.fillStyle = '#BAE6FD';
-  ctx.font = '24px system-ui, sans-serif';
-  ctx.fillText('✦', WIDTH - 120, 90);
-  ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText('✦', WIDTH - 80, 70);
   ctx.restore();
 
   // 2. MOLDURA EXTERNA ELEGANTE EM AZUL NEON
@@ -203,11 +191,6 @@ export async function generateCard9x16(data: CardImageData): Promise<{
 
   // 3. IDENTIDADE DA LIGA NO TOPO
   ctx.save();
-  ctx.textAlign = 'left';
-  ctx.font = '800 20px system-ui, sans-serif';
-  ctx.fillStyle = '#BFDBFE';
-  ctx.fillText('⚽ FUTPLAY LITE   |   LIGA SOCIETY PLANALTO - BA', 64, 85);
-
   ctx.textAlign = 'right';
   ctx.font = '700 16px system-ui, sans-serif';
   ctx.fillStyle = '#FACC15';

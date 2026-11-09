@@ -263,19 +263,6 @@ export async function generateSuperCapasImage(data: SuperCapasImageData): Promis
   topGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
   ctx.fillStyle = topGlow;
   ctx.fillRect(0, 0, WIDTH, 600);
-
-  const starGlow = ctx.createRadialGradient(WIDTH - 120, 100, 5, WIDTH - 120, 100, 250);
-  starGlow.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
-  starGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
-  ctx.fillStyle = starGlow;
-  ctx.fillRect(WIDTH - 300, 0, 300, 300);
-
-  // Estrelas / Brilhos
-  ctx.fillStyle = '#BAE6FD';
-  ctx.font = '24px system-ui, sans-serif';
-  ctx.fillText('✦', WIDTH - 120, 100);
-  ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText('✦', WIDTH - 80, 80);
   ctx.restore();
 
   // 2. MOLDURA EXTERNA ELEGANTE EM AZUL NEON
@@ -293,14 +280,7 @@ export async function generateSuperCapasImage(data: SuperCapasImageData): Promis
   ctx.stroke();
   ctx.restore();
 
-  // 3. IDENTIDADE DA LIGA NO TOPO À ESQUERDA
-  ctx.save();
-  ctx.textAlign = 'left';
-  ctx.font = '800 20px system-ui, sans-serif';
-  ctx.fillStyle = '#BFDBFE';
-  ctx.letterSpacing = '2px';
-  ctx.fillText('⚽ FUTPLAY LITE   |   LIGA SOCIETY PLANALTO - BA', 64, 95);
-  ctx.restore();
+
 
   // 4. CABEÇALHO COM TROFÉU 3D + "SUPER CAPAS DA SEMANA" À ESQUERDA
   const trophyW = 100;

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   AlertTriangle,
   Clock,
@@ -369,7 +369,21 @@ export const MatchesAndValidationView: React.FC<
     );
   }
 
-  const allSavedSumulas: SumulaData[] = getStoredSumulas();
+  const [sumulasVersion, setSumulasVersion] = useState<number>(0);
+
+  useEffect(() => {
+    const handleSumulasChanged = () => {
+      setSumulasVersion((v) => v + 1);
+    };
+    window.addEventListener('futplay_sumulas_changed', handleSumulasChanged);
+    return () => {
+      window.removeEventListener('futplay_sumulas_changed', handleSumulasChanged);
+    };
+  }, []);
+
+  const allSavedSumulas: SumulaData[] = useMemo(() => {
+    return getStoredSumulas();
+  }, [sumulasVersion]);
 
   return (
     <div className="space-y-4">
@@ -984,6 +998,7 @@ export const MatchesAndValidationView: React.FC<
                 onClick={() => {
                   deleteSumulaFromList(sumulaToDelete.id);
                   setSumulaToDelete(null);
+                  setSumulasVersion((v) => v + 1);
                 }}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-red-700 active:scale-95 transition"
               >
