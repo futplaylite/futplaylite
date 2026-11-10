@@ -233,6 +233,42 @@ export interface Database {
           updated_at?: string;
         };
       };
+      pelada_sumulas: {
+        Row: {
+          id: string;
+          team_name: string;
+          status: string;
+          match_date: string | null;
+          start_time: string | null;
+          created_by_user_id: string | null;
+          created_by_name: string | null;
+          data: Json;
+          last_updated: string;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          team_name?: string;
+          status?: string;
+          match_date?: string | null;
+          start_time?: string | null;
+          created_by_user_id?: string | null;
+          created_by_name?: string | null;
+          data?: Json;
+          last_updated?: string;
+          created_at?: string;
+        };
+        Update: {
+          team_name?: string;
+          status?: string;
+          match_date?: string | null;
+          start_time?: string | null;
+          created_by_user_id?: string | null;
+          created_by_name?: string | null;
+          data?: Json;
+          last_updated?: string;
+        };
+      };
     };
   };
 }

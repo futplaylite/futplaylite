@@ -529,6 +529,66 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         setState((prev) => ({ ...prev, monthlyPayments: payments }));
       }
     });
+
+    // 4. Sincroniza súmulas da pelada do Supabase em tempo real para múltiplos aparelhos
+    supabaseService.getPeladaSumulas().then((remoteSumulas) => {
+      if (!remoteSumulas || remoteSumulas.length === 0) return;
+      try {
+        const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
+        const ACTIVE_KEY = 'futplay_sumula_pelada_ativa_v1';
+        const raw = localStorage.getItem(ALL_KEY);
+        const localList: SumulaData[] = raw ? JSON.parse(raw) : [];
+        const localMap = new Map(localList.map((s) => [s.id, s]));
+
+        // Faz o merge das súmulas remotas com as locais (preservando sempre a versão com lastUpdated mais recente)
+        for (const remote of remoteSumulas) {
+          const loc = localMap.get(remote.id);
+          if (!loc) {
+            localMap.set(remote.id, remote);
+          } else {
+            const locTime = new Date(loc.lastUpdated || 0).getTime();
+            const remTime = new Date(remote.lastUpdated || 0).getTime();
+            if (remTime > locTime) {
+              localMap.set(remote.id, remote);
+            }
+          }
+        }
+
+        const mergedList = Array.from(localMap.values()).sort((a, b) => {
+          const tA = new Date(a.lastUpdated || a.matchDate || 0).getTime();
+          const tB = new Date(b.lastUpdated || b.matchDate || 0).getTime();
+          return tB - tA;
+        });
+
+        localStorage.setItem(ALL_KEY, JSON.stringify(mergedList));
+
+        // Atualiza a súmula ativa se a remota for mais recente
+        const activeRaw = localStorage.getItem(ACTIVE_KEY);
+        const activeLocal: SumulaData | null = activeRaw ? JSON.parse(activeRaw) : null;
+        const newestActive = mergedList.find((s) => s.status === 'em_andamento') || mergedList[0];
+        if (newestActive) {
+          if (!activeLocal) {
+            localStorage.setItem(ACTIVE_KEY, JSON.stringify(newestActive));
+          } else {
+            const locTime = new Date(activeLocal.lastUpdated || 0).getTime();
+            const remTime = new Date(newestActive.lastUpdated || 0).getTime();
+            if (remTime > locTime || newestActive.id === activeLocal.id) {
+              localStorage.setItem(ACTIVE_KEY, JSON.stringify(newestActive));
+            }
+          }
+        }
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('futplay_sumulas_changed', {
+              detail: { count: mergedList.length },
+            })
+          );
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar súmulas com o armazenamento local:', err);
+      }
+    });
   }, []);
 
   const notify = (
@@ -2452,6 +2512,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     } catch (e) {
       console.warn('Erro ao persistir súmula finalizada:', e);
+    }
+
+    // Sincroniza súmula finalizada no Supabase online
+    if (isSupabaseConfigured()) {
+      supabaseService.savePeladaSumula(finalized).catch((err) => {
+        console.warn('Falha ao salvar súmula finalizada no Supabase:', err);
+      });
     }
 
     // 1. Participantes confirmados na chegada ou escalados

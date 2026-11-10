@@ -6,6 +6,7 @@ import {
   PlayerPosition,
   PlayerProfile,
   ProfileVisibility,
+  SumulaData,
   TeamModality,
   User,
 } from '../../types/league';
@@ -758,5 +759,128 @@ export const supabaseService = {
       return false;
     }
     return true;
+  },
+
+  /**
+   * Salva a súmula da pelada online em tempo real no Supabase.
+   * Permite sincronização imediata com múltiplos aparelhos simultâneos.
+   */
+  async savePeladaSumula(sumula: SumulaData): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
+    try {
+      const { error } = await supabase.from('pelada_sumulas').upsert(
+        {
+          id: sumula.id,
+          team_name: sumula.teamName || 'Pelada',
+          status: sumula.status || 'em_andamento',
+          match_date: sumula.matchDate || null,
+          start_time: sumula.startTime || null,
+          created_by_user_id: sumula.createdByUserId || null,
+          created_by_name: sumula.createdByName || null,
+          data: sumula as unknown as Record<string, unknown>,
+          last_updated: sumula.lastUpdated || new Date().toISOString(),
+        },
+        { onConflict: 'id' }
+      );
+
+      if (error) {
+        console.warn('Erro ao salvar súmula no Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Exceção ao sincronizar súmula com Supabase:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Busca todas as súmulas registradas no Supabase ordenadas pela mais recente.
+   */
+  async getPeladaSumulas(): Promise<SumulaData[] | null> {
+    if (!isSupabaseConfigured() || !supabase) return null;
+    try {
+      const { data, error } = await supabase
+        .from('pelada_sumulas')
+        .select('*')
+        .order('last_updated', { ascending: false });
+
+      if (error || !data) {
+        console.warn('Erro ao buscar súmulas do Supabase:', error);
+        return null;
+      }
+
+      return data.map((row) => {
+        const full = (row.data as unknown as SumulaData) || ({} as SumulaData);
+        return {
+          ...full,
+          id: row.id || full.id,
+          teamName: row.team_name || full.teamName,
+          status: (row.status as 'em_andamento' | 'finalizada') || full.status || 'em_andamento',
+          matchDate: row.match_date || full.matchDate,
+          startTime: row.start_time || full.startTime,
+          createdByUserId: row.created_by_user_id || full.createdByUserId,
+          createdByName: row.created_by_name || full.createdByName,
+          lastUpdated: row.last_updated || full.lastUpdated || new Date().toISOString(),
+        };
+      });
+    } catch (err) {
+      console.warn('Exceção ao buscar súmulas do Supabase:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Busca uma súmula específica por ID no Supabase.
+   */
+  async getPeladaSumulaById(id: string): Promise<SumulaData | null> {
+    if (!isSupabaseConfigured() || !supabase) return null;
+    try {
+      const { data, error } = await supabase
+        .from('pelada_sumulas')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (error || !data) return null;
+
+      const full = (data.data as unknown as SumulaData) || ({} as SumulaData);
+      return {
+        ...full,
+        id: data.id || full.id,
+        teamName: data.team_name || full.teamName,
+        status: (data.status as 'em_andamento' | 'finalizada') || full.status || 'em_andamento',
+        matchDate: data.match_date || full.matchDate,
+        startTime: data.start_time || full.startTime,
+        createdByUserId: data.created_by_user_id || full.createdByUserId,
+        createdByName: data.created_by_name || full.createdByName,
+        lastUpdated: data.last_updated || full.lastUpdated || new Date().toISOString(),
+      };
+    } catch (err) {
+      console.warn('Exceção ao buscar súmula por ID no Supabase:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Remove uma súmula do Supabase.
+   */
+  async deletePeladaSumula(sumulaId: string): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('pelada_sumulas')
+        .delete()
+        .eq('id', sumulaId);
+
+      if (error) {
+        console.warn('Erro ao excluir súmula no Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Exceção ao excluir súmula no Supabase:', err);
+      return false;
+    }
   },
 };

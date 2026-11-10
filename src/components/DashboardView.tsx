@@ -323,6 +323,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const [storedSumulas, setStoredSumulas] = useState<SumulaData[]>(getStoredSumulas);
   const [presenceFeedback, setPresenceFeedback] = useState<string | null>(null);
 
+  // Mantém a lista de súmulas atualizada no dashboard quando houver sincronização remota ou local
+  useEffect(() => {
+    const handleSumulasChanged = () => {
+      setStoredSumulas(getStoredSumulas());
+    };
+    window.addEventListener('futplay_sumulas_changed', handleSumulasChanged);
+    return () => {
+      window.removeEventListener('futplay_sumulas_changed', handleSumulasChanged);
+    };
+  }, []);
+
   // Filtra súmulas do time do atleta/treinador atual (cada time vê apenas suas súmulas; admin vê todas)
   const userTeamNameLower = (
     currentUser?.teamName ||

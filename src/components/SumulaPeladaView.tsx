@@ -21,6 +21,7 @@ import {
 import { useLeague } from '../lib/store/LeagueContext';
 import { ShareSumulaReceiptModal } from './ShareSumulaReceiptModal';
 import { SumulaData } from '../types/league';
+import { isSupabaseConfigured, supabaseService } from '../lib/supabase';
 export type { SumulaData };
 
 const STORAGE_KEY = 'futplay_sumula_pelada_ativa_v1';
@@ -202,7 +203,14 @@ export const saveSumulaToList = (sumulaToSave: SumulaData) => {
       );
     }
   } catch (e) {
-    console.warn('Erro ao salvar súmula na lista:', e);
+    console.warn('Erro ao salvar súmula na lista local:', e);
+  }
+
+  // Sincronização online em tempo real no Supabase para permitir continuidade em múltiplos aparelhos
+  if (isSupabaseConfigured()) {
+    supabaseService.savePeladaSumula(sumulaToSave).catch((err) => {
+      console.warn('Falha assíncrona ao sincronizar súmula com Supabase:', err);
+    });
   }
 };
 
@@ -232,7 +240,14 @@ export const deleteSumulaFromList = (sumulaId: string) => {
       );
     }
   } catch (e) {
-    console.warn('Erro ao excluir súmula:', e);
+    console.warn('Erro ao excluir súmula local:', e);
+  }
+
+  // Exclui do banco de dados online
+  if (isSupabaseConfigured()) {
+    supabaseService.deletePeladaSumula(sumulaId).catch((err) => {
+      console.warn('Falha assíncrona ao excluir súmula no Supabase:', err);
+    });
   }
 };
 
@@ -365,10 +380,98 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   const [savedBadge, setSavedBadge] = useState<boolean>(false);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [gridWarning, setGridWarning] = useState<string | null>(null);
+  const isApplyingRemoteRef = useRef<boolean>(false);
 
-  // Auto-salvar no localStorage a cada alteração / preenchimento
+  // Sincronização remota em tempo real com o Supabase:
+  // Se o celular do treinador descarregar, outro aparelho continua exatamente de onde parou
+  useEffect(() => {
+    if (!isSupabaseConfigured() || isDeletedRef.current) return;
+
+    let isMounted = true;
+    const syncFromRemote = async () => {
+      try {
+        let remote: SumulaData | null = null;
+        if (sumula.id) {
+          remote = await supabaseService.getPeladaSumulaById(sumula.id);
+        }
+
+        // Se não localizou por ID exato, tenta localizar a súmula em andamento do time
+        if (!remote && userTeam) {
+          const allRemote = await supabaseService.getPeladaSumulas();
+          if (allRemote && allRemote.length > 0) {
+            const found = allRemote.find(
+              (s) =>
+                (s.teamName || '').trim().toLowerCase() === userTeam.toLowerCase() &&
+                s.status === 'em_andamento'
+            );
+            if (found) {
+              remote = found;
+            }
+          }
+        }
+
+        if (!isMounted || !remote || isDeletedRef.current) return;
+
+        const remoteTime = new Date(remote.lastUpdated || 0).getTime();
+        const localTime = new Date(sumula.lastUpdated || 0).getTime();
+
+        // Se a versão do banco for mais nova que a local, atualiza imediatamente
+        if (remoteTime > localTime || (!sumula.id.startsWith('sumula-pelada-') && remote.id)) {
+          isApplyingRemoteRef.current = true;
+          setSumula((prev) => {
+            const currentLocalTime = new Date(prev.lastUpdated || 0).getTime();
+            if (remoteTime > currentLocalTime || prev.id !== remote!.id) {
+              // Também atualiza o cache local
+              saveSumulaToList(remote!);
+              return {
+                ...prev,
+                ...remote!,
+              };
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        console.warn('Erro ao verificar atualização remota da súmula:', err);
+      }
+    };
+
+    // 1. Busca imediatamente ao montar
+    syncFromRemote();
+
+    // 2. Busca ao retornar foco à tela (ou quando o usuário desbloquear o aparelho)
+    const handleFocus = () => {
+      syncFromRemote();
+    };
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleFocus);
+
+    // 3. Ao reestabelecer conexão com a internet
+    const handleOnline = () => {
+      saveSumulaToList(sumula);
+      syncFromRemote();
+    };
+    window.addEventListener('online', handleOnline);
+
+    // 4. Polling periódico leve a cada 7 segundos para sincronização contínua entre aparelhos
+    const interval = setInterval(syncFromRemote, 7000);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('online', handleOnline);
+      clearInterval(interval);
+    };
+  }, [sumula.id, userTeam]);
+
+  // Auto-salvar no localStorage e Supabase a cada alteração / preenchimento
   useEffect(() => {
     if (isDeletedRef.current) return;
+    if (isApplyingRemoteRef.current) {
+      isApplyingRemoteRef.current = false;
+      return;
+    }
     try {
       const updated = {
         ...sumula,
@@ -974,7 +1077,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
               ) : savedBadge ? (
                 <span className="rounded-full bg-emerald-950/80 border border-emerald-500/50 px-2.5 py-1 text-[10px] font-bold text-emerald-300 shrink-0 flex items-center gap-1.5 shadow-2xs">
                   <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-                  <span>Salvo autom.</span>
+                  <span>Salvo online</span>
                 </span>
               ) : (
                 <span className="rounded-full bg-slate-800 border border-slate-700 px-2.5 py-1 text-[10px] font-bold text-slate-300 shrink-0 flex items-center gap-1.5">
@@ -2081,11 +2184,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
         </div>
       )}
 
-      {/* Indicador Flutuante 'Salvo' no Canto Inferior Direito da Página */}
+      {/* Indicador Flutuante 'Salvo Online' no Canto Inferior Direito da Página */}
       {savedBadge && (
         <div className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5 rounded-full bg-emerald-600 text-white px-3.5 py-1.5 text-xs font-bold shadow-lg animate-bounce transition">
           <CheckCircle2 className="h-4 w-4" />
-          <span>Salvo</span>
+          <span>Salvo Online</span>
         </div>
       )}
 
