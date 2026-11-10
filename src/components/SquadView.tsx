@@ -114,7 +114,6 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     `${userTeamName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase() || 'TIME'}-10`;
 
   // Estados locais
-  const [activeTab, setActiveTab] = useState<'team' | 'city'>('team');
   const [inspectingPlayerId, setInspectingPlayerId] = useState<
     string | undefined
   >(initialPlayerId);
@@ -141,8 +140,8 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
 
   const crestInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Atletas que realmente pertencem ao time atual
-  const teamPlayers = useMemo(() => {
+  // Lista exclusiva dos atletas que pertencem ao time vinculado à conta
+  const displayedPlayers = useMemo(() => {
     if (!userTeamName || userTeamName === 'Meu Time' || userTeamName === 'Sem Time') {
       return currentPlayerProfile ? [currentPlayerProfile] : [];
     }
@@ -155,15 +154,6 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     }
     return matches.sort((a, b) => b.currentRating - a.currentRating);
   }, [profiles, userTeamName, currentPlayerProfile]);
-
-  // Todos os atletas da cidade/região
-  const cityPlayers = useMemo(() => {
-    return profiles
-      .filter((p) => p.cityId === selectedCityId)
-      .sort((a, b) => b.currentRating - a.currentRating);
-  }, [profiles, selectedCityId]);
-
-  const displayedPlayers = activeTab === 'team' ? teamPlayers : cityPlayers;
 
   const counts = useMemo(() => {
     return {
@@ -451,30 +441,12 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
         </div>
       </div>
 
-      {/* Seletor de Visualização: Elenco do Time vs Todos os Atletas */}
-      <div className="flex items-center gap-1 rounded-xl bg-slate-200/80 p-1">
-        <button
-          type="button"
-          onClick={() => setActiveTab('team')}
-          className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition text-center cursor-pointer ${
-            activeTab === 'team'
-              ? 'bg-white text-blue-900 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Elenco do Time ({teamPlayers.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('city')}
-          className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition text-center cursor-pointer ${
-            activeTab === 'city'
-              ? 'bg-white text-blue-900 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Todos de {activeCity.name} ({cityPlayers.length})
-        </button>
+      {/* Título da Lista: Atletas do Elenco */}
+      <div className="flex items-center justify-between px-1 pt-1">
+        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-700">
+          <Users className="h-4 w-4 text-blue-600" />
+          <span>Atletas do Time ({displayedPlayers.length})</span>
+        </div>
       </div>
 
       {/* Lista de Atletas */}
@@ -539,9 +511,6 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                         <span>{positionLabel}</span>
                         {player.dominantFoot && (
                           <span> · Pé {player.dominantFoot}</span>
-                        )}
-                        {player.teamName && activeTab === 'city' && (
-                          <span className="text-blue-600 font-semibold"> · {player.teamName}</span>
                         )}
                       </div>
                     </div>
