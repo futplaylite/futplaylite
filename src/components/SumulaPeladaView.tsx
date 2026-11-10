@@ -182,7 +182,9 @@ export const getStoredSumulas = (): SumulaData[] => {
   return [];
 };
 
-export const saveSumulaToList = (sumulaToSave: SumulaData) => {
+let onlineDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export const saveSumulaToList = (sumulaToSave: SumulaData, immediateOnline = false) => {
   try {
     const list = getStoredSumulas();
     const idx = list.findIndex((s) => s.id === sumulaToSave.id);
@@ -206,11 +208,22 @@ export const saveSumulaToList = (sumulaToSave: SumulaData) => {
     console.warn('Erro ao salvar súmula na lista local:', e);
   }
 
-  // Sincronização online em tempo real no Supabase para permitir continuidade em múltiplos aparelhos
+  // Sincronização online no Supabase com proteção inteligente de cota (debounce)
   if (isSupabaseConfigured()) {
-    supabaseService.savePeladaSumula(sumulaToSave).catch((err) => {
-      console.warn('Falha assíncrona ao sincronizar súmula com Supabase:', err);
-    });
+    if (immediateOnline) {
+      if (onlineDebounceTimer) clearTimeout(onlineDebounceTimer);
+      supabaseService.savePeladaSumula(sumulaToSave).catch((err) => {
+        console.warn('Falha assíncrona ao sincronizar súmula com Supabase:', err);
+      });
+      return;
+    }
+
+    if (onlineDebounceTimer) clearTimeout(onlineDebounceTimer);
+    onlineDebounceTimer = setTimeout(() => {
+      supabaseService.savePeladaSumula(sumulaToSave).catch((err) => {
+        console.warn('Falha assíncrona ao sincronizar súmula com Supabase:', err);
+      });
+    }, 1200);
   }
 };
 
@@ -368,11 +381,14 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
       onBack();
       return;
     }
-    setSumula((s) => ({
-      ...s,
+    const finalToSave: SumulaData = {
+      ...sumula,
       timerSeconds: sumulaStopwatch.seconds,
       isTimerRunning: sumulaStopwatch.isRunning,
-    }));
+      lastUpdated: new Date().toISOString(),
+    };
+    setSumula(finalToSave);
+    saveSumulaToList(finalToSave, true);
     sumulaStopwatch.close();
     onBack();
   };
@@ -439,24 +455,28 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     // 1. Busca imediatamente ao montar
     syncFromRemote();
 
-    // 2. Busca ao retornar foco à tela (ou quando o usuário desbloquear o aparelho)
-    const handleFocus = () => {
-      syncFromRemote();
+    // 2. Busca ao retornar foco à tela (ou quando o usuário desbloquear o aparelho); salva imediatamente ao ocultar
+    const handleFocusOrVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        saveSumulaToList(sumula, true);
+      } else {
+        syncFromRemote();
+      }
     };
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('visibilitychange', handleFocus);
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
 
     // 3. Ao reestabelecer conexão com a internet
     const handleOnline = () => {
-      saveSumulaToList(sumula);
+      saveSumulaToList(sumula, true);
       syncFromRemote();
     };
     window.addEventListener('online', handleOnline);
 
     return () => {
       isMounted = false;
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
       window.removeEventListener('online', handleOnline);
     };
   }, [sumula.id, userTeam]);
