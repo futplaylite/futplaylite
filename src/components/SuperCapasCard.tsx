@@ -34,6 +34,7 @@ export interface SuperCapasData {
   totalGoals: number;
   venueName?: string;
   players: SuperCapasPlayer[];
+  isActive?: boolean;
 }
 
 interface SuperCapasCardProps {
@@ -41,6 +42,8 @@ interface SuperCapasCardProps {
   photoUrl: string;
   onPhotoUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onShare: () => void;
+  onToggleActive?: () => void;
+  isCoachOrAdmin?: boolean;
 }
 
 /**
@@ -190,6 +193,8 @@ export const SuperCapasCard: React.FC<SuperCapasCardProps> = ({
   photoUrl,
   onPhotoUpload,
   onShare,
+  onToggleActive,
+  isCoachOrAdmin,
 }) => {
   const [photoIndex, setPhotoIndex] = useState<number>(0);
 
@@ -259,8 +264,32 @@ export const SuperCapasCard: React.FC<SuperCapasCardProps> = ({
           </div>
         </div>
 
-        {/* Botões de Ação no Canto Superior Direito: Compartilhar + Trocar Foto */}
+        {/* Botões de Ação no Canto Superior Direito: Compartilhar + Trocar Foto + Ativar/Ocultar */}
         <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
+          {isCoachOrAdmin && onToggleActive && (
+            <button
+              type="button"
+              onClick={onToggleActive}
+              className={`flex items-center gap-1 rounded-full backdrop-blur-md px-2.5 py-1 text-[10px] font-bold border transition active:scale-95 shadow-md cursor-pointer ${
+                data.isActive !== false
+                  ? 'bg-emerald-950/85 text-emerald-300 border-emerald-500/60 hover:bg-emerald-900/90'
+                  : 'bg-amber-950/85 text-amber-300 border-amber-500/60 hover:bg-amber-900/90'
+              }`}
+              title={
+                data.isActive !== false
+                  ? 'Card ATIVO para todos os jogadores do time. Clique para ocultar.'
+                  : 'Card OCULTO para os jogadores. Clique para ativar.'
+              }
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  data.isActive !== false ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+              <span>{data.isActive !== false ? 'Ativo no Time' : 'Oculto'}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onShare}

@@ -436,4 +436,6 @@ export interface SumulaData {
     [key: string]: { player: string; goals: number | string; isSub?: boolean }[];
   };
   highlightGoals: { player: string; time: string }[];
+  superCapasPhotoUrl?: string;
+  isSuperCapasActive?: boolean;
 }

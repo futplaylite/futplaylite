@@ -41,6 +41,7 @@ import {
   SumulaData,
   DEFAULT_INITIAL_SUMULA,
 } from './SumulaPeladaView';
+import { isSupabaseConfigured, supabaseService } from '../lib/supabase';
 
 export interface PeladaScheduleConfig {
   date: string; // 'YYYY-MM-DD'
@@ -271,6 +272,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     selectedCityId,
     selectedSeasonId,
     updatePlayerSkills,
+    notify,
   } = useLeague();
 
   const activeProfile = currentPlayerProfile || profiles[0];
@@ -297,23 +299,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
   const isAdmin = currentUser?.role === 'admin';
   const canRenewSuperCapasPhoto = isCoach || isAdmin;
 
-  const handleSuperCapasPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!canRenewSuperCapasPhoto) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const res = event.target?.result as string;
-      if (res) {
-        setSuperCapasPhoto(res);
-        try {
-          localStorage.setItem('futplay_super_capas_team_photo_v1', res);
-        } catch {}
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
   // Estados do Card do Dia da Pelada com Dias Contados
   const [peladaConfig, setPeladaConfig] = useState<PeladaScheduleConfig>(getInitialPeladaSchedule);
   const [showEditScheduleModal, setShowEditScheduleModal] = useState<boolean>(false);
@@ -329,33 +314,162 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
       setStoredSumulas(getStoredSumulas());
     };
     window.addEventListener('futplay_sumulas_changed', handleSumulasChanged);
+
+    // Busca súmulas online no Supabase na montagem para garantir sincronização entre aparelhos
+    if (isSupabaseConfigured()) {
+      supabaseService.getPeladaSumulas().then((remote) => {
+        if (remote && remote.length > 0) {
+          const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
+          const local = getStoredSumulas();
+          const localMap = new Map(local.map((s) => [s.id, s]));
+          let hasChanges = false;
+          for (const r of remote) {
+            const loc = localMap.get(r.id);
+            if (!loc) {
+              localMap.set(r.id, r);
+              hasChanges = true;
+            } else {
+              const locT = new Date(loc.lastUpdated || 0).getTime();
+              const remT = new Date(r.lastUpdated || 0).getTime();
+              if (remT > locT) {
+                localMap.set(r.id, r);
+                hasChanges = true;
+              }
+            }
+          }
+          if (hasChanges) {
+            const merged = Array.from(localMap.values()).sort((a, b) => {
+              const tA = new Date(a.lastUpdated || a.matchDate || 0).getTime();
+              const tB = new Date(b.lastUpdated || b.matchDate || 0).getTime();
+              return tB - tA;
+            });
+            localStorage.setItem(ALL_KEY, JSON.stringify(merged));
+            setStoredSumulas(merged);
+          }
+        }
+      });
+    }
+
     return () => {
       window.removeEventListener('futplay_sumulas_changed', handleSumulasChanged);
     };
   }, []);
 
-  // Filtra súmulas do time do atleta/treinador atual (cada time vê apenas suas súmulas; admin vê todas)
-  const userTeamNameLower = (
-    currentUser?.teamName ||
-    activeProfile.teamName ||
-    ''
-  ).trim().toLowerCase();
+  const normalizeText = (text: string) =>
+    (text || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
 
+  // Nome do time do usuário atual (atleta ou treinador)
+  const resolvedTeamName = (
+    currentUser?.teamName ||
+    currentPlayerProfile?.teamName ||
+    activeProfile?.teamName ||
+    profiles.find((p) => p.userId === currentUser?.id)?.teamName ||
+    ''
+  ).trim();
+
+  const userTeamNormalized = normalizeText(resolvedTeamName);
+  const userTeamNameLower = userTeamNormalized;
+
+  // Filtra as súmulas pertencentes ao time vinculado ao atleta/treinador
   const myTeamSumulas = useMemo(() => {
+    const myNameNorm = normalizeText(
+      currentPlayerProfile?.displayName || activeProfile?.displayName || ''
+    );
+
     return storedSumulas.filter((s) => {
       if (currentUser?.role === 'admin') return true;
-      const sTeam = (s.teamName || '').trim().toLowerCase();
-      if (sTeam && userTeamNameLower) return sTeam === userTeamNameLower;
+      const sTeamNorm = normalizeText(s.teamName || '');
+      // 1. Mesmo time vinculado
+      if (sTeamNorm && userTeamNormalized && sTeamNorm === userTeamNormalized) return true;
+      // 2. Criado pelo usuário
       if (s.createdByUserId && s.createdByUserId === currentUser?.id) return true;
-      const myUpper = activeProfile.displayName.trim().toUpperCase();
-      return Boolean(s.arrivalList?.some((a) => a.playerName.trim().toUpperCase() === myUpper));
+      // 3. Atleta presente na lista de chegada
+      if (myNameNorm && s.arrivalList?.some((a) => normalizeText(a.playerName) === myNameNorm)) return true;
+      // 4. Atleta em qualquer escalação da súmula
+      if (
+        myNameNorm &&
+        Object.values(s.teamLineups || {}).some((lineup) =>
+          lineup.some((p) => normalizeText(p.player) === myNameNorm)
+        )
+      ) {
+        return true;
+      }
+      return false;
     });
-  }, [storedSumulas, currentUser?.role, currentUser?.id, userTeamNameLower, activeProfile.displayName]);
+  }, [
+    storedSumulas,
+    currentUser?.role,
+    currentUser?.id,
+    userTeamNormalized,
+    currentPlayerProfile?.displayName,
+    activeProfile?.displayName,
+  ]);
 
-  // Cálculo dos Super Capas da Semana baseado na última súmula registrada do time
+  // Encontra a súmula mais recente do time que possui jogos realizados com vitórias/empates
+  const latestSumulaWithGames = useMemo(() => {
+    return myTeamSumulas.find((s) =>
+      (s.teamsGrid || []).some((row) =>
+        (row.matches || []).some((m) => m === 'V' || m === 'E' || m === 'D')
+      )
+    );
+  }, [myTeamSumulas]);
+
+  const handleSuperCapasPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canRenewSuperCapasPhoto) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const res = event.target?.result as string;
+      if (res) {
+        setSuperCapasPhoto(res);
+        try {
+          localStorage.setItem('futplay_super_capas_team_photo_v1', res);
+        } catch {}
+
+        // Sincroniza a foto na própria súmula ativa dos Super Capas para que todos os jogadores recebam pelo Supabase
+        if (latestSumulaWithGames) {
+          const updated: SumulaData = {
+            ...latestSumulaWithGames,
+            superCapasPhotoUrl: res,
+            lastUpdated: new Date().toISOString(),
+          };
+          saveSumulaToList(updated, true);
+          setStoredSumulas(getStoredSumulas());
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleToggleSuperCapasActive = () => {
+    if (!canRenewSuperCapasPhoto || !latestSumulaWithGames) return;
+    const currentActive = latestSumulaWithGames.isSuperCapasActive !== false;
+    const newStatus = !currentActive;
+    const updated: SumulaData = {
+      ...latestSumulaWithGames,
+      isSuperCapasActive: newStatus,
+      lastUpdated: new Date().toISOString(),
+    };
+    saveSumulaToList(updated, true);
+    setStoredSumulas(getStoredSumulas());
+    notify(
+      'success',
+      newStatus ? 'Super Capas Ativado' : 'Super Capas Ocultado',
+      newStatus
+        ? 'O card dos Super Capas da Semana agora está visível para todos os jogadores vinculados ao time.'
+        : 'O card dos Super Capas foi ocultado do painel dos jogadores.'
+    );
+  };
+
+  // Cálculo dos Super Capas da Semana baseado na última rodada com jogos realizados do time
   const superCapasInfo = useMemo(() => {
     try {
-      const sumula = myTeamSumulas[0];
+      const sumula = latestSumulaWithGames;
       if (!sumula || !sumula.teamsGrid || sumula.teamsGrid.length === 0) return null;
 
       const hasPlayedGames = sumula.teamsGrid.some((row) =>
@@ -426,12 +540,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         draws: winner.draws,
         totalGoals: winner.totalGoals,
         players: winningPlayers,
+        photoUrl: sumula.superCapasPhotoUrl,
+        isActive: sumula.isSuperCapasActive !== false,
       };
     } catch (e) {
       console.warn('Erro ao calcular Super Capas da Semana:', e);
       return null;
     }
-  }, [storedSumulas]);
+  }, [latestSumulaWithGames]);
 
   // Verificação de Hoje vs Dia da Pelada
   const now = new Date();
@@ -1117,8 +1233,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
     <div className="space-y-4">
       {/* ================================================================= */}
       {/* 1. CARD: SUPER CAPAS DA SEMANA (NO INÍCIO DO DASHBOARD)           */}
+      {/* Exibido para todos os jogadores vinculados ao time quando ativo   */}
       {/* ================================================================= */}
-      {superCapasInfo && (
+      {superCapasInfo && (isCoach || isAdmin || superCapasInfo.isActive) && (
         <SuperCapasCard
           data={{
             sumulaId: superCapasInfo.sumulaId,
@@ -1129,10 +1246,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
             totalGoals: superCapasInfo.totalGoals,
             venueName: 'Arena Society Planalto - BA',
             players: superCapasInfo.players,
+            isActive: superCapasInfo.isActive,
           }}
-          photoUrl={superCapasPhoto}
+          photoUrl={superCapasInfo.photoUrl || superCapasPhoto || DEFAULT_SUPER_CAPAS_PHOTO}
           onPhotoUpload={canRenewSuperCapasPhoto ? handleSuperCapasPhotoUpload : undefined}
           onShare={() => setShowSuperCapasShareModal(true)}
+          onToggleActive={canRenewSuperCapasPhoto ? handleToggleSuperCapasActive : undefined}
+          isCoachOrAdmin={canRenewSuperCapasPhoto}
         />
       )}
 
@@ -2065,7 +2185,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
           data={{
             teamName: superCapasInfo.teamName,
             matchDate: superCapasInfo.matchDate,
-            teamPhotoUrl: superCapasPhoto,
+            teamPhotoUrl: superCapasInfo.photoUrl || superCapasPhoto || DEFAULT_SUPER_CAPAS_PHOTO,
             wins: superCapasInfo.wins,
             draws: superCapasInfo.draws,
             totalGoals: superCapasInfo.totalGoals,
