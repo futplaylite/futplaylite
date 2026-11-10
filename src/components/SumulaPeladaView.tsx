@@ -453,15 +453,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     };
     window.addEventListener('online', handleOnline);
 
-    // 4. Polling periódico leve a cada 7 segundos para sincronização contínua entre aparelhos
-    const interval = setInterval(syncFromRemote, 7000);
-
     return () => {
       isMounted = false;
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('visibilitychange', handleFocus);
       window.removeEventListener('online', handleOnline);
-      clearInterval(interval);
     };
   }, [sumula.id, userTeam]);
 
