@@ -119,7 +119,14 @@ export const getStoredSumulas = (): SumulaData[] => {
       if (Array.isArray(parsed)) {
         // Remove sumula de teste/demonstração legada
         const realSumulas = parsed.filter(
-          (s) => s && s.id && s.id !== 'pelada-rodada-atual' && s.id !== 'demo-sumula' && s.id !== 'template'
+          (s) =>
+            s &&
+            s.id &&
+            s.id !== 'pelada-rodada-atual' &&
+            s.id !== 'demo-sumula' &&
+            s.id !== 'template' &&
+            !s.id.startsWith('finance_ledger_') &&
+            (s.status as string) !== 'financial_ledger'
         );
 
         // Deduplicação: se houver mais de uma súmula 'em_andamento' para a mesma equipe,

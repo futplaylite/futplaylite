@@ -203,7 +203,13 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     teamTransactions,
     addTeamTransaction,
     deleteTeamTransaction,
+    refreshTeamTransactions,
   } = useLeague();
+
+  // Sincroniza transações financeiras da nuvem sempre que abrir a tela Financeiro
+  useEffect(() => {
+    refreshTeamTransactions();
+  }, []);
 
   // Aba principal: 'caixa', 'mensalidades' ou 'relatorios'
   const [activeTab, setActiveTab] = useState<'caixa' | 'mensalidades' | 'relatorios'>('caixa');
@@ -211,12 +217,18 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   // Identificação do perfil do usuário atual
   const myProfile = currentPlayerProfile || profiles.find((p) => p.userId === currentUser?.id);
 
+  const cleanTeamName = (s?: string) => {
+    const t = (s || '').trim();
+    const low = t.toLowerCase();
+    if (!t || low === 'meu time' || low === 'sem time') return '';
+    return t;
+  };
+
   // Nome do time do usuário
-  const userTeamName = (
-    currentUser?.teamName ||
-    myProfile?.teamName ||
-    'Meu Time'
-  ).trim();
+  const userTeamName =
+    cleanTeamName(currentUser?.teamName) ||
+    cleanTeamName(myProfile?.teamName) ||
+    'Meu Time';
 
   // Verifica se o usuário atual é treinador ou administrador
   const isCoachOrAdmin =
@@ -400,13 +412,28 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
   // Transações pertencentes ao time do usuário
   const myTeamTransactions = useMemo(() => {
+    const validNames = new Set(
+      [currentUser?.teamName, myProfile?.teamName]
+        .filter(Boolean)
+        .map((s) => normalize(s as string))
+        .filter((s) => s && s !== 'meu time' && s !== 'sem time')
+    );
+
+    const teamMemberUserIds = new Set(
+      teamPlayers.map((p) => p.userId).filter(Boolean)
+    );
+
     return (teamTransactions || []).filter((tx) => {
-      if (!userTeamNormalized || userTeamNormalized === 'meu time' || userTeamNormalized === 'sem time') {
+      if (validNames.size === 0) {
         return true;
       }
-      return normalize(tx.teamName) === userTeamNormalized;
+      const txTeamNorm = normalize(tx.teamName);
+      if (validNames.has(txTeamNorm)) return true;
+      // Garante exibição caso tenha sido lançado por um integrante/treinador do mesmo time
+      if (tx.createdByUserId && teamMemberUserIds.has(tx.createdByUserId)) return true;
+      return false;
     });
-  }, [teamTransactions, userTeamNormalized]);
+  }, [teamTransactions, currentUser?.teamName, myProfile?.teamName, teamPlayers]);
 
   // Totais do Caixa do Time
   const financialTotals = useMemo(() => {

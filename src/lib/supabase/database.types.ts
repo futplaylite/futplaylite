@@ -269,6 +269,45 @@ export interface Database {
           last_updated?: string;
         };
       };
+      team_financial_transactions: {
+        Row: {
+          id: string;
+          team_name: string;
+          type: 'receita' | 'despesa';
+          category: string;
+          description: string;
+          amount: number;
+          date: string;
+          notes: string | null;
+          created_by_name: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          team_name?: string;
+          type: 'receita' | 'despesa';
+          category?: string;
+          description: string;
+          amount?: number;
+          date: string;
+          notes?: string | null;
+          created_by_name?: string | null;
+          created_by_user_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          team_name?: string;
+          type?: 'receita' | 'despesa';
+          category?: string;
+          description?: string;
+          amount?: number;
+          date?: string;
+          notes?: string | null;
+          created_by_name?: string | null;
+          created_by_user_id?: string | null;
+        };
+      };
     };
   };
 }

@@ -279,6 +279,7 @@ interface LeagueContextValue extends LeagueState {
   finalizePeladaSumula: (sumula: SumulaData) => boolean;
   addTeamTransaction: (tx: Omit<TeamTransaction, 'id' | 'createdAt'>) => boolean;
   deleteTeamTransaction: (id: string) => boolean;
+  refreshTeamTransactions: () => Promise<void>;
 }
 
 const LeagueContext = createContext<LeagueContextValue | null>(null);
@@ -607,7 +608,107 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn('Erro ao sincronizar súmulas com o armazenamento local:', err);
       }
     });
+
+    // 5. Sincroniza transações financeiras (despesas e receitas) do Supabase
+    supabaseService.getTeamTransactions().then((remoteTx) => {
+      if (!remoteTx) return;
+      setState((prev) => {
+        const mergedMap = new Map<string, TeamTransaction>();
+        remoteTx.forEach((tx) => mergedMap.set(tx.id, tx));
+
+        const now = Date.now();
+        const isAlreadyMigrated = localStorage.getItem('futplay_tx_cloud_migrated_v1') === 'true';
+        const unSyncedToPush: TeamTransaction[] = [];
+
+        (prev.teamTransactions || []).forEach((locTx) => {
+          if (!mergedMap.has(locTx.id)) {
+            const ageMs = now - new Date(locTx.createdAt || 0).getTime();
+            if (ageMs < 60000 || (!isAlreadyMigrated && remoteTx.length === 0)) {
+              mergedMap.set(locTx.id, locTx);
+              unSyncedToPush.push(locTx);
+            }
+          }
+        });
+
+        if (unSyncedToPush.length > 0) {
+          unSyncedToPush.forEach((tx) => {
+            supabaseService.saveTeamTransaction(tx).catch(() => {});
+          });
+        }
+        try {
+          localStorage.setItem('futplay_tx_cloud_migrated_v1', 'true');
+        } catch {}
+
+        const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
+          const tA = new Date(a.date || a.createdAt || 0).getTime();
+          const tB = new Date(b.date || b.createdAt || 0).getTime();
+          return tB - tA;
+        });
+
+        try {
+          localStorage.setItem('futplay_team_financial_transactions_v1', JSON.stringify(mergedList));
+        } catch {}
+
+        return {
+          ...prev,
+          teamTransactions: mergedList,
+        };
+      });
+    });
   }, []);
+
+  // Listener entre abas do mesmo navegador para atualizar finanças em tempo real
+  useEffect(() => {
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key === 'futplay_team_financial_transactions_v1' && e.newValue) {
+        try {
+          const updated: TeamTransaction[] = JSON.parse(e.newValue);
+          if (Array.isArray(updated)) {
+            setState((prev) => ({ ...prev, teamTransactions: updated }));
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageSync);
+    return () => {
+      window.removeEventListener('storage', handleStorageSync);
+    };
+  }, []);
+
+  const refreshTeamTransactions: LeagueContextValue['refreshTeamTransactions'] = async () => {
+    if (!isSupabaseConfigured()) return;
+    const remoteTx = await supabaseService.getTeamTransactions();
+    if (!remoteTx) return;
+    setState((prev) => {
+      const mergedMap = new Map<string, TeamTransaction>();
+      remoteTx.forEach((tx) => mergedMap.set(tx.id, tx));
+
+      const now = Date.now();
+      (prev.teamTransactions || []).forEach((locTx) => {
+        if (!mergedMap.has(locTx.id)) {
+          const ageMs = now - new Date(locTx.createdAt || 0).getTime();
+          if (ageMs < 60000) {
+            mergedMap.set(locTx.id, locTx);
+          }
+        }
+      });
+
+      const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
+        const tA = new Date(a.date || a.createdAt || 0).getTime();
+        const tB = new Date(b.date || b.createdAt || 0).getTime();
+        return tB - tA;
+      });
+
+      try {
+        localStorage.setItem('futplay_team_financial_transactions_v1', JSON.stringify(mergedList));
+      } catch {}
+
+      return {
+        ...prev,
+        teamTransactions: mergedList,
+      };
+    });
+  };
 
   const notify = (
     type: NotificationBanner['type'],
@@ -2739,6 +2840,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         teamTransactions: updated,
       };
     });
+    if (isSupabaseConfigured()) {
+      supabaseService.saveTeamTransaction(newTx).catch((err) => {
+        console.warn('Falha assíncrona ao salvar transação no Supabase:', err);
+      });
+    }
     notify(
       'success',
       tx.type === 'receita' ? 'Receita Registrada' : 'Despesa Registrada',
@@ -2764,6 +2870,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return false;
     }
 
+    const targetTx = (state.teamTransactions || []).find((t) => t.id === id);
     setState((prev) => {
       const updated = (prev.teamTransactions || []).filter((t) => t.id !== id);
       try {
@@ -2774,6 +2881,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         teamTransactions: updated,
       };
     });
+    if (isSupabaseConfigured()) {
+      supabaseService.deleteTeamTransaction(id, targetTx?.teamName).catch((err) => {
+        console.warn('Falha assíncrona ao excluir transação no Supabase:', err);
+      });
+    }
     notify('info', 'Lançamento Removido', 'A movimentação foi excluída com sucesso.');
     return true;
   };
@@ -3029,6 +3141,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         finalizePeladaSumula,
         addTeamTransaction,
         deleteTeamTransaction,
+        refreshTeamTransactions,
       }}
     >
       {children}
