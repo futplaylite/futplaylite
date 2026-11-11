@@ -760,43 +760,27 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
 
   return (
     <div className="space-y-4 pb-20 animate-fadeIn">
-      {/* Cabeçalho Compacto de Navegação Financeira (Apenas Botões) */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition active:scale-95 cursor-pointer shrink-0"
-            title="Voltar ao Painel Principal"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Voltar</span>
-          </button>
+      {/* Barra Compacta Alinhada (Voltar + Abas) */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-95 cursor-pointer shrink-0"
+          title="Voltar ao Painel Principal"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
 
-          {/* Botão de Configurações do PIX e Valor (Apenas Treinador) */}
-          {isCoachOrAdmin && (
-            <button
-              type="button"
-              onClick={() => setShowConfig(true)}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition active:scale-95 cursor-pointer shrink-0"
-              title="Configurar Mensalidade e Chave PIX"
-            >
-              <Settings className="h-3.5 w-3.5 text-slate-600" />
-              <span>Configurar PIX</span>
-            </button>
-          )}
-        </div>
-
-        {/* Alternador de Abas: Treinador vê 3 abas, Jogador vê apenas Extrato e Minha Mensalidade */}
+        {/* Alternador de Abas alinhado na mesma linha */}
         <div
-          className={`grid p-1 bg-slate-100 rounded-2xl border border-slate-200 ${
+          className={`flex-1 grid p-0.5 bg-slate-100 rounded-xl border border-slate-200/80 ${
             isCoachOrAdmin ? 'grid-cols-3' : 'grid-cols-2'
           }`}
         >
           <button
             type="button"
             onClick={() => setActiveTab('caixa')}
-            className={`flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-black transition cursor-pointer ${
+            className={`flex items-center justify-center gap-1 h-8 px-1.5 rounded-lg text-[11px] sm:text-xs font-black transition cursor-pointer ${
               activeTab === 'caixa'
                 ? 'bg-white text-emerald-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -808,20 +792,20 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
           <button
             type="button"
             onClick={() => setActiveTab('mensalidades')}
-            className={`flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-black transition cursor-pointer ${
+            className={`flex items-center justify-center gap-1 h-8 px-1.5 rounded-lg text-[11px] sm:text-xs font-black transition cursor-pointer ${
               activeTab === 'mensalidades'
                 ? 'bg-white text-emerald-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <CreditCard className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-            <span className="truncate">{isCoachOrAdmin ? 'Mensalidades' : 'Minha Mensalidade'}</span>
+            <span className="truncate">{isCoachOrAdmin ? 'Mensalidades' : 'Mensalidade'}</span>
           </button>
           {isCoachOrAdmin && (
             <button
               type="button"
               onClick={() => setActiveTab('relatorios')}
-              className={`flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-black transition cursor-pointer ${
+              className={`flex items-center justify-center gap-1 h-8 px-1.5 rounded-lg text-[11px] sm:text-xs font-black transition cursor-pointer ${
                 activeTab === 'relatorios'
                   ? 'bg-white text-emerald-700 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -1159,16 +1143,29 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
       {/* ========================================================= */}
       {activeTab === 'mensalidades' && (
         <div className="space-y-4 animate-fadeIn">
-          {/* Card da Chave PIX Oficial do Time (Com Cópia em 1 Clique) */}
+          {/* Card da Chave PIX Oficial do Time (Com Cópia em 1 Clique + Configurar PIX) */}
           <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-emerald-50 p-3.5 shadow-2xs space-y-2">
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center justify-between gap-2 text-xs">
               <span className="font-extrabold uppercase tracking-wide text-emerald-800 flex items-center gap-1.5 text-[11px]">
                 <CreditCard className="h-3.5 w-3.5 text-emerald-600" />
                 PIX Oficial do Time
               </span>
-              <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">
-                {monthlyConfig?.pixKeyType || 'Celular'}
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">
+                  {monthlyConfig?.pixKeyType || 'Celular'}
+                </span>
+                {isCoachOrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowConfig(true)}
+                    className="flex items-center gap-1 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 text-[10px] font-bold transition active:scale-95 cursor-pointer shadow-2xs"
+                    title="Configurar valor da mensalidade e chave PIX"
+                  >
+                    <Settings className="h-3 w-3 text-slate-600" />
+                    <span>Configurar PIX</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-2 rounded-xl bg-white border border-emerald-200/80 p-2.5">
