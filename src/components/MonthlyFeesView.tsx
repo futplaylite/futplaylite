@@ -224,7 +224,8 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     currentUser?.role === 'coach' ||
     currentUser?.role === 'admin' ||
     currentUser?.isTeamOwner === true ||
-    myProfile?.isTeamOwner === true;
+    myProfile?.isTeamOwner === true ||
+    currentUser?.id === 'user-paredao';
 
   const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentYearMonth);
   const [filter, setFilter] = useState<'all' | 'paid' | 'pending'>('all');
@@ -249,6 +250,13 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
       setEditPixReceiver(monthlyConfig.pixReceiverName);
     }
   }, [monthlyConfig]);
+
+  // Garante que jogadores não fiquem na aba de relatórios restrita ao treinador
+  useEffect(() => {
+    if (!isCoachOrAdmin && activeTab === 'relatorios') {
+      setActiveTab('caixa');
+    }
+  }, [isCoachOrAdmin, activeTab]);
 
   // Normalização para busca de time
   const normalize = (s: string) =>
@@ -436,9 +444,10 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     });
   }, [myTeamTransactions, txFilter, txSearch]);
 
-  // Salvar novo lançamento de Receita ou Despesa
+  // Salvar novo lançamento de Receita ou Despesa (Apenas Treinador)
   const handleSaveTransaction = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isCoachOrAdmin) return;
     const cleanAmount = parseFloat(txAmount.replace(',', '.'));
     if (isNaN(cleanAmount) || cleanAmount <= 0) {
       alert('Informe um valor numérico válido maior que zero.');
@@ -467,8 +476,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     setShowAddTransactionModal(false);
   };
 
-  // Lançar valor arrecadado de mensalidades do mês no Caixa
+  // Lançar valor arrecadado de mensalidades do mês no Caixa (Apenas Treinador)
   const handleImportMonthlyFeesToCaixa = () => {
+    if (!isCoachOrAdmin) return;
     if (monthlyStats.totalPaidAmount <= 0) {
       alert('Não há mensalidades pagas neste mês para lançar no caixa.');
       return;
@@ -490,9 +500,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     });
   };
 
-  // Confirmar exclusão de lançamento
+  // Confirmar exclusão de lançamento (Apenas Treinador)
   const handleConfirmDeleteTx = () => {
-    if (!txToDelete) return;
+    if (!isCoachOrAdmin || !txToDelete) return;
     deleteTeamTransaction(txToDelete.id);
     setTxToDelete(null);
   };
@@ -725,8 +735,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     }
   };
 
-  // Salvar configurações do time (Treinador)
+  // Salvar configurações do time (Apenas Treinador)
   const handleSaveConfig = () => {
+    if (!isCoachOrAdmin) return;
     updateMonthlyConfig({
       monthlyAmount: editAmount,
       pixKey: editPixKey.trim(),
@@ -735,9 +746,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     setShowConfig(false);
   };
 
-  // Executa a confirmação da mudança de status (Treinador)
+  // Executa a confirmação da mudança de status (Apenas Treinador)
   const executeToggleConfirm = () => {
-    if (!confirmTarget) return;
+    if (!isCoachOrAdmin || !confirmTarget) return;
     toggleMonthlyPayment(
       confirmTarget.player.id,
       selectedMonth,
@@ -787,8 +798,12 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
           )}
         </div>
 
-        {/* Alternador de 3 Abas: [Caixa] vs [Mensalidades] vs [Relatórios] */}
-        <div className="grid grid-cols-3 p-1 bg-slate-100 rounded-2xl border border-slate-200">
+        {/* Alternador de Abas: Treinador vê 3 abas, Jogador vê apenas Extrato e Minha Mensalidade */}
+        <div
+          className={`grid p-1 bg-slate-100 rounded-2xl border border-slate-200 ${
+            isCoachOrAdmin ? 'grid-cols-3' : 'grid-cols-2'
+          }`}
+        >
           <button
             type="button"
             onClick={() => setActiveTab('caixa')}
@@ -799,7 +814,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
             }`}
           >
             <Wallet className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-            <span className="truncate">Caixa</span>
+            <span className="truncate">{isCoachOrAdmin ? 'Caixa' : 'Extrato'}</span>
           </button>
           <button
             type="button"
@@ -811,20 +826,22 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
             }`}
           >
             <CreditCard className="h-3.5 w-3.5 text-blue-600 shrink-0" />
-            <span className="truncate">Mensalidades</span>
+            <span className="truncate">{isCoachOrAdmin ? 'Mensalidades' : 'Minha Mensalidade'}</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('relatorios')}
-            className={`flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-black transition cursor-pointer ${
-              activeTab === 'relatorios'
-                ? 'bg-white text-emerald-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <BarChart3 className="h-3.5 w-3.5 text-purple-600 shrink-0" />
-            <span className="truncate">Relatórios</span>
-          </button>
+          {isCoachOrAdmin && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('relatorios')}
+              className={`flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-black transition cursor-pointer ${
+                activeTab === 'relatorios'
+                  ? 'bg-white text-emerald-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <BarChart3 className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+              <span className="truncate">Relatórios</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -893,19 +910,29 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
               </div>
               <div>
                 <div className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
-                  Mensalidades de {formatYearMonth(selectedMonth)}
+                  {isCoachOrAdmin
+                    ? `Mensalidades de ${formatYearMonth(selectedMonth)}`
+                    : `Minha Mensalidade • ${formatYearMonth(selectedMonth)}`}
                 </div>
                 <div className="text-xs font-bold text-slate-800 mt-0.5">
-                  <span className="font-mono font-black text-emerald-700">
-                    R$ {monthlyStats.totalPaidAmount},00
-                  </span>{' '}
-                  arrecadados ({monthlyStats.paidCount} de {teamPlayers.length} atletas)
+                  {isCoachOrAdmin ? (
+                    <>
+                      <span className="font-mono font-black text-emerald-700">
+                        R$ {monthlyStats.totalPaidAmount},00
+                      </span>{' '}
+                      arrecadados ({monthlyStats.paidCount} de {teamPlayers.length} atletas)
+                    </>
+                  ) : (
+                    <span className={isMyPaid ? 'text-emerald-700 font-black' : 'text-rose-600 font-black'}>
+                      {isMyPaid ? '🟢 Quitado neste mês' : '🔴 Pendente de pagamento'}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {monthlyStats.totalPaidAmount > 0 && (
+              {isCoachOrAdmin && monthlyStats.totalPaidAmount > 0 && (
                 <button
                   type="button"
                   onClick={handleImportMonthlyFeesToCaixa}
@@ -921,13 +948,13 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
                 onClick={() => setActiveTab('mensalidades')}
                 className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition active:scale-95 cursor-pointer shadow-2xs flex items-center gap-1"
               >
-                <span>Ver Status</span>
+                <span>{isCoachOrAdmin ? 'Ver Status' : 'Minha Mensalidade'}</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Barra de Ações: Botão Novo Lançamento + Filtros de Tipo */}
+          {/* Barra de Ações: Botão Novo Lançamento (Apenas Treinador) + Filtros de Tipo */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-800">
@@ -935,17 +962,23 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
                 <span>Extrato de Movimentações</span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setTxType('despesa');
-                  setShowAddTransactionModal(true);
-                }}
-                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-2 shadow-xs active:scale-95 transition cursor-pointer"
-              >
-                <Plus className="h-4 w-4 stroke-[3]" />
-                <span>Novo Lançamento</span>
-              </button>
+              {isCoachOrAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTxType('despesa');
+                    setShowAddTransactionModal(true);
+                  }}
+                  className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-2 shadow-xs active:scale-95 transition cursor-pointer"
+                >
+                  <Plus className="h-4 w-4 stroke-[3]" />
+                  <span>Novo Lançamento</span>
+                </button>
+              ) : (
+                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full">
+                  Extrato (Somente Leitura)
+                </span>
+              )}
             </div>
 
             {/* Filtros rápidos: [Todos] | [Entradas] | [Saídas] + Busca */}
@@ -1017,7 +1050,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
                 </p>
               </div>
 
-              {myTeamTransactions.length === 0 && (
+              {isCoachOrAdmin && myTeamTransactions.length === 0 && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1123,7 +1156,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
             <p className="text-[11px] text-slate-600 flex items-center justify-center gap-1.5">
               <Info className="h-3.5 w-3.5 text-blue-600 shrink-0" />
               <span>
-                Todas as entradas e saídas ficam salvas no caixa para prestação de contas aos atletas.
+                {isCoachOrAdmin
+                  ? 'Todas as entradas e saídas ficam salvas no caixa para prestação de contas aos atletas.'
+                  : 'Modo Extrato (Somente Leitura): apenas o treinador pode lançar ou alterar dados financeiros.'}
               </span>
             </p>
           </div>
@@ -1563,9 +1598,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
       )}
 
       {/* ========================================================= */}
-      {/* ABA 3: RELATÓRIOS FINANCEIROS                             */}
+      {/* ABA 3: RELATÓRIOS FINANCEIROS (APENAS TREINADOR)          */}
       {/* ========================================================= */}
-      {activeTab === 'relatorios' && (
+      {isCoachOrAdmin && activeTab === 'relatorios' && (
         <div className="space-y-4 animate-fadeIn">
           {/* Seletor de Período do Relatório */}
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-3">
@@ -2085,9 +2120,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
       )}
 
       {/* ==================================================== */}
-      {/* MODAL 1: NOVO LANÇAMENTO FINANCEIRO (RECEITA/DESPESA) */}
+      {/* MODAL 1: NOVO LANÇAMENTO FINANCEIRO (APENAS TREINADOR) */}
       {/* ==================================================== */}
-      {showAddTransactionModal && (
+      {isCoachOrAdmin && showAddTransactionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
           <div className="relative w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -2351,7 +2386,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
       {/* ==================================================== */}
       {/* MODAL 2: CONFIRMAÇÃO DE EXCLUSÃO DE LANÇAMENTO       */}
       {/* ==================================================== */}
-      {txToDelete && (
+      {isCoachOrAdmin && txToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
           <div className="relative w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -2400,7 +2435,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
       {/* ==================================================== */}
       {/* MODAL 3: CONFIRMAÇÃO DE STATUS DE MENSALIDADE        */}
       {/* ==================================================== */}
-      {confirmTarget && (
+      {isCoachOrAdmin && confirmTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
           <div className="relative w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -2460,7 +2495,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
       {/* ==================================================== */}
       {/* MODAL 4: CONFIGURAÇÃO DE PIX E VALOR (TREINADOR)     */}
       {/* ==================================================== */}
-      {showConfig && (
+      {isCoachOrAdmin && showConfig && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
           <div className="relative w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -2551,7 +2586,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
       {/* ==================================================== */}
       {/* MODAL 5: EXTRATO ANALÍTICO COMPLETO PARA IMPRESSÃO   */}
       {/* ==================================================== */}
-      {showAnalyticModal && (
+      {isCoachOrAdmin && showAnalyticModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn">
           <div className="relative w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4 overflow-hidden">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">

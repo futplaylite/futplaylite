@@ -2708,6 +2708,22 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const addTeamTransaction: LeagueContextValue['addTeamTransaction'] = (tx) => {
+    const canManage =
+      currentUser.role === 'coach' ||
+      currentUser.role === 'admin' ||
+      currentUser.isTeamOwner === true ||
+      currentPlayerProfile?.isTeamOwner === true ||
+      currentUser.id === 'user-paredao';
+
+    if (!canManage) {
+      notify(
+        'error',
+        'Acesso Restrito',
+        'Apenas o treinador pode lançar despesas ou receitas no caixa do time.'
+      );
+      return false;
+    }
+
     const newTx: TeamTransaction = {
       ...tx,
       id: 'tx-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
@@ -2732,6 +2748,22 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const deleteTeamTransaction: LeagueContextValue['deleteTeamTransaction'] = (id) => {
+    const canManage =
+      currentUser.role === 'coach' ||
+      currentUser.role === 'admin' ||
+      currentUser.isTeamOwner === true ||
+      currentPlayerProfile?.isTeamOwner === true ||
+      currentUser.id === 'user-paredao';
+
+    if (!canManage) {
+      notify(
+        'error',
+        'Acesso Restrito',
+        'Apenas o treinador pode excluir movimentações financeiras.'
+      );
+      return false;
+    }
+
     setState((prev) => {
       const updated = (prev.teamTransactions || []).filter((t) => t.id !== id);
       try {
