@@ -460,6 +460,29 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     setShowAddTransactionModal(false);
   };
 
+  // Lançar valor arrecadado de mensalidades do mês no Caixa
+  const handleImportMonthlyFeesToCaixa = () => {
+    if (monthlyStats.totalPaidAmount <= 0) {
+      alert('Não há mensalidades pagas neste mês para lançar no caixa.');
+      return;
+    }
+
+    const monthTitle = formatYearMonth(selectedMonth);
+    const desc = `Mensalidades - ${monthTitle} (${monthlyStats.paidCount} atletas)`;
+
+    addTeamTransaction({
+      teamName: userTeamName,
+      type: 'receita',
+      category: 'mensalidade',
+      description: desc,
+      amount: monthlyStats.totalPaidAmount,
+      date: new Date().toISOString().split('T')[0],
+      notes: `Arrecadação de mensalidades de ${monthTitle} (${monthlyStats.paidCount} de ${teamPlayers.length} atletas quitados)`,
+      createdByName: myProfile?.displayName || currentUser?.email?.split('@')[0] || 'Comissão',
+      createdByUserId: currentUser?.id,
+    });
+  };
+
   // Confirmar exclusão de lançamento
   const handleConfirmDeleteTx = () => {
     if (!txToDelete) return;
@@ -677,14 +700,27 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('mensalidades')}
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition active:scale-95 cursor-pointer shrink-0 shadow-2xs flex items-center gap-1"
-            >
-              <span>Ver Status</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {monthlyStats.totalPaidAmount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleImportMonthlyFeesToCaixa}
+                  className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] sm:text-xs transition active:scale-95 cursor-pointer shadow-2xs flex items-center gap-1"
+                  title="Lançar arrecadação das mensalidades deste mês como receita no Caixa"
+                >
+                  <Plus className="h-3 w-3 stroke-[3]" />
+                  <span>Lançar no Caixa</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveTab('mensalidades')}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition active:scale-95 cursor-pointer shadow-2xs flex items-center gap-1"
+              >
+                <span>Ver Status</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Barra de Ações: Botão Novo Lançamento + Filtros de Tipo */}
@@ -695,23 +731,17 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
                 <span>Extrato de Movimentações</span>
               </div>
 
-              {isCoachOrAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTxType('despesa');
-                    setShowAddTransactionModal(true);
-                  }}
-                  className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-2 shadow-xs active:scale-95 transition cursor-pointer"
-                >
-                  <Plus className="h-4 w-4 stroke-[3]" />
-                  <span>Novo Lançamento</span>
-                </button>
-              ) : (
-                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-1 rounded-full">
-                  Modo Participante
-                </span>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setTxType('despesa');
+                  setShowAddTransactionModal(true);
+                }}
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-2 shadow-xs active:scale-95 transition cursor-pointer"
+              >
+                <Plus className="h-4 w-4 stroke-[3]" />
+                <span>Novo Lançamento</span>
+              </button>
             </div>
 
             {/* Filtros rápidos: [Todos] | [Entradas] | [Saídas] + Busca */}
@@ -1394,6 +1424,92 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
                   >
                     <TrendingDown className="h-4 w-4" />
                     <span>🔴 Saída / Despesa</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Sugestões Rápidas de Lançamento */}
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                  Atalhos Rápidos (Clique para preencher)
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxType('despesa');
+                      setTxCategory('aluguel');
+                      setTxDescription('Aluguel da Quadra / Campo');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    🏟️ Quadra / Campo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxType('despesa');
+                      setTxCategory('equipamento');
+                      setTxDescription('Compra de Bolas');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    ⚽ Bolas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxType('despesa');
+                      setTxCategory('uniforme');
+                      setTxDescription('Coletes & Lavagem');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    👕 Coletes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxType('despesa');
+                      setTxCategory('outro');
+                      setTxDescription('Água mineral & Gelo');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    🧊 Água / Gelo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxType('despesa');
+                      setTxCategory('arbitragem');
+                      setTxDescription('Arbitragem / Juiz');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    🏆 Juiz
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxType('receita');
+                      setTxCategory('patrocinio');
+                      setTxDescription('Patrocínio / Apoio');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    🤝 Patrocínio
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxType('despesa');
+                      setTxCategory('confraternizacao');
+                      setTxDescription('Resenha & Confraternização');
+                    }}
+                    className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold transition cursor-pointer"
+                  >
+                    🥩 Resenha
                   </button>
                 </div>
               </div>
