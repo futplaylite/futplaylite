@@ -546,7 +546,47 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   const [txFilter, setTxFilter] = useState<'all' | 'receita' | 'despesa'>('all');
   const [txSearch, setTxSearch] = useState<string>('');
 
-  // Transações pertencentes ao time do usuário
+  // Gera automaticamente entradas no Extrato para cada mensalidade PAGA (e remove se ficar Pendente)
+  const autoMonthlyFeeTransactions = useMemo<TeamTransaction[]>(() => {
+    const distinctMonths = Array.from(
+      new Set(
+        (monthlyPayments || [])
+          .map((rec) => (rec.yearMonth || '').trim())
+          .filter(Boolean)
+      )
+    );
+    if (distinctMonths.length === 0 || teamPlayers.length === 0) return [];
+
+    const autoList: TeamTransaction[] = [];
+    teamPlayers.forEach((player) => {
+      if (isGoalkeeper(player)) return;
+      distinctMonths.forEach((ym) => {
+        const latest = getLatestPaymentRecord(player, ym);
+        if (!latest || !latest.isPaid) return;
+
+        const isoTimestamp = latest.paidAt || latest.updatedAt || `${ym}-01T00:00:00.000Z`;
+        const txDate = isoTimestamp.split('T')[0];
+        const feeAmount = Number(latest.amount) || monthlyConfig?.monthlyAmount || 30;
+
+        autoList.push({
+          id: `auto-fee-${player.id}_${ym}`,
+          teamName: player.teamName || userTeamName,
+          type: 'receita',
+          category: 'mensalidade',
+          description: `Mensalidade • ${player.displayName}`,
+          amount: feeAmount,
+          date: txDate,
+          notes: `Ref: ${formatYearMonth(ym)}`,
+          createdByName: 'Mensalidade (Automático)',
+          createdAt: isoTimestamp,
+        });
+      });
+    });
+
+    return autoList;
+  }, [monthlyPayments, teamPlayers, monthlyConfig?.monthlyAmount, userTeamName]);
+
+  // Transações pertencentes ao time do usuário (manuais + mensalidades pagas automáticas)
   const myTeamTransactions = useMemo(() => {
     const validNames = new Set(
       [currentUser?.teamName, myProfile?.teamName]
@@ -559,7 +599,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       teamPlayers.map((p) => p.userId).filter(Boolean)
     );
 
-    return (teamTransactions || []).filter((tx) => {
+    const manualTeamTx = (teamTransactions || []).filter((tx) => {
       if (validNames.size === 0) {
         return true;
       }
@@ -569,7 +609,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       if (tx.createdByUserId && teamMemberUserIds.has(tx.createdByUserId)) return true;
       return false;
     });
-  }, [teamTransactions, currentUser?.teamName, myProfile?.teamName, teamPlayers]);
+
+    return [...autoMonthlyFeeTransactions, ...manualTeamTx];
+  }, [teamTransactions, autoMonthlyFeeTransactions, currentUser?.teamName, myProfile?.teamName, teamPlayers]);
 
   // Totais do Caixa do Time
   const financialTotals = useMemo(() => {
@@ -609,6 +651,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
         (t) =>
           normalize(t.description).includes(q) ||
           normalize(t.category).includes(q) ||
+          normalize(t.notes || '').includes(q) ||
           normalize(t.createdByName || '').includes(q)
       );
     }
@@ -617,7 +660,10 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     return list.sort((a, b) => {
       const dateA = new Date(a.date || a.createdAt || 0).getTime();
       const dateB = new Date(b.date || b.createdAt || 0).getTime();
-      return dateB - dateA;
+      if (dateB !== dateA) return dateB - dateA;
+      const createdA = new Date(a.createdAt || 0).getTime();
+      const createdB = new Date(b.createdAt || 0).getTime();
+      return createdB - createdA;
     });
   }, [myTeamTransactions, txFilter, txSearch]);
 
@@ -651,30 +697,6 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     setTxAmount('');
     setTxNotes('');
     setShowAddTransactionModal(false);
-  };
-
-  // Lançar valor arrecadado de mensalidades do mês no Caixa (Apenas Treinador)
-  const handleImportMonthlyFeesToCaixa = () => {
-    if (!isCoachOrAdmin) return;
-    if (monthlyStats.totalPaidAmount <= 0) {
-      alert('Não há mensalidades pagas neste mês para lançar no caixa.');
-      return;
-    }
-
-    const monthTitle = formatYearMonth(selectedMonth);
-    const desc = `Mensalidades - ${monthTitle} (${monthlyStats.paidCount} atletas)`;
-
-    addTeamTransaction({
-      teamName: userTeamName,
-      type: 'receita',
-      category: 'mensalidade',
-      description: desc,
-      amount: monthlyStats.totalPaidAmount,
-      date: new Date().toISOString().split('T')[0],
-      notes: `Arrecadação de mensalidades de ${monthTitle} (${monthlyStats.paidCount} de ${monthlyStats.payingCount} pagantes)`,
-      createdByName: myProfile?.displayName || currentUser?.email?.split('@')[0] || 'Comissão',
-      createdByUserId: currentUser?.id,
-    });
   };
 
   // Confirmar exclusão de lançamento (Apenas Treinador)
@@ -1081,17 +1103,6 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {isCoachOrAdmin && monthlyStats.totalPaidAmount > 0 && (
-                <button
-                  type="button"
-                  onClick={handleImportMonthlyFeesToCaixa}
-                  className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[10px] sm:text-xs transition active:scale-95 cursor-pointer shadow-2xs flex items-center gap-1"
-                  title="Lançar arrecadação das mensalidades deste mês como receita no Caixa"
-                >
-                  <Plus className="h-3 w-3 stroke-[3]" />
-                  <span>Lançar no Caixa</span>
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => setActiveTab('mensalidades')}
@@ -1282,8 +1293,8 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                         )}
                       </div>
 
-                      {/* Botão de Excluir (Apenas Treinador/Admin) */}
-                      {isCoachOrAdmin && (
+                      {/* Botão de Excluir (Apenas Treinador/Admin para lançamentos manuais) */}
+                      {isCoachOrAdmin && !tx.id.startsWith('auto-fee-') && (
                         <button
                           type="button"
                           onClick={() => setTxToDelete(tx)}
