@@ -35,6 +35,13 @@ import {
   Flame,
   Eye,
   Info,
+  BarChart3,
+  PieChart,
+  Printer,
+  Share2,
+  FileText,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { PlayerProfile, TeamTransaction, TransactionType, TransactionCategory } from '../types/league';
@@ -199,8 +206,8 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     deleteTeamTransaction,
   } = useLeague();
 
-  // Aba principal: 'caixa' (Receitas & Despesas do Time) ou 'mensalidades' (Status & PIX)
-  const [activeTab, setActiveTab] = useState<'caixa' | 'mensalidades'>('caixa');
+  // Aba principal: 'caixa', 'mensalidades' ou 'relatorios'
+  const [activeTab, setActiveTab] = useState<'caixa' | 'mensalidades' | 'relatorios'>('caixa');
 
   // Identificação do perfil do usuário atual
   const myProfile = currentPlayerProfile || profiles.find((p) => p.userId === currentUser?.id);
@@ -490,6 +497,191 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
     setTxToDelete(null);
   };
 
+  // ==========================================
+  // ESTADOS E CÁLCULOS DO RELATÓRIO FINANCEIRO
+  // ==========================================
+  type ReportPeriod = 'month' | 'previous_month' | 'quarter' | 'year' | 'all';
+  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('month');
+  const [reportCustomMonth, setReportCustomMonth] = useState<string>(getCurrentYearMonth);
+  const [reportCustomYear, setReportCustomYear] = useState<number>(() => new Date().getFullYear());
+  const [reportTypeFilter, setReportTypeFilter] = useState<'all' | 'despesa' | 'receita'>('all');
+  const [copiedReport, setCopiedReport] = useState<boolean>(false);
+  const [showAnalyticModal, setShowAnalyticModal] = useState<boolean>(false);
+
+  // Mês anterior calculado
+  const previousMonthYM = useMemo(() => {
+    return getAdjacentMonth(getCurrentYearMonth(), -1);
+  }, []);
+
+  // Determina as transações que pertencem ao período selecionado no relatório
+  const reportTransactions = useMemo(() => {
+    return myTeamTransactions.filter((tx) => {
+      const txDate = tx.date || tx.createdAt?.split('T')[0] || '';
+      if (!txDate) return false;
+
+      if (reportPeriod === 'month') {
+        return txDate.startsWith(reportCustomMonth);
+      }
+      if (reportPeriod === 'previous_month') {
+        return txDate.startsWith(previousMonthYM);
+      }
+      if (reportPeriod === 'quarter') {
+        const now = new Date();
+        const d = new Date(txDate);
+        const diffMs = now.getTime() - d.getTime();
+        const diffDays = diffMs / (1000 * 3600 * 24);
+        return diffDays >= 0 && diffDays <= 92;
+      }
+      if (reportPeriod === 'year') {
+        return txDate.startsWith(String(reportCustomYear));
+      }
+      // 'all'
+      return true;
+    });
+  }, [myTeamTransactions, reportPeriod, reportCustomMonth, previousMonthYM, reportCustomYear]);
+
+  // Transações do relatório após filtro de tipo
+  const reportDisplayTransactions = useMemo(() => {
+    if (reportTypeFilter === 'receita') {
+      return reportTransactions.filter((t) => t.type === 'receita');
+    }
+    if (reportTypeFilter === 'despesa') {
+      return reportTransactions.filter((t) => t.type === 'despesa');
+    }
+    return reportTransactions;
+  }, [reportTransactions, reportTypeFilter]);
+
+  // Métricas analíticas do relatório
+  const reportMetrics = useMemo(() => {
+    let totalReceitas = 0;
+    let totalDespesas = 0;
+    const byCategoryDespesas: Record<string, { amount: number; count: number }> = {};
+    const byCategoryReceitas: Record<string, { amount: number; count: number }> = {};
+
+    reportTransactions.forEach((tx) => {
+      const val = Number(tx.amount) || 0;
+      if (tx.type === 'receita') {
+        totalReceitas += val;
+        if (!byCategoryReceitas[tx.category]) {
+          byCategoryReceitas[tx.category] = { amount: 0, count: 0 };
+        }
+        byCategoryReceitas[tx.category].amount += val;
+        byCategoryReceitas[tx.category].count += 1;
+      } else {
+        totalDespesas += val;
+        if (!byCategoryDespesas[tx.category]) {
+          byCategoryDespesas[tx.category] = { amount: 0, count: 0 };
+        }
+        byCategoryDespesas[tx.category].amount += val;
+        byCategoryDespesas[tx.category].count += 1;
+      }
+    });
+
+    const saldo = totalReceitas - totalDespesas;
+    return {
+      totalReceitas,
+      totalDespesas,
+      saldo,
+      byCategoryDespesas,
+      byCategoryReceitas,
+      totalCount: reportTransactions.length,
+    };
+  }, [reportTransactions]);
+
+  // Rótulo textual do período
+  const reportPeriodLabel = useMemo(() => {
+    if (reportPeriod === 'month') return formatYearMonth(reportCustomMonth);
+    if (reportPeriod === 'previous_month') return formatYearMonth(previousMonthYM);
+    if (reportPeriod === 'quarter') return 'Últimos 90 Dias (Trimestre)';
+    if (reportPeriod === 'year') return `Ano Completo de ${reportCustomYear}`;
+    return 'Histórico Completo';
+  }, [reportPeriod, reportCustomMonth, previousMonthYM, reportCustomYear]);
+
+  // Texto formatado para envio no WhatsApp ou Cópia
+  const generateReportText = () => {
+    let txt = `📊 *RELATÓRIO FINANCEIRO • ${userTeamName.toUpperCase()}*\n`;
+    txt += `📅 *Período:* ${reportPeriodLabel}\n`;
+    txt += `🕒 *Gerado em:* ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}\n\n`;
+
+    txt += `💰 *BALANÇO GERAL:*\n`;
+    txt += `🟢 Total Entradas / Receitas: R$ ${reportMetrics.totalReceitas.toFixed(2).replace('.', ',')}\n`;
+    txt += `🔴 Total Saídas / Despesas: R$ ${reportMetrics.totalDespesas.toFixed(2).replace('.', ',')}\n`;
+    txt += `💵 Saldo Líquido do Período: R$ ${reportMetrics.saldo.toFixed(2).replace('.', ',')} ${reportMetrics.saldo >= 0 ? '🟢' : '🔴'}\n`;
+    txt += `📊 Total de Movimentações: ${reportMetrics.totalCount} lançamentos\n\n`;
+
+    const despesasEntries = Object.entries(reportMetrics.byCategoryDespesas).sort(
+      (a, b) => b[1].amount - a[1].amount
+    );
+    if (despesasEntries.length > 0) {
+      txt += `📉 *DESPESAS POR CATEGORIA:*\n`;
+      despesasEntries.forEach(([catKey, data]) => {
+        const catInfo = CATEGORY_INFO[catKey] || CATEGORY_INFO.outro;
+        const pct =
+          reportMetrics.totalDespesas > 0
+            ? Math.round((data.amount / reportMetrics.totalDespesas) * 100)
+            : 0;
+        txt += `• ${catInfo.label}: R$ ${data.amount.toFixed(2).replace('.', ',')} (${pct}%)\n`;
+      });
+      txt += `\n`;
+    }
+
+    const receitasEntries = Object.entries(reportMetrics.byCategoryReceitas).sort(
+      (a, b) => b[1].amount - a[1].amount
+    );
+    if (receitasEntries.length > 0) {
+      txt += `📈 *RECEITAS POR CATEGORIA:*\n`;
+      receitasEntries.forEach(([catKey, data]) => {
+        const catInfo = CATEGORY_INFO[catKey] || CATEGORY_INFO.outro;
+        const pct =
+          reportMetrics.totalReceitas > 0
+            ? Math.round((data.amount / reportMetrics.totalReceitas) * 100)
+            : 0;
+        txt += `• ${catInfo.label}: R$ ${data.amount.toFixed(2).replace('.', ',')} (${pct}%)\n`;
+      });
+      txt += `\n`;
+    }
+
+    if (reportPeriod === 'month') {
+      txt += `💳 *MENSALIDADES DO MÊS:*\n`;
+      txt += `• Quitação: ${monthlyStats.paidCount} de ${teamPlayers.length} atletas (${monthlyStats.pct}%)\n`;
+      txt += `• Valor Arrecadado: R$ ${monthlyStats.totalPaidAmount},00\n`;
+      txt += `• Valor Pendente: R$ ${monthlyStats.totalPendingAmount},00\n\n`;
+    }
+
+    if (reportTransactions.length > 0) {
+      txt += `📝 *ÚLTIMAS MOVIMENTAÇÕES:*\n`;
+      reportTransactions.slice(0, 8).forEach((t) => {
+        const sign = t.type === 'receita' ? '+' : '-';
+        txt += `• ${formatDateDisplay(t.date)}: ${t.description} (${sign} R$ ${Number(t.amount).toFixed(2).replace('.', ',')})\n`;
+      });
+      if (reportTransactions.length > 8) {
+        txt += `• ... e mais ${reportTransactions.length - 8} movimentações.\n`;
+      }
+      txt += `\n`;
+    }
+
+    txt += `⚽ _FutPlay Lite • Gestão e Transparência do Futebol_`;
+    return txt;
+  };
+
+  const handleShareWhatsAppReport = () => {
+    const txt = generateReportText();
+    window.open(`https://wa.me/?text=${encodeURIComponent(txt)}`, '_blank');
+  };
+
+  const handleCopyReport = () => {
+    const txt = generateReportText();
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(txt);
+      setCopiedReport(true);
+      setTimeout(() => setCopiedReport(false), 2500);
+    }
+  };
+
+  const handlePrintReport = () => {
+    window.print();
+  };
+
   // Copiar chave PIX
   const handleCopyPix = () => {
     const pix = monthlyConfig?.pixKey || '77988001122';
@@ -595,31 +787,43 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
           )}
         </div>
 
-        {/* Alternador de Abas: [Caixa & Extrato] vs [Mensalidades] */}
-        <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl border border-slate-200">
+        {/* Alternador de 3 Abas: [Caixa] vs [Mensalidades] vs [Relatórios] */}
+        <div className="grid grid-cols-3 p-1 bg-slate-100 rounded-2xl border border-slate-200">
           <button
             type="button"
             onClick={() => setActiveTab('caixa')}
-            className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-black transition cursor-pointer ${
               activeTab === 'caixa'
                 ? 'bg-white text-emerald-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Wallet className="h-4 w-4 text-emerald-600" />
-            <span>Caixa & Extrato</span>
+            <Wallet className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+            <span className="truncate">Caixa</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('mensalidades')}
-            className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-black transition cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-black transition cursor-pointer ${
               activeTab === 'mensalidades'
                 ? 'bg-white text-emerald-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <CreditCard className="h-4 w-4 text-blue-600" />
-            <span>Mensalidades</span>
+            <CreditCard className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+            <span className="truncate">Mensalidades</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('relatorios')}
+            className={`flex items-center justify-center gap-1.5 py-2 px-1 sm:px-2 rounded-xl text-xs font-black transition cursor-pointer ${
+              activeTab === 'relatorios'
+                ? 'bg-white text-emerald-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <BarChart3 className="h-3.5 w-3.5 text-purple-600 shrink-0" />
+            <span className="truncate">Relatórios</span>
           </button>
         </div>
       </div>
@@ -813,7 +1017,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
                 </p>
               </div>
 
-              {isCoachOrAdmin && myTeamTransactions.length === 0 && (
+              {myTeamTransactions.length === 0 && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1358,6 +1562,528 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
         </div>
       )}
 
+      {/* ========================================================= */}
+      {/* ABA 3: RELATÓRIOS FINANCEIROS                             */}
+      {/* ========================================================= */}
+      {activeTab === 'relatorios' && (
+        <div className="space-y-4 animate-fadeIn">
+          {/* Seletor de Período do Relatório */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-800">
+                <Calendar className="h-4 w-4 text-purple-600" />
+                <span>Período do Relatório</span>
+              </div>
+              <span className="font-mono text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
+                {reportPeriodLabel}
+              </span>
+            </div>
+
+            {/* Chips de Seleção Rápida */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+              <button
+                type="button"
+                onClick={() => setReportPeriod('month')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  reportPeriod === 'month'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Mês Atual
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReportPeriod('previous_month')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  reportPeriod === 'previous_month'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Mês Anterior
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReportPeriod('quarter')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  reportPeriod === 'quarter'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Últimos 90 Dias
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReportPeriod('year')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  reportPeriod === 'year'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Ano Todo
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReportPeriod('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+                  reportPeriod === 'all'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Tudo
+              </button>
+            </div>
+
+            {/* Navegador de Mês caso 'month' esteja selecionado */}
+            {reportPeriod === 'month' && (
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setReportCustomMonth((prev) => getAdjacentMonth(prev, -1))}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-xs font-black text-slate-800">
+                  {formatYearMonth(reportCustomMonth)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReportCustomMonth((prev) => getAdjacentMonth(prev, 1))}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Navegador de Ano caso 'year' esteja selecionado */}
+            {reportPeriod === 'year' && (
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setReportCustomYear((prev) => prev - 1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-xs font-black text-slate-800 font-mono">
+                  Ano {reportCustomYear}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setReportCustomYear((prev) => prev + 1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Barra de Ações: Gerar e Exportar Relatório */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button
+              type="button"
+              onClick={handleShareWhatsAppReport}
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-xs active:scale-95 transition cursor-pointer"
+              title="Compartilhar resumo financeiro pronto no WhatsApp do Time"
+            >
+              <MessageCircle className="h-4 w-4 fill-white" />
+              <span>WhatsApp</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyReport}
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 font-bold text-xs shadow-2xs active:scale-95 transition cursor-pointer"
+              title="Copiar relatório formatado em texto"
+            >
+              {copiedReport ? (
+                <>
+                  <CheckCheck className="h-4 w-4 text-emerald-600" />
+                  <span className="text-emerald-700 font-black">Copiado!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="h-4 w-4 text-slate-600" />
+                  <span>Copiar Texto</span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrintReport}
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 font-bold text-xs shadow-2xs active:scale-95 transition cursor-pointer"
+              title="Imprimir ou Salvar em PDF"
+            >
+              <Printer className="h-4 w-4 text-slate-600" />
+              <span>Imprimir / PDF</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowAnalyticModal(true)}
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 font-bold text-xs shadow-2xs active:scale-95 transition cursor-pointer"
+              title="Abrir extrato analítico completo para conferência"
+            >
+              <FileSpreadsheet className="h-4 w-4 text-purple-600" />
+              <span>Extrato Geral</span>
+            </button>
+          </div>
+
+          {/* Card Executivo Principal do Relatório */}
+          <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-5 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 -mr-6 -mt-6 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="flex items-center justify-between text-xs text-slate-300 mb-2">
+              <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[11px]">
+                <BarChart3 className="h-4 w-4 text-purple-400" />
+                <span>Balanço do Período</span>
+              </div>
+              <span className="font-mono text-[10px] bg-white/10 px-2 py-0.5 rounded-full border border-white/10 text-slate-300">
+                {reportPeriodLabel}
+              </span>
+            </div>
+
+            <div className="my-2">
+              <div
+                className={`font-mono text-3xl sm:text-4xl font-black tracking-tight ${
+                  reportMetrics.saldo >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                }`}
+              >
+                R$ {reportMetrics.saldo.toFixed(2).replace('.', ',')}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5">
+                {reportMetrics.saldo >= 0 ? (
+                  <>
+                    <TrendingUp className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <span>Saldo Positivo: o time arrecadou mais do que gastou no período.</span>
+                  </>
+                ) : (
+                  <>
+                    <TrendingDown className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                    <span>Déficit no Período: despesas superaram as receitas.</span>
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Grid com Entradas, Saídas e Lançamentos */}
+            <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-slate-700/60 text-center">
+              <div className="rounded-2xl bg-white/5 border border-white/10 p-2.5">
+                <div className="text-[9px] font-black uppercase tracking-wider text-emerald-300">
+                  Receitas
+                </div>
+                <div className="font-mono text-sm sm:text-base font-black text-emerald-300 mt-0.5">
+                  + R$ {reportMetrics.totalReceitas.toFixed(2).replace('.', ',')}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white/5 border border-white/10 p-2.5">
+                <div className="text-[9px] font-black uppercase tracking-wider text-rose-300">
+                  Despesas
+                </div>
+                <div className="font-mono text-sm sm:text-base font-black text-rose-300 mt-0.5">
+                  - R$ {reportMetrics.totalDespesas.toFixed(2).replace('.', ',')}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white/5 border border-white/10 p-2.5">
+                <div className="text-[9px] font-black uppercase tracking-wider text-purple-300">
+                  Registros
+                </div>
+                <div className="font-mono text-sm sm:text-base font-black text-purple-300 mt-0.5">
+                  {reportMetrics.totalCount} lançamentos
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Gráfico de Barras: Distribuição das Despesas por Categoria */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xs space-y-3.5 text-left">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-800">
+                <TrendingDown className="h-4 w-4 text-rose-600" />
+                <span>Despesas por Categoria</span>
+              </div>
+              <span className="font-mono text-[11px] font-black text-rose-600">
+                R$ {reportMetrics.totalDespesas.toFixed(2).replace('.', ',')}
+              </span>
+            </div>
+
+            {Object.keys(reportMetrics.byCategoryDespesas).length === 0 ? (
+              <p className="text-xs text-slate-500 py-3 text-center">
+                Nenhuma despesa registrada no período selecionado.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {Object.entries(reportMetrics.byCategoryDespesas)
+                  .sort((a, b) => b[1].amount - a[1].amount)
+                  .map(([catKey, data]) => {
+                    const catInfo = CATEGORY_INFO[catKey] || CATEGORY_INFO.outro;
+                    const CatIcon = catInfo.icon;
+                    const pct =
+                      reportMetrics.totalDespesas > 0
+                        ? Math.round((data.amount / reportMetrics.totalDespesas) * 100)
+                        : 0;
+
+                    return (
+                      <div key={catKey} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`flex h-6 w-6 items-center justify-center rounded-lg border ${catInfo.bg} ${catInfo.border} ${catInfo.color}`}
+                            >
+                              <CatIcon className="h-3.5 w-3.5" />
+                            </div>
+                            <span className="font-bold text-slate-800">
+                              {catInfo.label}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              ({data.count}x)
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 font-mono">
+                            <span className="font-black text-slate-900">
+                              R$ {data.amount.toFixed(2).replace('.', ',')}
+                            </span>
+                            <span className="text-[10px] font-black text-slate-400 w-8 text-right">
+                              {pct}%
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Barra de Progresso Visual */}
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full bg-rose-500 rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+
+          {/* Gráfico de Barras: Distribuição das Receitas por Categoria */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xs space-y-3.5 text-left">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-800">
+                <TrendingUp className="h-4 w-4 text-emerald-600" />
+                <span>Receitas por Categoria</span>
+              </div>
+              <span className="font-mono text-[11px] font-black text-emerald-600">
+                R$ {reportMetrics.totalReceitas.toFixed(2).replace('.', ',')}
+              </span>
+            </div>
+
+            {Object.keys(reportMetrics.byCategoryReceitas).length === 0 ? (
+              <p className="text-xs text-slate-500 py-3 text-center">
+                Nenhuma receita registrada no período selecionado.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {Object.entries(reportMetrics.byCategoryReceitas)
+                  .sort((a, b) => b[1].amount - a[1].amount)
+                  .map(([catKey, data]) => {
+                    const catInfo = CATEGORY_INFO[catKey] || CATEGORY_INFO.outro;
+                    const CatIcon = catInfo.icon;
+                    const pct =
+                      reportMetrics.totalReceitas > 0
+                        ? Math.round((data.amount / reportMetrics.totalReceitas) * 100)
+                        : 0;
+
+                    return (
+                      <div key={catKey} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`flex h-6 w-6 items-center justify-center rounded-lg border ${catInfo.bg} ${catInfo.border} ${catInfo.color}`}
+                            >
+                              <CatIcon className="h-3.5 w-3.5" />
+                            </div>
+                            <span className="font-bold text-slate-800">
+                              {catInfo.label}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              ({data.count}x)
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 font-mono">
+                            <span className="font-black text-slate-900">
+                              R$ {data.amount.toFixed(2).replace('.', ',')}
+                            </span>
+                            <span className="text-[10px] font-black text-slate-400 w-8 text-right">
+                              {pct}%
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Barra de Progresso Visual */}
+                        <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+
+          {/* Seção das Mensalidades no Relatório Mensal */}
+          {reportPeriod === 'month' && (
+            <div className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-4 sm:p-5 shadow-2xs space-y-3 text-left">
+              <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600 text-white font-bold">
+                    <CreditCard className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-emerald-900">
+                      Adimplência das Mensalidades ({formatYearMonth(reportCustomMonth)})
+                    </h4>
+                    <p className="text-[10px] text-emerald-700">
+                      Taxa de adesão do time: {monthlyStats.pct}%
+                    </p>
+                  </div>
+                </div>
+
+                <span className="font-mono text-xs font-black text-emerald-800">
+                  R$ {monthlyStats.totalPaidAmount},00
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl bg-white/90 border border-emerald-200 p-2.5">
+                  <div className="text-[9px] font-bold text-slate-500 uppercase">
+                    Quitadas no Mês
+                  </div>
+                  <div className="font-mono text-sm font-black text-emerald-700 mt-0.5">
+                    {monthlyStats.paidCount} atletas
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-white/90 border border-emerald-200 p-2.5">
+                  <div className="text-[9px] font-bold text-slate-500 uppercase">
+                    Pendentes no Mês
+                  </div>
+                  <div className="font-mono text-sm font-black text-rose-600 mt-0.5">
+                    {monthlyStats.pendingCount} atletas (R$ {monthlyStats.totalPendingAmount},00)
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Extrato Analítico dos Lançamentos do Período */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-2xs space-y-3 text-left">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+              <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-800">
+                <FileText className="h-4 w-4 text-purple-600" />
+                <span>Extrato do Período ({reportTransactions.length})</span>
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setReportTypeFilter('all')}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    reportTypeFilter === 'all'
+                      ? 'bg-white text-slate-900 shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportTypeFilter('receita')}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    reportTypeFilter === 'receita'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'text-emerald-700 hover:bg-emerald-50'
+                  }`}
+                >
+                  Receitas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReportTypeFilter('despesa')}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                    reportTypeFilter === 'despesa'
+                      ? 'bg-rose-600 text-white shadow-2xs'
+                      : 'text-rose-700 hover:bg-rose-50'
+                  }`}
+                >
+                  Despesas
+                </button>
+              </div>
+            </div>
+
+            {reportDisplayTransactions.length === 0 ? (
+              <p className="text-xs text-slate-500 py-4 text-center">
+                Nenhum lançamento corresponde ao filtro neste período.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {reportDisplayTransactions.map((tx) => {
+                  const cat = CATEGORY_INFO[tx.category] || CATEGORY_INFO.outro;
+                  const isReceita = tx.type === 'receita';
+
+                  return (
+                    <div
+                      key={tx.id}
+                      className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-slate-400">
+                            {formatDateDisplay(tx.date)}
+                          </span>
+                          <span className="text-[10px] text-slate-300">•</span>
+                          <span className="text-[10px] font-semibold text-slate-500 truncate">
+                            {cat.label}
+                          </span>
+                        </div>
+                        <h5 className="text-xs font-bold text-slate-900 truncate mt-0.5">
+                          {tx.description}
+                        </h5>
+                      </div>
+
+                      <div
+                        className={`font-mono text-xs sm:text-sm font-black shrink-0 ${
+                          isReceita ? 'text-emerald-600' : 'text-rose-600'
+                        }`}
+                      >
+                        {isReceita ? '+' : '-'} R${' '}
+                        {Number(tx.amount).toFixed(2).replace('.', ',')}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ==================================================== */}
       {/* MODAL 1: NOVO LANÇAMENTO FINANCEIRO (RECEITA/DESPESA) */}
       {/* ==================================================== */}
@@ -1816,6 +2542,137 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
                 className="flex-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 py-2.5 text-xs font-black text-white shadow-xs transition active:scale-95 cursor-pointer"
               >
                 Salvar Configurações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* MODAL 5: EXTRATO ANALÍTICO COMPLETO PARA IMPRESSÃO   */}
+      {/* ==================================================== */}
+      {showAnalyticModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn">
+          <div className="relative w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <TeamCrestBadge name={userTeamName} size={30} />
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wide">
+                    Extrato Analítico Financeiro
+                  </h3>
+                  <p className="text-[10px] text-slate-500">
+                    {userTeamName} • {reportPeriodLabel}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAnalyticModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Resumo do Balanço no Modal */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-2">
+                <div className="text-[9px] font-bold uppercase text-emerald-800">
+                  Total Receitas
+                </div>
+                <div className="font-mono text-xs sm:text-sm font-black text-emerald-700 mt-0.5">
+                  R$ {reportMetrics.totalReceitas.toFixed(2).replace('.', ',')}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-rose-50 border border-rose-200 p-2">
+                <div className="text-[9px] font-bold uppercase text-rose-800">
+                  Total Despesas
+                </div>
+                <div className="font-mono text-xs sm:text-sm font-black text-rose-700 mt-0.5">
+                  R$ {reportMetrics.totalDespesas.toFixed(2).replace('.', ',')}
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-900 text-white p-2">
+                <div className="text-[9px] font-bold uppercase text-slate-300">
+                  Saldo Líquido
+                </div>
+                <div
+                  className={`font-mono text-xs sm:text-sm font-black mt-0.5 ${
+                    reportMetrics.saldo >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  }`}
+                >
+                  R$ {reportMetrics.saldo.toFixed(2).replace('.', ',')}
+                </div>
+              </div>
+            </div>
+
+            {/* Tabela de Lançamentos com Scroll */}
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 border rounded-2xl p-2 border-slate-100 bg-slate-50/50">
+              {reportTransactions.length === 0 ? (
+                <p className="text-xs text-slate-500 py-6 text-center">
+                  Nenhuma movimentação neste período.
+                </p>
+              ) : (
+                reportTransactions.map((tx) => {
+                  const isReceita = tx.type === 'receita';
+                  const cat = CATEGORY_INFO[tx.category] || CATEGORY_INFO.outro;
+                  return (
+                    <div
+                      key={tx.id}
+                      className="rounded-lg bg-white p-2 border border-slate-200/70 flex items-center justify-between text-xs"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+                          <span className="font-bold">{formatDateDisplay(tx.date)}</span>
+                          <span>•</span>
+                          <span>{cat.label}</span>
+                          {tx.createdByName && (
+                            <>
+                              <span>•</span>
+                              <span className="truncate">Por: {tx.createdByName}</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="font-bold text-slate-900 truncate mt-0.5">
+                          {tx.description}
+                        </div>
+                      </div>
+
+                      <div
+                        className={`font-mono font-black shrink-0 ${
+                          isReceita ? 'text-emerald-600' : 'text-rose-600'
+                        }`}
+                      >
+                        {isReceita ? '+' : '-'} R${' '}
+                        {Number(tx.amount).toFixed(2).replace('.', ',')}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Ações de Impressão e Envio */}
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handlePrintReport}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <Printer className="h-4 w-4" />
+                <span>Imprimir / PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareWhatsAppReport}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 py-2.5 text-xs font-black text-white shadow-xs transition active:scale-95 cursor-pointer"
+              >
+                <MessageCircle className="h-4 w-4 fill-white" />
+                <span>Enviar no WhatsApp</span>
               </button>
             </div>
           </div>
