@@ -511,7 +511,7 @@ const MainMobileShell: React.FC = () => {
                       </button>
                     )}
 
-                    {isTeamCreator && !isAdmin && (
+                    {!isAdmin && (
                       <button
                         type="button"
                         onClick={() => {
@@ -522,10 +522,10 @@ const MainMobileShell: React.FC = () => {
                       >
                         <div className="flex items-center gap-2">
                           <CreditCard className="h-3.5 w-3.5 text-emerald-600" />
-                          <span>Mensalidades</span>
+                          <span>{isTeamCreator ? 'Mensalidades da Pelada' : 'Minha Mensalidade'}</span>
                         </div>
                         <span className="font-mono text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
-                          PIX & Caixa
+                          {isTeamCreator ? 'PIX & Caixa' : 'PIX & Status'}
                         </span>
                       </button>
                     )}
@@ -571,7 +571,10 @@ const MainMobileShell: React.FC = () => {
           ) : (
             <>
               {activeTab === 'dashboard' && (
-                <DashboardView onNavigate={handleNavigate} />
+                <DashboardView
+                  onNavigate={handleNavigate}
+                  onOpenMonthlyFees={() => setShowMonthlyFeesPage(true)}
+                />
               )}
               {activeTab === 'matches' && (
                 <MatchesAndValidationView
