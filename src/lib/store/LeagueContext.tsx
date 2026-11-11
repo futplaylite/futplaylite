@@ -25,6 +25,7 @@ import {
   SeasonEntry,
   SumulaData,
   TeamModality,
+  TeamTransaction,
   User,
   UserRole,
 } from '../../types/league';
@@ -155,6 +156,7 @@ interface LeagueState {
   peerEvaluations: PeerEvaluation[];
   monthlyPayments: MonthlyPaymentRecord[];
   monthlyConfig: PeladaMonthlyConfig;
+  teamTransactions: TeamTransaction[];
 }
 
 interface LeagueContextValue extends LeagueState {
@@ -275,6 +277,8 @@ interface LeagueContextValue extends LeagueState {
   ) => boolean;
   updateMonthlyConfig: (config: Partial<PeladaMonthlyConfig>) => boolean;
   finalizePeladaSumula: (sumula: SumulaData) => boolean;
+  addTeamTransaction: (tx: Omit<TeamTransaction, 'id' | 'createdAt'>) => boolean;
+  deleteTeamTransaction: (id: string) => boolean;
 }
 
 const LeagueContext = createContext<LeagueContextValue | null>(null);
@@ -299,6 +303,13 @@ function getInitialState(): LeagueState {
           p.id !== 'a0000000-0000-4000-8000-000000000002' &&
           p.userId !== 'a0000000-0000-4000-8000-000000000001'
       );
+      let transactions = parsed.teamTransactions || [];
+      if (!transactions || transactions.length === 0) {
+        try {
+          const rawTx = localStorage.getItem('futplay_team_financial_transactions_v1');
+          if (rawTx) transactions = JSON.parse(rawTx);
+        } catch (e) {}
+      }
       return {
         ...parsed,
         users: parsed.users || [],
@@ -307,11 +318,17 @@ function getInitialState(): LeagueState {
         peerEvaluations: parsed.peerEvaluations || [],
         monthlyPayments: parsed.monthlyPayments || [],
         monthlyConfig: parsed.monthlyConfig || DEFAULT_MONTHLY_CONFIG,
+        teamTransactions: transactions,
       };
     }
   } catch (e) {
     console.warn('Falha ao ler estado salvo, usando dados iniciais:', e);
   }
+  let initialTx: TeamTransaction[] = [];
+  try {
+    const rawTx = localStorage.getItem('futplay_team_financial_transactions_v1');
+    if (rawTx) initialTx = JSON.parse(rawTx);
+  } catch (e) {}
   return {
     users: INITIAL_USERS,
     cities: INITIAL_CITIES,
@@ -332,6 +349,7 @@ function getInitialState(): LeagueState {
     peerEvaluations: [],
     monthlyPayments: [],
     monthlyConfig: DEFAULT_MONTHLY_CONFIG,
+    teamTransactions: initialTx,
   };
 }
 
@@ -2399,6 +2417,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       peerEvaluations: [],
       monthlyPayments: [],
       monthlyConfig: DEFAULT_MONTHLY_CONFIG,
+      teamTransactions: [],
     });
     setCurrentUserId('');
     notify(
@@ -2688,6 +2707,45 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     return true;
   };
 
+  const addTeamTransaction: LeagueContextValue['addTeamTransaction'] = (tx) => {
+    const newTx: TeamTransaction = {
+      ...tx,
+      id: 'tx-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      createdAt: new Date().toISOString(),
+    };
+    setState((prev) => {
+      const updated = [newTx, ...(prev.teamTransactions || [])];
+      try {
+        localStorage.setItem('futplay_team_financial_transactions_v1', JSON.stringify(updated));
+      } catch (e) {}
+      return {
+        ...prev,
+        teamTransactions: updated,
+      };
+    });
+    notify(
+      'success',
+      tx.type === 'receita' ? 'Receita Registrada' : 'Despesa Registrada',
+      `R$ ${tx.amount.toFixed(2)} registrado no caixa do time.`
+    );
+    return true;
+  };
+
+  const deleteTeamTransaction: LeagueContextValue['deleteTeamTransaction'] = (id) => {
+    setState((prev) => {
+      const updated = (prev.teamTransactions || []).filter((t) => t.id !== id);
+      try {
+        localStorage.setItem('futplay_team_financial_transactions_v1', JSON.stringify(updated));
+      } catch (e) {}
+      return {
+        ...prev,
+        teamTransactions: updated,
+      };
+    });
+    notify('info', 'Lançamento Removido', 'A movimentação foi excluída com sucesso.');
+    return true;
+  };
+
   const saveUserWhatsapp: LeagueContextValue['saveUserWhatsapp'] = (
     whatsappNumber
   ) => {
@@ -2937,6 +2995,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         toggleMonthlyPayment,
         updateMonthlyConfig,
         finalizePeladaSumula,
+        addTeamTransaction,
+        deleteTeamTransaction,
       }}
     >
       {children}

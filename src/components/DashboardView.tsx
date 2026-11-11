@@ -25,6 +25,7 @@ import {
   Swords,
   Trophy,
   Users,
+  Wallet,
   X,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
@@ -219,6 +220,7 @@ interface DashboardViewProps {
     playerIdToOpen?: string
   ) => void;
   onOpenMonthlyFees?: () => void;
+  onOpenFinancial?: () => void;
 }
 
 export function getMatchStatusBadge(status: MatchStatus) {
@@ -261,7 +263,11 @@ export function getMatchStatusBadge(status: MatchStatus) {
   }
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpenMonthlyFees }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({
+  onNavigate,
+  onOpenMonthlyFees,
+  onOpenFinancial,
+}) => {
   const {
     currentUser,
     currentPlayerProfile,
@@ -1992,11 +1998,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
               </button>
             )}
 
-            {/* Atalho Rápido para Mensalidades da Pelada */}
+            {/* Atalho Rápido para Financeiro do Time */}
             <button
               type="button"
               onClick={() => {
-                if (onOpenMonthlyFees) {
+                if (onOpenFinancial) {
+                  onOpenFinancial();
+                } else if (onOpenMonthlyFees) {
                   onOpenMonthlyFees();
                 } else {
                   onNavigate('squad');
@@ -2005,11 +2013,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate, onOpen
               className="mt-2 w-full flex items-center justify-between py-1.5 px-3 rounded-lg text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition active:scale-[0.98]"
             >
               <div className="flex items-center gap-1.5">
-                <CreditCard className="h-3.5 w-3.5 text-emerald-400" />
-                <span>{isCoach ? 'Mensalidades da Pelada' : 'Minha Mensalidade'}</span>
+                <Wallet className="h-3.5 w-3.5 text-emerald-400" />
+                <span>Financeiro</span>
               </div>
               <span className="text-emerald-300 font-mono text-[10px]">
-                {isCoach ? 'Gerenciar Caixa & PIX ›' : 'Ver Status & PIX ›'}
+                Caixa & Extrato ›
               </span>
             </button>
           </div>

@@ -392,6 +392,33 @@ export interface PeladaMonthlyConfig {
   pixReceiverName: string;
 }
 
+export type TransactionType = 'receita' | 'despesa';
+
+export type TransactionCategory =
+  | 'mensalidade'
+  | 'aluguel'
+  | 'equipamento'
+  | 'arbitragem'
+  | 'confraternizacao'
+  | 'patrocinio'
+  | 'premiacao'
+  | 'uniforme'
+  | 'outro';
+
+export interface TeamTransaction {
+  id: string;
+  teamName: string;
+  type: TransactionType;
+  category: TransactionCategory | string;
+  description: string;
+  amount: number;
+  date: string; // "YYYY-MM-DD"
+  createdByName?: string;
+  createdByUserId?: string;
+  createdAt: string;
+  notes?: string;
+}
+
 export interface SumulaData {
   id: string;
   status: 'em_andamento' | 'finalizada';
