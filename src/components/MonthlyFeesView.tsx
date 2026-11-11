@@ -211,8 +211,22 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     refreshTeamTransactions();
   }, []);
 
-  // Aba principal: 'caixa', 'mensalidades' ou 'relatorios'
-  const [activeTab, setActiveTab] = useState<'caixa' | 'mensalidades' | 'relatorios'>('caixa');
+  // Aba principal: 'caixa', 'mensalidades' ou 'relatorios' (preservada ao atualizar a página)
+  const [activeTab, setActiveTab] = useState<'caixa' | 'mensalidades' | 'relatorios'>(() => {
+    try {
+      const saved = sessionStorage.getItem('futplay_finance_subtab_v1');
+      if (saved === 'caixa' || saved === 'mensalidades' || saved === 'relatorios') {
+        return saved;
+      }
+    } catch {}
+    return 'caixa';
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('futplay_finance_subtab_v1', activeTab);
+    } catch {}
+  }, [activeTab]);
 
   // Identificação do perfil do usuário atual
   const myProfile = currentPlayerProfile || profiles.find((p) => p.userId === currentUser?.id);
@@ -238,7 +252,19 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     myProfile?.isTeamOwner === true ||
     currentUser?.id === 'user-paredao';
 
-  const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentYearMonth);
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    try {
+      const saved = sessionStorage.getItem('futplay_finance_month_v1');
+      if (saved && /^\d{4}-\d{2}$/.test(saved)) return saved;
+    } catch {}
+    return getCurrentYearMonth();
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('futplay_finance_month_v1', selectedMonth);
+    } catch {}
+  }, [selectedMonth]);
   const [filter, setFilter] = useState<'all' | 'paid' | 'pending'>('all');
   const [copiedPix, setCopiedPix] = useState<boolean>(false);
   const [showConfig, setShowConfig] = useState<boolean>(false);

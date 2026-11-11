@@ -57,7 +57,19 @@ export const MatchesAndValidationView: React.FC<
     currentPlayerProfile?.isTeamOwner === true;
 
   // Categoria de Partida: 'treino' (via Súmula) ou 'oficial' (Time vs Time cadastrado)
-  const [matchCategory, setMatchCategory] = useState<'treino' | 'oficial'>('treino');
+  const [matchCategory, setMatchCategory] = useState<'treino' | 'oficial'>(() => {
+    try {
+      const saved = sessionStorage.getItem('futplay_matches_category_v1');
+      if (saved === 'treino' || saved === 'oficial') return saved;
+    } catch {}
+    return 'treino';
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('futplay_matches_category_v1', matchCategory);
+    } catch {}
+  }, [matchCategory]);
   const [showCreateOfficialModal, setShowCreateOfficialModal] = useState<boolean>(false);
   const [officialMatchSuccessToast, setOfficialMatchSuccessToast] = useState<string | null>(null);
 
@@ -133,13 +145,53 @@ export const MatchesAndValidationView: React.FC<
     setTimeout(() => setOfficialMatchSuccessToast(null), 3500);
   };
 
-  const [selectedMatchId, setSelectedMatchId] = useState<string>(
-    initialMatchId || matches[1]?.id || matches[0]?.id
-  );
+  const [selectedMatchId, setSelectedMatchId] = useState<string>(() => {
+    if (initialMatchId) return initialMatchId;
+    try {
+      const saved = sessionStorage.getItem('futplay_matches_selected_id_v1');
+      if (saved) return saved;
+    } catch {}
+    return matches[1]?.id || matches[0]?.id;
+  });
+
   const [activeSumulaView, setActiveSumulaView] = useState<
     'none' | 'pelada' | 'oficial'
-  >('none');
-  const [selectedSumulaId, setSelectedSumulaId] = useState<string | undefined>();
+  >(() => {
+    try {
+      const saved = sessionStorage.getItem('futplay_matches_sumula_view_v1');
+      if (saved === 'none' || saved === 'pelada' || saved === 'oficial') {
+        return saved;
+      }
+    } catch {}
+    return 'none';
+  });
+
+  const [selectedSumulaId, setSelectedSumulaId] = useState<string | undefined>(() => {
+    try {
+      return sessionStorage.getItem('futplay_matches_sumula_id_v1') || undefined;
+    } catch {
+      return undefined;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (selectedMatchId) sessionStorage.setItem('futplay_matches_selected_id_v1', selectedMatchId);
+    } catch {}
+  }, [selectedMatchId]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('futplay_matches_sumula_view_v1', activeSumulaView);
+    } catch {}
+  }, [activeSumulaView]);
+
+  useEffect(() => {
+    try {
+      if (selectedSumulaId) sessionStorage.setItem('futplay_matches_sumula_id_v1', selectedSumulaId);
+      else sessionStorage.removeItem('futplay_matches_sumula_id_v1');
+    } catch {}
+  }, [selectedSumulaId]);
   const [isCreatingNewSumula, setIsCreatingNewSumula] = useState<boolean>(false);
   const [blockedSumulaNotice, setBlockedSumulaNotice] = useState<string | null>(null);
   const [sumulaToDelete, setSumulaToDelete] = useState<SumulaData | null>(null);

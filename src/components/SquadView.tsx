@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Award,
   Check,
@@ -116,7 +116,24 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
   // Estados locais
   const [inspectingPlayerId, setInspectingPlayerId] = useState<
     string | undefined
-  >(initialPlayerId);
+  >(() => {
+    if (initialPlayerId) return initialPlayerId;
+    try {
+      return sessionStorage.getItem('futplay_squad_inspecting_id_v1') || undefined;
+    } catch {
+      return undefined;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (inspectingPlayerId) {
+        sessionStorage.setItem('futplay_squad_inspecting_id_v1', inspectingPlayerId);
+      } else {
+        sessionStorage.removeItem('futplay_squad_inspecting_id_v1');
+      }
+    } catch {}
+  }, [inspectingPlayerId]);
   const [ratingModalPlayer, setRatingModalPlayer] = useState<
     PlayerProfile | null
   >(null);

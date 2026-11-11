@@ -65,9 +65,32 @@ const MainMobileShell: React.FC = () => {
       return false;
     }
   });
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    try {
+      const saved = sessionStorage.getItem('futplay_nav_active_tab_v1') as ActiveTab | null;
+      if (
+        saved === 'dashboard' ||
+        saved === 'matches' ||
+        saved === 'search' ||
+        saved === 'squad' ||
+        saved === 'ranking' ||
+        saved === 'admin'
+      ) {
+        return saved;
+      }
+    } catch {
+      // Ignore
+    }
+    return 'dashboard';
+  });
   const [showProfileMenu, setShowProfileMenu] = useState<boolean>(false);
-  const [showMonthlyFeesPage, setShowMonthlyFeesPage] = useState<boolean>(false);
+  const [showMonthlyFeesPage, setShowMonthlyFeesPage] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('futplay_nav_show_finance_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -99,12 +122,54 @@ const MainMobileShell: React.FC = () => {
     'https://concert-mask-never-seniors.trycloudflare.com'
   );
   const [lanUrl, setLanUrl] = useState<string>('http://192.168.0.102:3000');
-  const [matchIdToOpen, setMatchIdToOpen] = useState<string | undefined>(
-    undefined
-  );
-  const [playerIdToOpen, setPlayerIdToOpen] = useState<string | undefined>(
-    undefined
-  );
+  const [matchIdToOpen, setMatchIdToOpen] = useState<string | undefined>(() => {
+    try {
+      return sessionStorage.getItem('futplay_nav_match_id_v1') || undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  const [playerIdToOpen, setPlayerIdToOpen] = useState<string | undefined>(() => {
+    try {
+      return sessionStorage.getItem('futplay_nav_player_id_v1') || undefined;
+    } catch {
+      return undefined;
+    }
+  });
+
+  // Persiste a página/aba atual por guia para não voltar ao início ao atualizar a página (F5)
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('futplay_nav_active_tab_v1', activeTab);
+    } catch {}
+  }, [activeTab]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('futplay_nav_show_finance_v1', String(showMonthlyFeesPage));
+    } catch {}
+  }, [showMonthlyFeesPage]);
+
+  useEffect(() => {
+    try {
+      if (matchIdToOpen) sessionStorage.setItem('futplay_nav_match_id_v1', matchIdToOpen);
+      else sessionStorage.removeItem('futplay_nav_match_id_v1');
+    } catch {}
+  }, [matchIdToOpen]);
+
+  useEffect(() => {
+    try {
+      if (playerIdToOpen) sessionStorage.setItem('futplay_nav_player_id_v1', playerIdToOpen);
+      else sessionStorage.removeItem('futplay_nav_player_id_v1');
+    } catch {}
+  }, [playerIdToOpen]);
+
+  // Se uma conta não-admin restaurar 'admin', retorna com segurança para 'dashboard'
+  useEffect(() => {
+    if (currentUser.id && activeTab === 'admin' && currentUser.role !== 'admin') {
+      setActiveTab('dashboard');
+    }
+  }, [currentUser.id, currentUser.role, activeTab]);
 
   // Notificação temporária no cabeçalho (substitui o nome do app por 2 segundos com Fade in / Fade out)
   const [activeHeaderNotice, setActiveHeaderNotice] =
@@ -166,6 +231,15 @@ const MainMobileShell: React.FC = () => {
     matchId?: string,
     playerId?: string
   ) => {
+    try {
+      if (!playerId) {
+        sessionStorage.removeItem('futplay_squad_inspecting_id_v1');
+      }
+      if (tab !== 'matches' || (!matchId && activeTab !== 'matches')) {
+        sessionStorage.removeItem('futplay_matches_sumula_view_v1');
+        sessionStorage.removeItem('futplay_matches_sumula_id_v1');
+      }
+    } catch {}
     setShowMonthlyFeesPage(false);
     setMatchIdToOpen(matchId);
     setPlayerIdToOpen(playerId);
@@ -184,6 +258,7 @@ const MainMobileShell: React.FC = () => {
             // Ignore
           }
           setIsAuthenticated(true);
+          setShowMonthlyFeesPage(false);
           setActiveTab('dashboard');
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
@@ -542,10 +617,19 @@ const MainMobileShell: React.FC = () => {
                           localStorage.removeItem('futplay_lite_auth_session_v2');
                           localStorage.removeItem('futplay_lite_auth_session_v3');
                           localStorage.removeItem('futplay_lite_active_user_id_v3');
+                          sessionStorage.removeItem('futplay_nav_active_tab_v1');
+                          sessionStorage.removeItem('futplay_nav_show_finance_v1');
+                          sessionStorage.removeItem('futplay_nav_match_id_v1');
+                          sessionStorage.removeItem('futplay_nav_player_id_v1');
+                          sessionStorage.removeItem('futplay_finance_subtab_v1');
+                          sessionStorage.removeItem('futplay_matches_sumula_view_v1');
+                          sessionStorage.removeItem('futplay_matches_sumula_id_v1');
                         } catch {
                           // Ignore
                         }
                         clearNotification();
+                        setShowMonthlyFeesPage(false);
+                        setActiveTab('dashboard');
                         setIsAuthenticated(false);
                         setShowProfileMenu(false);
                       }}
