@@ -303,13 +303,21 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     return map;
   }, [monthlyPayments, selectedMonth]);
 
-  // Estatísticas de mensalidades do time no mês
+  const isGoalkeeper = (p?: PlayerProfile | null) =>
+    (p?.position || '').trim().toLowerCase() === 'goleiro';
+
+  // Estatísticas de mensalidades do time no mês (goleiros são isentos de pagamento)
   const monthlyStats = useMemo(() => {
     const fee = monthlyConfig?.monthlyAmount || 30;
     let paidCount = 0;
     let pendingCount = 0;
+    let exemptCount = 0;
 
     teamPlayers.forEach((p) => {
+      if (isGoalkeeper(p)) {
+        exemptCount++;
+        return;
+      }
       if (paymentMap.get(p.id)) {
         paidCount++;
       } else {
@@ -317,17 +325,22 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       }
     });
 
+    const payingCount = paidCount + pendingCount;
     const totalPaidAmount = paidCount * fee;
     const totalPendingAmount = pendingCount * fee;
-    const totalExpectedAmount = (paidCount + pendingCount) * fee;
+    const totalExpectedAmount = payingCount * fee;
     const pct =
       totalExpectedAmount > 0
         ? Math.round((totalPaidAmount / totalExpectedAmount) * 100)
+        : payingCount === 0
+        ? 100
         : 0;
 
     return {
       paidCount,
       pendingCount,
+      exemptCount,
+      payingCount,
       totalPaidAmount,
       totalPendingAmount,
       totalExpectedAmount,
@@ -337,6 +350,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
   // Dados do Jogador Atual para o Modo Pessoal
   const myPlayerId = myProfile?.id;
+  const isMyGoalkeeper = isGoalkeeper(myProfile);
   const isMyPaid = myPlayerId ? paymentMap.get(myPlayerId) === true : false;
 
   // Ano atual selecionado para o histórico do atleta
@@ -361,11 +375,12 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
         monthName: name,
         monthShort: MONTH_SHORT_NAMES[index],
         yearMonth: ym,
+        isExempt: isMyGoalkeeper,
         isPaid: record ? record.isPaid : false,
-        amount: record?.amount || monthlyConfig?.monthlyAmount || 30,
+        amount: isMyGoalkeeper ? 0 : record?.amount || monthlyConfig?.monthlyAmount || 30,
       };
     });
-  }, [selectedYear, monthlyPayments, myPlayerId, myProfile?.userId, monthlyConfig?.monthlyAmount]);
+  }, [selectedYear, monthlyPayments, myPlayerId, myProfile?.userId, monthlyConfig?.monthlyAmount, isMyGoalkeeper]);
 
   // ==========================================
   // ESTADOS DO GERENCIADOR DE RECEITAS E DESPESAS (CAIXA)
@@ -493,7 +508,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       description: desc,
       amount: monthlyStats.totalPaidAmount,
       date: new Date().toISOString().split('T')[0],
-      notes: `Arrecadação de mensalidades de ${monthTitle} (${monthlyStats.paidCount} de ${teamPlayers.length} atletas quitados)`,
+      notes: `Arrecadação de mensalidades de ${monthTitle} (${monthlyStats.paidCount} de ${monthlyStats.payingCount} pagantes)`,
       createdByName: myProfile?.displayName || currentUser?.email?.split('@')[0] || 'Comissão',
       createdByUserId: currentUser?.id,
     });
@@ -652,7 +667,10 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
     if (reportPeriod === 'month') {
       txt += `💳 *MENSALIDADES DO MÊS:*\n`;
-      txt += `• Quitação: ${monthlyStats.paidCount} de ${teamPlayers.length} atletas (${monthlyStats.pct}%)\n`;
+      txt += `• Quitação: ${monthlyStats.paidCount} de ${monthlyStats.payingCount} pagantes (${monthlyStats.pct}%)\n`;
+      if (monthlyStats.exemptCount > 0) {
+        txt += `• Goleiros Isentos: ${monthlyStats.exemptCount} atleta(s)\n`;
+      }
       txt += `• Valor Arrecadado: R$ ${monthlyStats.totalPaidAmount},00\n`;
       txt += `• Valor Pendente: R$ ${monthlyStats.totalPendingAmount},00\n\n`;
     }
@@ -703,6 +721,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
   // Enviar lembrete de cobrança no WhatsApp para atleta pendente
   const handleSendWhatsAppReminder = (player: PlayerProfile) => {
+    if (isGoalkeeper(player)) return;
     const num = (player.whatsappNumber || '').replace(/\D/g, '');
     if (!num) {
       alert(`O atleta ${player.displayName} ainda não possui número de WhatsApp cadastrado.`);
@@ -747,7 +766,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
   // Executa a confirmação da mudança de status (Apenas Treinador)
   const executeToggleConfirm = () => {
-    if (!isCoachOrAdmin || !confirmTarget) return;
+    if (!isCoachOrAdmin || !confirmTarget || isGoalkeeper(confirmTarget.player)) return;
     toggleMonthlyPayment(
       confirmTarget.player.id,
       selectedMonth,
@@ -882,8 +901,12 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                       <span className="font-mono font-black text-emerald-700">
                         R$ {monthlyStats.totalPaidAmount},00
                       </span>{' '}
-                      arrecadados ({monthlyStats.paidCount} de {teamPlayers.length} atletas)
+                      arrecadados ({monthlyStats.paidCount} de {monthlyStats.payingCount} pagantes)
                     </>
+                  ) : isMyGoalkeeper ? (
+                    <span className="text-sky-700 font-black">
+                      🧤 Goleiro • Isento de mensalidade
+                    </span>
                   ) : (
                     <span className={isMyPaid ? 'text-emerald-700 font-black' : 'text-rose-600 font-black'}>
                       {isMyPaid ? '🟢 Quitado neste mês' : '🔴 Pendente de pagamento'}
@@ -1224,7 +1247,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
               {/* Card de Status do Jogador no Mês */}
               <div
                 className={`rounded-3xl border p-4 sm:p-5 shadow-xs space-y-3.5 ${
-                  isMyPaid
+                  isMyGoalkeeper
+                    ? 'border-sky-300 bg-gradient-to-br from-sky-50/90 via-white to-sky-50/50'
+                    : isMyPaid
                     ? 'border-emerald-300 bg-gradient-to-br from-emerald-50/90 via-white to-emerald-50/50'
                     : 'border-rose-300 bg-gradient-to-br from-rose-50/90 via-white to-rose-50/50'
                 }`}
@@ -1233,12 +1258,16 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                   <div className="flex items-center gap-2">
                     <div
                       className={`flex h-10 w-10 items-center justify-center rounded-xl font-bold shadow-2xs ${
-                        isMyPaid
+                        isMyGoalkeeper
+                          ? 'bg-sky-600 text-white'
+                          : isMyPaid
                           ? 'bg-emerald-600 text-white'
                           : 'bg-rose-600 text-white'
                       }`}
                     >
-                      {isMyPaid ? (
+                      {isMyGoalkeeper ? (
+                        <ShieldCheck className="h-6 w-6 stroke-[2.5]" />
+                      ) : isMyPaid ? (
                         <Check className="h-6 w-6 stroke-[3]" />
                       ) : (
                         <Clock className="h-6 w-6 stroke-[2.5]" />
@@ -1256,12 +1285,14 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-wide border shadow-2xs ${
-                      isMyPaid
+                      isMyGoalkeeper
+                        ? 'bg-sky-100 text-sky-800 border-sky-300'
+                        : isMyPaid
                         ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                         : 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
                     }`}
                   >
-                    {isMyPaid ? '🟢 Pago' : '🔴 Pendente'}
+                    {isMyGoalkeeper ? '🧤 Isento' : isMyPaid ? '🟢 Pago' : '🔴 Pendente'}
                   </span>
                 </div>
 
@@ -1272,7 +1303,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                       Valor da Mensalidade
                     </div>
                     <div className="font-mono text-sm sm:text-base font-black text-slate-900 mt-0.5">
-                      R$ {monthlyConfig?.monthlyAmount || 30},00
+                      {isMyGoalkeeper
+                        ? 'R$ 0,00 (Isento)'
+                        : `R$ ${monthlyConfig?.monthlyAmount || 30},00`}
                     </div>
                   </div>
 
@@ -1281,7 +1314,12 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                       Confirmação no Sistema
                     </div>
                     <div className="text-xs font-bold text-slate-800 mt-0.5 truncate">
-                      {isMyPaid ? (
+                      {isMyGoalkeeper ? (
+                        <span className="text-sky-700 font-bold flex items-center gap-1">
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          Isenção de Goleiro
+                        </span>
+                      ) : isMyPaid ? (
                         <span className="text-emerald-700 font-bold flex items-center gap-1">
                           <Check className="h-3 w-3 stroke-[3]" />
                           Confirmado
@@ -1295,8 +1333,13 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                   </div>
                 </div>
 
-                {/* Orientação e Botão de Enviar Comprovante para o WhatsApp do Treinador */}
-                {!isMyPaid ? (
+                {/* Orientação de Isenção, Pago ou Pendente */}
+                {isMyGoalkeeper ? (
+                  <div className="rounded-xl bg-sky-50 border border-sky-200 p-2.5 text-center text-xs font-bold text-sky-900 flex items-center justify-center gap-1.5">
+                    <span>🧤</span>
+                    <span>Você atua na posição de Goleiro e possui isenção total das mensalidades!</span>
+                  </div>
+                ) : !isMyPaid ? (
                   <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 space-y-2 text-left">
                     <div className="flex items-start gap-2">
                       <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
@@ -1354,16 +1397,20 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                           </span>
                           <span
                             className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black ${
-                              item.isPaid
+                              item.isExempt
+                                ? 'bg-sky-600 text-white'
+                                : item.isPaid
                                 ? 'bg-emerald-600 text-white'
                                 : 'bg-rose-100 text-rose-700'
                             }`}
                           >
-                            {item.isPaid ? '✓' : '•'}
+                            {item.isExempt ? 'G' : item.isPaid ? '✓' : '•'}
                           </span>
                         </div>
                         <div className="text-[9px] font-semibold text-slate-500 mt-1">
-                          {item.isPaid ? (
+                          {item.isExempt ? (
+                            <span className="text-sky-700 font-bold">Isento</span>
+                          ) : item.isPaid ? (
                             <span className="text-emerald-700 font-bold">Pago</span>
                           ) : (
                             <span className="text-rose-600 font-bold">Pendente</span>
@@ -1416,7 +1463,8 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                     R$ {monthlyStats.totalExpectedAmount}
                   </div>
                   <div className="text-[10px] text-blue-600 font-semibold">
-                    {teamPlayers.length} atletas
+                    {monthlyStats.payingCount} pagantes
+                    {monthlyStats.exemptCount > 0 ? ` (+${monthlyStats.exemptCount} is.)` : ''}
                   </div>
                 </div>
               </div>
@@ -1487,12 +1535,14 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
               <div className="space-y-2">
                 {teamPlayers
                   .filter((p) => {
+                    const gk = isGoalkeeper(p);
                     const isPaid = paymentMap.get(p.id) === true;
-                    if (filter === 'paid') return isPaid;
-                    if (filter === 'pending') return !isPaid;
+                    if (filter === 'paid') return !gk && isPaid;
+                    if (filter === 'pending') return !gk && !isPaid;
                     return true;
                   })
                   .map((player) => {
+                    const gk = isGoalkeeper(player);
                     const isPaid = paymentMap.get(player.id) === true;
                     return (
                       <div
@@ -1517,52 +1567,63 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                               {player.displayName}
                             </h4>
                             <p className="text-[10px] text-slate-500 font-semibold truncate capitalize">
-                              {player.position}
+                              {gk ? (
+                                <span className="text-sky-700 font-bold">Goleiro • Isento</span>
+                              ) : (
+                                player.position
+                              )}
                             </p>
                           </div>
                         </div>
 
                         {/* Ações do Atleta */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {!isPaid && (
+                        {gk ? (
+                          <span className="flex items-center gap-1 rounded-xl bg-sky-50 text-sky-700 border border-sky-200 px-3 py-1.5 text-xs font-black shrink-0">
+                            <span>🧤</span>
+                            <span>Isento</span>
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isPaid && (
+                              <button
+                                type="button"
+                                onClick={() => handleSendWhatsAppReminder(player)}
+                                className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition active:scale-95 cursor-pointer"
+                                title="Cobrar via WhatsApp"
+                              >
+                                <MessageCircle className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            {/* Botão de Alterar Status com Confirmação Popup Obrigatória */}
                             <button
                               type="button"
-                              onClick={() => handleSendWhatsAppReminder(player)}
-                              className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition active:scale-95 cursor-pointer"
-                              title="Cobrar via WhatsApp"
+                              onClick={() => {
+                                setConfirmTarget({
+                                  player,
+                                  targetPaid: !isPaid,
+                                });
+                              }}
+                              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition active:scale-95 cursor-pointer shadow-2xs ${
+                                isPaid
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+                              }`}
                             >
-                              <MessageCircle className="h-4 w-4" />
+                              {isPaid ? (
+                                <>
+                                  <Check className="h-3.5 w-3.5 stroke-[3]" />
+                                  <span>Pago</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="h-3.5 w-3.5" />
+                                  <span>Pendente</span>
+                                </>
+                              )}
                             </button>
-                          )}
-
-                          {/* Botão de Alterar Status com Confirmação Popup Obrigatória */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setConfirmTarget({
-                                player,
-                                targetPaid: !isPaid,
-                              });
-                            }}
-                            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition active:scale-95 cursor-pointer shadow-2xs ${
-                              isPaid
-                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
-                            }`}
-                          >
-                            {isPaid ? (
-                              <>
-                                <Check className="h-3.5 w-3.5 stroke-[3]" />
-                                <span>Pago</span>
-                              </>
-                            ) : (
-                              <>
-                                <Clock className="h-3.5 w-3.5" />
-                                <span>Pendente</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1971,6 +2032,9 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                     </h4>
                     <p className="text-[10px] text-emerald-700">
                       Taxa de adesão do time: {monthlyStats.pct}%
+                      {monthlyStats.exemptCount > 0
+                        ? ` • ${monthlyStats.exemptCount} goleiro(s) isento(s)`
+                        : ''}
                     </p>
                   </div>
                 </div>
