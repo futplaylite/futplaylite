@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Check,
   AlertCircle,
@@ -43,7 +43,13 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
-import { PlayerProfile, TeamTransaction, TransactionType, TransactionCategory } from '../types/league';
+import {
+  MonthlyPaymentRecord,
+  PlayerProfile,
+  TeamTransaction,
+  TransactionType,
+  TransactionCategory,
+} from '../types/league';
 import { TeamCrestBadge } from './TeamCrestBadge';
 
 interface MonthlyFeesViewProps {
@@ -120,6 +126,7 @@ function formatDateDisplay(dStr: string): string {
 interface ConfirmTarget {
   player: PlayerProfile;
   targetPaid: boolean;
+  yearMonth?: string;
 }
 
 export const CATEGORY_INFO: Record<
@@ -223,10 +230,34 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     } catch {}
   }, [activeTab]);
 
-  // Sincroniza mensalidades, config PIX e caixa com a nuvem ao abrir ou trocar de aba
+  // Sincroniza mensalidades, config PIX e caixa com a nuvem ao abrir, trocar de aba ou voltar para a página
+  const lastSyncRef = useRef<number>(0);
+
+  const syncWithThrottle = () => {
+    const now = Date.now();
+    if (now - lastSyncRef.current < 3000) return;
+    lastSyncRef.current = now;
+    refreshMonthlyData();
+  };
+
   useEffect(() => {
+    lastSyncRef.current = Date.now();
     refreshMonthlyData();
   }, [activeTab]);
+
+  useEffect(() => {
+    const handleSyncOnVisible = () => {
+      if (document.visibilityState === 'visible') {
+        syncWithThrottle();
+      }
+    };
+    window.addEventListener('focus', handleSyncOnVisible);
+    document.addEventListener('visibilitychange', handleSyncOnVisible);
+    return () => {
+      window.removeEventListener('focus', handleSyncOnVisible);
+      document.removeEventListener('visibilitychange', handleSyncOnVisible);
+    };
+  }, []);
 
   // Identificação do perfil do usuário atual
   const myProfile = currentPlayerProfile || profiles.find((p) => p.userId === currentUser?.id);
@@ -271,6 +302,13 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
   // Estado do POPUP DE CONFIRMAÇÃO exigido pelo usuário (Área do Treinador - Mensalidades)
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
+
+  // Estados do acesso aos meses anteriores (Área do Treinador)
+  const [historyTargetPlayer, setHistoryTargetPlayer] = useState<PlayerProfile | null>(null);
+  const [historyYear, setHistoryYear] = useState<number>(() => new Date().getFullYear());
+  const [showAllMonthsModal, setShowAllMonthsModal] = useState<boolean>(false);
+  const [allMonthsYear, setAllMonthsYear] = useState<number>(() => new Date().getFullYear());
+  const [allMonthsSelectedYm, setAllMonthsSelectedYm] = useState<string>(() => getCurrentYearMonth());
 
   // Campos para edição de configuração do PIX e Valor
   const [editAmount, setEditAmount] = useState<number>(monthlyConfig?.monthlyAmount || 30);
@@ -330,19 +368,62 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     );
   }, [profiles, userTeamNormalized]);
 
-  // Mapa de pagamentos de mensalidades para o mês selecionado
-  const paymentMap = useMemo(() => {
-    const map = new Map<string, boolean>();
-    (monthlyPayments || []).forEach((item) => {
-      if ((item.yearMonth || '').trim() === selectedMonth) {
-        map.set(item.playerId, item.isPaid);
+  // Retorna o registro de pagamento mais recente para um atleta em um dado mês (YYYY-MM),
+  // garantindo consistência entre player.id, player.userId e a sincronização com o Supabase.
+  const getLatestPaymentRecord = (
+    player: PlayerProfile | null | undefined,
+    yearMonth: string,
+    extraIds?: Array<string | undefined>
+  ): MonthlyPaymentRecord | undefined => {
+    const ym = (yearMonth || '').trim();
+    const ids = new Set<string>();
+    if (player?.id) ids.add(player.id);
+    if (player?.userId) ids.add(player.userId);
+    (extraIds || []).forEach((id) => {
+      if (id) ids.add(id);
+    });
+    if (ids.size === 0) return undefined;
+
+    let latest: MonthlyPaymentRecord | undefined;
+    let latestTime = -1;
+    (monthlyPayments || []).forEach((rec) => {
+      if ((rec.yearMonth || '').trim() !== ym) return;
+      if (!ids.has(rec.playerId)) return;
+      const t = new Date(rec.updatedAt || rec.paidAt || 0).getTime();
+      if (!latest || t >= latestTime) {
+        latest = rec;
+        latestTime = t;
       }
     });
+    return latest;
+  };
+
+  // Mapa de pagamentos de mensalidades para o mês selecionado (sempre prioriza o registro mais recente)
+  const paymentMap = useMemo(() => {
+    const latestMap = new Map<string, { isPaid: boolean; time: number }>();
+    (monthlyPayments || []).forEach((item) => {
+      if ((item.yearMonth || '').trim() === selectedMonth) {
+        const t = new Date(item.updatedAt || item.paidAt || 0).getTime();
+        const prev = latestMap.get(item.playerId);
+        if (!prev || t >= prev.time) {
+          latestMap.set(item.playerId, { isPaid: item.isPaid, time: t });
+        }
+      }
+    });
+    const map = new Map<string, boolean>();
+    latestMap.forEach((val, key) => map.set(key, val.isPaid));
     return map;
   }, [monthlyPayments, selectedMonth]);
 
   const isGoalkeeper = (p?: PlayerProfile | null) =>
     (p?.position || '').trim().toLowerCase() === 'goleiro';
+
+  const isPlayerPaidForMonth = (player: PlayerProfile, yearMonth: string): boolean => {
+    if (yearMonth === selectedMonth) {
+      return Boolean(paymentMap.get(player.id) || (player.userId && paymentMap.get(player.userId)));
+    }
+    return Boolean(getLatestPaymentRecord(player, yearMonth)?.isPaid);
+  };
 
   // Estatísticas de mensalidades do time no mês (goleiros são isentos de pagamento)
   const monthlyStats = useMemo(() => {
@@ -386,13 +467,35 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     };
   }, [teamPlayers, paymentMap, monthlyConfig]);
 
+  // Constrói a grade anual dos 12 meses para qualquer atleta (usado na visão do jogador e do treinador)
+  const buildPlayerYearHistory = (
+    player: PlayerProfile | null | undefined,
+    year: number,
+    extraIds?: Array<string | undefined>
+  ) => {
+    const exempt = isGoalkeeper(player);
+    return MONTH_NAMES.map((name, index) => {
+      const mStr = String(index + 1).padStart(2, '0');
+      const ym = `${year}-${mStr}`;
+      const record = getLatestPaymentRecord(player, ym, extraIds);
+      return {
+        monthIndex: index,
+        monthName: name,
+        monthShort: MONTH_SHORT_NAMES[index],
+        yearMonth: ym,
+        isExempt: exempt,
+        isPaid: record ? record.isPaid : false,
+        amount: exempt ? 0 : record?.amount || monthlyConfig?.monthlyAmount || 30,
+      };
+    });
+  };
+
   // Dados do Jogador Atual para o Modo Pessoal
   const myPlayerId = myProfile?.id;
   const isMyGoalkeeper = isGoalkeeper(myProfile);
   const isMyPaid = Boolean(
-    (myPlayerId && paymentMap.get(myPlayerId) === true) ||
-      (myProfile?.userId && paymentMap.get(myProfile.userId) === true) ||
-      (currentUser?.id && paymentMap.get(currentUser.id) === true)
+    getLatestPaymentRecord(myProfile, selectedMonth, [myPlayerId, myProfile?.userId, currentUser?.id])
+      ?.isPaid
   );
 
   // Ano atual selecionado para o histórico do atleta
@@ -404,27 +507,28 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   // Histórico anual pessoal do atleta (12 meses do ano selecionado)
   const myYearlyHistory = useMemo(() => {
     if (!myPlayerId && !currentUser?.id) return [];
-    return MONTH_NAMES.map((name, index) => {
-      const mStr = String(index + 1).padStart(2, '0');
-      const ym = `${selectedYear}-${mStr}`;
-      const record = (monthlyPayments || []).find(
-        (rec) =>
-          (rec.playerId === myPlayerId ||
-            (myProfile?.userId && rec.playerId === myProfile.userId) ||
-            (currentUser?.id && rec.playerId === currentUser.id)) &&
-          (rec.yearMonth || '').trim() === ym
-      );
-      return {
-        monthIndex: index,
-        monthName: name,
-        monthShort: MONTH_SHORT_NAMES[index],
-        yearMonth: ym,
-        isExempt: isMyGoalkeeper,
-        isPaid: record ? record.isPaid : false,
-        amount: isMyGoalkeeper ? 0 : record?.amount || monthlyConfig?.monthlyAmount || 30,
-      };
-    });
-  }, [selectedYear, monthlyPayments, myPlayerId, myProfile?.userId, monthlyConfig?.monthlyAmount, isMyGoalkeeper]);
+    return buildPlayerYearHistory(myProfile, selectedYear, [
+      myPlayerId,
+      myProfile?.userId,
+      currentUser?.id,
+    ]);
+  }, [selectedYear, monthlyPayments, myProfile, myPlayerId, currentUser?.id, monthlyConfig?.monthlyAmount]);
+
+  const openPlayerHistory = (player: PlayerProfile) => {
+    setHistoryYear(selectedYear);
+    setHistoryTargetPlayer(player);
+    refreshMonthlyData();
+  };
+
+  const openAllMonthsHistory = () => {
+    const prevMonth = getAdjacentMonth(selectedMonth, -1);
+    const [prevYearStr] = prevMonth.split('-');
+    const targetYear = parseInt(prevYearStr, 10) || selectedYear;
+    setAllMonthsYear(targetYear);
+    setAllMonthsSelectedYm(prevMonth);
+    setShowAllMonthsModal(true);
+    refreshMonthlyData();
+  };
 
   // ==========================================
   // ESTADOS DO GERENCIADOR DE RECEITAS E DESPESAS (CAIXA)
@@ -826,9 +930,10 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   // Executa a confirmação da mudança de status (Apenas Treinador)
   const executeToggleConfirm = () => {
     if (!isCoachOrAdmin || !confirmTarget || isGoalkeeper(confirmTarget.player)) return;
+    const targetMonth = confirmTarget.yearMonth || selectedMonth;
     toggleMonthlyPayment(
       confirmTarget.player.id,
-      selectedMonth,
+      targetMonth,
       confirmTarget.targetPaid,
       monthlyConfig?.monthlyAmount || 30
     );
@@ -1546,14 +1651,26 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                 </div>
               </div>
 
-              {/* Filtros da Lista de Atletas */}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-800">
-                  <Users className="h-4 w-4 text-slate-600" />
-                  <span>Elenco do Time ({teamPlayers.length})</span>
+              {/* Filtros da Lista de Atletas + Acesso Rápido aos Meses Anteriores */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-slate-800">
+                    <Users className="h-4 w-4 text-slate-600" />
+                    <span>Elenco do Time ({teamPlayers.length})</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={openAllMonthsHistory}
+                    className="flex items-center gap-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1 text-[11px] font-extrabold transition active:scale-95 cursor-pointer shrink-0 shadow-2xs"
+                    title="Acessar todos os meses anteriores e alterar status de pagamento"
+                  >
+                    <Calendar className="h-3.5 w-3.5 shrink-0" />
+                    <span>Meses Anteriores</span>
+                  </button>
                 </div>
 
-                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl border border-slate-200 w-fit">
                   <button
                     type="button"
                     onClick={() => setFilter('all')}
@@ -1595,14 +1712,14 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                 {teamPlayers
                   .filter((p) => {
                     const gk = isGoalkeeper(p);
-                    const isPaid = paymentMap.get(p.id) === true;
+                    const isPaid = isPlayerPaidForMonth(p, selectedMonth);
                     if (filter === 'paid') return !gk && isPaid;
                     if (filter === 'pending') return !gk && !isPaid;
                     return true;
                   })
                   .map((player) => {
                     const gk = isGoalkeeper(player);
-                    const isPaid = paymentMap.get(player.id) === true;
+                    const isPaid = isPlayerPaidForMonth(player, selectedMonth);
                     return (
                       <div
                         key={player.id}
@@ -1643,6 +1760,16 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                           </span>
                         ) : (
                           <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => openPlayerHistory(player)}
+                              className="flex h-8 items-center justify-center gap-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2 text-[11px] font-extrabold transition active:scale-95 cursor-pointer"
+                              title={`Ver todos os meses anteriores de ${player.displayName}`}
+                            >
+                              <Calendar className="h-3.5 w-3.5 shrink-0" />
+                              <span className="hidden sm:inline">Meses</span>
+                            </button>
+
                             {!isPaid && (
                               <button
                                 type="button"
@@ -1661,6 +1788,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                                 setConfirmTarget({
                                   player,
                                   targetPaid: !isPaid,
+                                  yearMonth: selectedMonth,
                                 });
                               }}
                               className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition active:scale-95 cursor-pointer shadow-2xs ${
@@ -2534,7 +2662,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       {/* MODAL 3: CONFIRMAÇÃO DE STATUS DE MENSALIDADE        */}
       {/* ==================================================== */}
       {isCoachOrAdmin && confirmTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
           <div className="relative w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <div
@@ -2551,7 +2679,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                   Confirmar Alteração
                 </h3>
                 <p className="text-[10px] text-slate-500">
-                  {formatYearMonth(selectedMonth)}
+                  {formatYearMonth(confirmTarget.yearMonth || selectedMonth)}
                 </p>
               </div>
             </div>
@@ -2811,6 +2939,339 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
           </div>
         </div>
       )}
+
+      {/* ==================================================== */}
+      {/* MODAL 6: MESES ANTERIORES DO ELENCO (TREINADOR)      */}
+      {/* ==================================================== */}
+      {isCoachOrAdmin && showAllMonthsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn">
+          <div className="relative w-full max-w-lg max-h-[90vh] flex flex-col rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xl space-y-3.5 overflow-hidden">
+            {/* Cabeçalho */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <Calendar className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wide">
+                    Meses Anteriores
+                  </h3>
+                  <p className="text-[10px] text-slate-500">
+                    Acesse qualquer mês para conferir e alterar pagamentos
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllMonthsModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Seletor de Ano */}
+            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextYear = allMonthsYear - 1;
+                  const mm = allMonthsSelectedYm.split('-')[1] || '01';
+                  setAllMonthsYear(nextYear);
+                  setAllMonthsSelectedYm(`${nextYear}-${mm}`);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition active:scale-95 cursor-pointer"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="text-center">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Ano de Referência
+                </div>
+                <div className="font-mono text-sm font-black text-slate-900">{allMonthsYear}</div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const nextYear = allMonthsYear + 1;
+                  const mm = allMonthsSelectedYm.split('-')[1] || '01';
+                  setAllMonthsYear(nextYear);
+                  setAllMonthsSelectedYm(`${nextYear}-${mm}`);
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition active:scale-95 cursor-pointer"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Grade Compacta dos 12 Meses do Ano */}
+            <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 shrink-0">
+              {MONTH_SHORT_NAMES.map((shortName, idx) => {
+                const mStr = String(idx + 1).padStart(2, '0');
+                const ym = `${allMonthsYear}-${mStr}`;
+                const isSelected = ym === allMonthsSelectedYm;
+                const payingPlayers = teamPlayers.filter((p) => !isGoalkeeper(p));
+                const paidInMonth = payingPlayers.filter((p) => isPlayerPaidForMonth(p, ym)).length;
+                const allPaid = payingPlayers.length > 0 && paidInMonth === payingPlayers.length;
+
+                return (
+                  <button
+                    key={ym}
+                    type="button"
+                    onClick={() => setAllMonthsSelectedYm(ym)}
+                    className={`rounded-xl border p-1.5 text-center transition active:scale-95 cursor-pointer ${
+                      isSelected
+                        ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50'
+                        : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="font-mono text-[11px] font-black text-slate-800">
+                      {shortName}
+                    </div>
+                    <div
+                      className={`text-[9px] font-bold mt-0.5 ${
+                        allPaid
+                          ? 'text-emerald-600'
+                          : paidInMonth > 0
+                          ? 'text-amber-600'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      {paidInMonth}/{payingPlayers.length}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Barra do Mês Selecionado */}
+            <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-900 text-white px-3 py-2 shrink-0">
+              <div className="text-xs font-extrabold">{formatYearMonth(allMonthsSelectedYm)}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMonth(allMonthsSelectedYm);
+                  setShowAllMonthsModal(false);
+                }}
+                className="rounded-lg bg-white/15 hover:bg-white/25 px-2.5 py-1 text-[10px] font-bold transition cursor-pointer"
+              >
+                Abrir na tela
+              </button>
+            </div>
+
+            {/* Lista do Elenco no Mês Escolhido */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {teamPlayers.map((player) => {
+                const gk = isGoalkeeper(player);
+                const pIsPaid = isPlayerPaidForMonth(player, allMonthsSelectedYm);
+
+                return (
+                  <div
+                    key={player.id}
+                    className="flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-2.5"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {player.avatarUrl ? (
+                        <img
+                          src={player.avatarUrl}
+                          alt={player.displayName}
+                          className="h-8 w-8 rounded-lg object-cover border border-slate-200 shrink-0"
+                        />
+                      ) : (
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white font-bold text-slate-700 text-[10px] border border-slate-200 shrink-0">
+                          {player.displayName.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="text-xs font-extrabold text-slate-900 truncate">
+                          {player.displayName}
+                        </div>
+                        <div className="text-[10px] font-semibold text-slate-500 capitalize truncate">
+                          {gk ? 'Goleiro • Isento' : player.position}
+                        </div>
+                      </div>
+                    </div>
+
+                    {gk ? (
+                      <span className="flex items-center gap-1 rounded-xl bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-1 text-[11px] font-black shrink-0">
+                        <span>🧤</span>
+                        <span>Isento</span>
+                      </span>
+                    ) : (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openPlayerHistory(player)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition active:scale-95 cursor-pointer"
+                          title={`Ver todos os meses de ${player.displayName}`}
+                        >
+                          <Calendar className="h-3.5 w-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmTarget({
+                              player,
+                              targetPaid: !pIsPaid,
+                              yearMonth: allMonthsSelectedYm,
+                            });
+                          }}
+                          className={`flex items-center gap-1 rounded-xl px-2.5 py-1 text-[11px] font-black transition active:scale-95 cursor-pointer ${
+                            pIsPaid
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-300'
+                          }`}
+                        >
+                          {pIsPaid ? (
+                            <>
+                              <Check className="h-3 w-3 stroke-[3]" />
+                              <span>Pago</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="h-3 w-3" />
+                              <span>Pendente</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* MODAL 7: HISTÓRICO ANUAL DO ATLETA (TREINADOR)       */}
+      {/* ==================================================== */}
+      {isCoachOrAdmin && historyTargetPlayer && (() => {
+        const playerMonths = buildPlayerYearHistory(historyTargetPlayer, historyYear);
+        const paidCountYear = playerMonths.filter((m) => m.isPaid).length;
+        const pendingCountYear = playerMonths.length - paidCountYear;
+
+        return (
+          <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn">
+            <div className="relative w-full max-w-md rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
+              {/* Cabeçalho do Atleta */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {historyTargetPlayer.avatarUrl ? (
+                    <img
+                      src={historyTargetPlayer.avatarUrl}
+                      alt={historyTargetPlayer.displayName}
+                      className="h-9 w-9 rounded-xl object-cover border border-slate-200 shrink-0"
+                    />
+                  ) : (
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 font-bold text-slate-700 text-xs border border-slate-200 shrink-0">
+                      {historyTargetPlayer.displayName.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-extrabold text-slate-900 truncate">
+                      {historyTargetPlayer.displayName}
+                    </h3>
+                    <p className="text-[10px] text-slate-500">
+                      Toque no mês para alterar Pago / Pendente
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHistoryTargetPlayer(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Seletor de Ano + Resumo */}
+              <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                <button
+                  type="button"
+                  onClick={() => setHistoryYear((prev) => prev - 1)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition active:scale-95 cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+
+                <div className="text-center">
+                  <div className="font-mono text-sm font-black text-slate-900">{historyYear}</div>
+                  <div className="text-[10px] font-bold text-slate-500">
+                    <span className="text-emerald-700">{paidCountYear} pagos</span> •{' '}
+                    <span className="text-rose-600">{pendingCountYear} pendentes</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setHistoryYear((prev) => prev + 1)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition active:scale-95 cursor-pointer"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Grade dos 12 Meses */}
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {playerMonths.map((item) => {
+                  const isCurrentSel = item.yearMonth === selectedMonth;
+                  return (
+                    <button
+                      key={item.yearMonth}
+                      type="button"
+                      onClick={() => {
+                        setConfirmTarget({
+                          player: historyTargetPlayer,
+                          targetPaid: !item.isPaid,
+                          yearMonth: item.yearMonth,
+                        });
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition active:scale-95 cursor-pointer ${
+                        item.isPaid
+                          ? 'border-emerald-300 bg-emerald-50/70 hover:bg-emerald-100/70'
+                          : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                      } ${isCurrentSel ? 'ring-2 ring-blue-500' : ''}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-extrabold text-slate-800">
+                          {item.monthShort}
+                        </span>
+                        <span
+                          className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-black ${
+                            item.isPaid
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-rose-100 text-rose-700'
+                          }`}
+                        >
+                          {item.isPaid ? '✓' : '•'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-bold mt-1">
+                        {item.isPaid ? (
+                          <span className="text-emerald-700">Pago</span>
+                        ) : (
+                          <span className="text-rose-600">Pendente</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-xl bg-blue-50/80 border border-blue-200 px-3 py-2 text-[10px] font-semibold text-blue-800 text-center">
+                As alterações confirmadas são sincronizadas diretamente com o perfil de{' '}
+                <strong>{historyTargetPlayer.displayName}</strong>.
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

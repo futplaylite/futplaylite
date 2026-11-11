@@ -23,6 +23,8 @@ export function generateUUID(): string {
   });
 }
 
+let monthlyLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
+
 /**
  * Serviço de sincronização e comunicação com a API do Supabase.
  * Permite ler e persistir dados reais quando as credenciais estiverem configuradas.
@@ -772,39 +774,46 @@ export const supabaseService = {
 
       console.warn('Fallback online para mensalidade (RLS/Schema):', error.message);
 
-      // 2. Fallback automático na tabela pelada_sumulas (que permite escrita anônima segura)
-      const { data: existingRow } = await supabase
-        .from('pelada_sumulas')
-        .select('*')
-        .eq('id', 'monthly_payments_ledger_v1')
-        .maybeSingle();
+      // 2. Fallback automático na tabela pelada_sumulas (enfileirado para evitar corrida em edições múltiplas)
+      const writeFallbackLedger = async (): Promise<boolean> => {
+        if (!supabase) return false;
+        const { data: existingRow } = await supabase
+          .from('pelada_sumulas')
+          .select('*')
+          .eq('id', 'monthly_payments_ledger_v1')
+          .maybeSingle();
 
-      const existingData =
-        (existingRow?.data as unknown as { payments?: MonthlyPaymentRecord[] }) || {};
-      const existingList = Array.isArray(existingData.payments) ? existingData.payments : [];
-      const updatedList = [
-        recordWithUpdated,
-        ...existingList.filter(
-          (item) =>
-            item.id !== record.id &&
-            !(item.playerId === record.playerId && item.yearMonth === record.yearMonth)
-        ),
-      ];
+        const existingData =
+          (existingRow?.data as unknown as { payments?: MonthlyPaymentRecord[] }) || {};
+        const existingList = Array.isArray(existingData.payments) ? existingData.payments : [];
+        const updatedList = [
+          recordWithUpdated,
+          ...existingList.filter(
+            (item) =>
+              item.id !== record.id &&
+              !(item.playerId === record.playerId && item.yearMonth === record.yearMonth)
+          ),
+        ];
 
-      const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
-        {
-          id: 'monthly_payments_ledger_v1',
-          team_name: 'Mensalidades',
-          status: 'financial_ledger',
-          match_date: null,
-          start_time: null,
-          data: { payments: updatedList } as unknown as Record<string, unknown>,
-          last_updated: nowIso,
-        },
-        { onConflict: 'id' }
-      );
+        const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
+          {
+            id: 'monthly_payments_ledger_v1',
+            team_name: 'Mensalidades',
+            status: 'financial_ledger',
+            match_date: null,
+            start_time: null,
+            data: { payments: updatedList } as unknown as Record<string, unknown>,
+            last_updated: nowIso,
+          },
+          { onConflict: 'id' }
+        );
 
-      return !fallbackErr;
+        return !fallbackErr;
+      };
+
+      const queuedWrite = monthlyLedgerWriteQueue.then(writeFallbackLedger, writeFallbackLedger);
+      monthlyLedgerWriteQueue = queuedWrite.catch(() => false);
+      return await queuedWrite;
     } catch (err) {
       console.error('Exceção ao sincronizar mensalidade com Supabase:', err);
       return false;
