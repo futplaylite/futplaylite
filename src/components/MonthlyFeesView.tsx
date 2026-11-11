@@ -890,12 +890,12 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                 <CreditCard className="h-4 w-4" />
               </div>
               <div>
-                <div className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
-                  {isCoachOrAdmin
-                    ? `Mensalidades de ${formatYearMonth(selectedMonth)}`
-                    : `Minha Mensalidade • ${formatYearMonth(selectedMonth)}`}
-                </div>
-                <div className="text-xs font-bold text-slate-800 mt-0.5">
+                {isCoachOrAdmin && (
+                  <div className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
+                    Mensalidades de {formatYearMonth(selectedMonth)}
+                  </div>
+                )}
+                <div className={`text-xs font-bold text-slate-800 ${isCoachOrAdmin ? 'mt-0.5' : ''}`}>
                   {isCoachOrAdmin ? (
                     <>
                       <span className="font-mono font-black text-emerald-700">
