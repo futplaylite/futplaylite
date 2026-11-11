@@ -664,24 +664,28 @@ CREATE INDEX IF NOT EXISTS idx_monthly_payments_month ON public.monthly_payments
 ALTER TABLE public.pelada_monthly_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.monthly_payments ENABLE ROW LEVEL SECURITY;
 
--- Políticas de acesso
-CREATE POLICY configs_select_all ON public.pelada_monthly_configs
-    FOR SELECT USING (true);
+-- Políticas de acesso liberadas para o app
+DROP POLICY IF EXISTS configs_select_all ON public.pelada_monthly_configs;
+DROP POLICY IF EXISTS configs_manage_authorized ON public.pelada_monthly_configs;
+DROP POLICY IF EXISTS configs_insert_all ON public.pelada_monthly_configs;
+DROP POLICY IF EXISTS configs_update_all ON public.pelada_monthly_configs;
+DROP POLICY IF EXISTS configs_delete_all ON public.pelada_monthly_configs;
 
-CREATE POLICY configs_manage_authorized ON public.pelada_monthly_configs
-    FOR ALL USING (
-        public.get_current_user_role() IN ('admin', 'moderator')
-        OR auth.uid() IS NOT NULL
-    );
+CREATE POLICY configs_select_all ON public.pelada_monthly_configs FOR SELECT USING (true);
+CREATE POLICY configs_insert_all ON public.pelada_monthly_configs FOR INSERT WITH CHECK (true);
+CREATE POLICY configs_update_all ON public.pelada_monthly_configs FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY configs_delete_all ON public.pelada_monthly_configs FOR DELETE USING (true);
 
-CREATE POLICY payments_select_all ON public.monthly_payments
-    FOR SELECT USING (true);
+DROP POLICY IF EXISTS payments_select_all ON public.monthly_payments;
+DROP POLICY IF EXISTS payments_manage_authorized ON public.monthly_payments;
+DROP POLICY IF EXISTS payments_insert_all ON public.monthly_payments;
+DROP POLICY IF EXISTS payments_update_all ON public.monthly_payments;
+DROP POLICY IF EXISTS payments_delete_all ON public.monthly_payments;
 
-CREATE POLICY payments_manage_authorized ON public.monthly_payments
-    FOR ALL USING (
-        public.get_current_user_role() IN ('admin', 'moderator')
-        OR auth.uid() IS NOT NULL
-    );
+CREATE POLICY payments_select_all ON public.monthly_payments FOR SELECT USING (true);
+CREATE POLICY payments_insert_all ON public.monthly_payments FOR INSERT WITH CHECK (true);
+CREATE POLICY payments_update_all ON public.monthly_payments FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY payments_delete_all ON public.monthly_payments FOR DELETE USING (true);
 
 
 -- =============================================================================

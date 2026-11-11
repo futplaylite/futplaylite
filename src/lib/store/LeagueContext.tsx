@@ -280,6 +280,7 @@ interface LeagueContextValue extends LeagueState {
   addTeamTransaction: (tx: Omit<TeamTransaction, 'id' | 'createdAt'>) => boolean;
   deleteTeamTransaction: (id: string) => boolean;
   refreshTeamTransactions: () => Promise<void>;
+  refreshMonthlyData: () => Promise<void>;
 }
 
 const LeagueContext = createContext<LeagueContextValue | null>(null);
@@ -311,13 +312,20 @@ function getInitialState(): LeagueState {
           if (rawTx) transactions = JSON.parse(rawTx);
         } catch (e) {}
       }
+      let payments = parsed.monthlyPayments || [];
+      if (!payments || payments.length === 0) {
+        try {
+          const rawPay = localStorage.getItem('futplay_monthly_payments_v1');
+          if (rawPay) payments = JSON.parse(rawPay);
+        } catch (e) {}
+      }
       return {
         ...parsed,
         users: parsed.users || [],
         profiles: cleanProfiles,
         matches: parsed.matches || [],
         peerEvaluations: parsed.peerEvaluations || [],
-        monthlyPayments: parsed.monthlyPayments || [],
+        monthlyPayments: payments,
         monthlyConfig: parsed.monthlyConfig || DEFAULT_MONTHLY_CONFIG,
         teamTransactions: transactions,
       };
@@ -326,9 +334,12 @@ function getInitialState(): LeagueState {
     console.warn('Falha ao ler estado salvo, usando dados iniciais:', e);
   }
   let initialTx: TeamTransaction[] = [];
+  let initialPay: MonthlyPaymentRecord[] = [];
   try {
     const rawTx = localStorage.getItem('futplay_team_financial_transactions_v1');
     if (rawTx) initialTx = JSON.parse(rawTx);
+    const rawPay = localStorage.getItem('futplay_monthly_payments_v1');
+    if (rawPay) initialPay = JSON.parse(rawPay);
   } catch (e) {}
   return {
     users: INITIAL_USERS,
@@ -348,7 +359,7 @@ function getInitialState(): LeagueState {
     ratingLogs: INITIAL_RATING_LOGS,
     auditLogs: INITIAL_AUDIT_LOGS,
     peerEvaluations: [],
-    monthlyPayments: [],
+    monthlyPayments: initialPay,
     monthlyConfig: DEFAULT_MONTHLY_CONFIG,
     teamTransactions: initialTx,
   };
@@ -543,10 +554,53 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     });
 
-    supabaseService.getMonthlyPayments().then((payments) => {
-      if (payments && payments.length > 0) {
-        setState((prev) => ({ ...prev, monthlyPayments: payments }));
-      }
+    supabaseService.getMonthlyPayments().then((remotePayments) => {
+      if (!remotePayments) return;
+      setState((prev) => {
+        const mergedMap = new Map<string, MonthlyPaymentRecord>();
+        remotePayments.forEach((p) => mergedMap.set(p.id, p));
+
+        const now = Date.now();
+        const isMigrated = localStorage.getItem('futplay_payments_cloud_migrated_v1') === 'true';
+        const unSyncedToPush: MonthlyPaymentRecord[] = [];
+
+        (prev.monthlyPayments || []).forEach((locP) => {
+          const remP = mergedMap.get(locP.id);
+          if (!remP) {
+            const ageMs = now - new Date(locP.updatedAt || locP.paidAt || 0).getTime();
+            if (ageMs < 60000 || !isMigrated) {
+              mergedMap.set(locP.id, locP);
+              unSyncedToPush.push(locP);
+            }
+          } else {
+            const locTime = new Date(locP.updatedAt || locP.paidAt || 0).getTime();
+            const remTime = new Date(remP.updatedAt || remP.paidAt || 0).getTime();
+            if (locTime > remTime) {
+              mergedMap.set(locP.id, locP);
+              unSyncedToPush.push(locP);
+            }
+          }
+        });
+
+        if (unSyncedToPush.length > 0) {
+          unSyncedToPush.forEach((rec) => {
+            supabaseService.upsertMonthlyPayment(rec).catch(() => {});
+          });
+        }
+        try {
+          localStorage.setItem('futplay_payments_cloud_migrated_v1', 'true');
+        } catch {}
+
+        const mergedList = Array.from(mergedMap.values());
+        try {
+          localStorage.setItem('futplay_monthly_payments_v1', JSON.stringify(mergedList));
+        } catch {}
+
+        return {
+          ...prev,
+          monthlyPayments: mergedList,
+        };
+      });
     });
 
     // 4. Sincroniza súmulas da pelada do Supabase em tempo real para múltiplos aparelhos
@@ -657,7 +711,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   }, []);
 
-  // Listener entre abas do mesmo navegador para atualizar finanças em tempo real
+  // Listener entre abas do mesmo navegador para atualizar finanças e mensalidades em tempo real
   useEffect(() => {
     const handleStorageSync = (e: StorageEvent) => {
       if (e.key === 'futplay_team_financial_transactions_v1' && e.newValue) {
@@ -665,6 +719,14 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           const updated: TeamTransaction[] = JSON.parse(e.newValue);
           if (Array.isArray(updated)) {
             setState((prev) => ({ ...prev, teamTransactions: updated }));
+          }
+        } catch {}
+      }
+      if (e.key === 'futplay_monthly_payments_v1' && e.newValue) {
+        try {
+          const updatedPay: MonthlyPaymentRecord[] = JSON.parse(e.newValue);
+          if (Array.isArray(updatedPay)) {
+            setState((prev) => ({ ...prev, monthlyPayments: updatedPay }));
           }
         } catch {}
       }
@@ -706,6 +768,50 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         ...prev,
         teamTransactions: mergedList,
+      };
+    });
+  };
+
+  const refreshMonthlyData: LeagueContextValue['refreshMonthlyData'] = async () => {
+    if (!isSupabaseConfigured()) return;
+    const [remotePayments, remoteCfg] = await Promise.all([
+      supabaseService.getMonthlyPayments(),
+      supabaseService.getMonthlyConfig(),
+      refreshTeamTransactions(),
+    ]);
+
+    setState((prev) => {
+      let nextPayments = prev.monthlyPayments || [];
+      if (remotePayments) {
+        const mergedMap = new Map<string, MonthlyPaymentRecord>();
+        remotePayments.forEach((p) => mergedMap.set(p.id, p));
+
+        const now = Date.now();
+        (prev.monthlyPayments || []).forEach((locP) => {
+          const remP = mergedMap.get(locP.id);
+          const locTime = new Date(locP.updatedAt || locP.paidAt || 0).getTime();
+          if (!remP) {
+            if (now - locTime < 60000) {
+              mergedMap.set(locP.id, locP);
+            }
+          } else {
+            const remTime = new Date(remP.updatedAt || remP.paidAt || 0).getTime();
+            if (locTime > remTime) {
+              mergedMap.set(locP.id, locP);
+            }
+          }
+        });
+
+        nextPayments = Array.from(mergedMap.values());
+        try {
+          localStorage.setItem('futplay_monthly_payments_v1', JSON.stringify(nextPayments));
+        } catch {}
+      }
+
+      return {
+        ...prev,
+        monthlyPayments: nextPayments,
+        monthlyConfig: remoteCfg || prev.monthlyConfig,
       };
     });
   };
@@ -2540,38 +2646,43 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     const paymentId = `${playerId}_${yearMonth}`;
     const feeAmount = amount ?? state.monthlyConfig?.monthlyAmount ?? 30;
 
+    const record: MonthlyPaymentRecord = {
+      id: paymentId,
+      playerId,
+      yearMonth,
+      isPaid,
+      paidAt: isPaid ? now : undefined,
+      amount: feeAmount,
+      confirmedBy: currentUserId || 'admin-pelada',
+      updatedAt: now,
+    };
+
     setState((prev) => {
       const currentList = prev.monthlyPayments || [];
       const existingIdx = currentList.findIndex(
         (m) => m.playerId === playerId && m.yearMonth === yearMonth
       );
 
-      const record: MonthlyPaymentRecord = {
-        id: paymentId,
-        playerId,
-        yearMonth,
-        isPaid,
-        paidAt: isPaid ? now : undefined,
-        amount: feeAmount,
-        confirmedBy: currentUserId || 'admin-pelada',
-      };
-
       const updatedPayments =
         existingIdx >= 0
           ? currentList.map((item, idx) => (idx === existingIdx ? record : item))
           : [...currentList, record];
 
-      if (isSupabaseConfigured()) {
-        supabaseService.upsertMonthlyPayment(record).catch((err) => {
-          console.warn('Falha assíncrona ao sincronizar mensalidade com Supabase:', err);
-        });
-      }
+      try {
+        localStorage.setItem('futplay_monthly_payments_v1', JSON.stringify(updatedPayments));
+      } catch {}
 
       return {
         ...prev,
         monthlyPayments: updatedPayments,
       };
     });
+
+    if (isSupabaseConfigured()) {
+      supabaseService.upsertMonthlyPayment(record).catch((err) => {
+        console.warn('Falha assíncrona ao sincronizar mensalidade com Supabase:', err);
+      });
+    }
 
     notify(
       'success',
@@ -3142,6 +3253,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         addTeamTransaction,
         deleteTeamTransaction,
         refreshTeamTransactions,
+        refreshMonthlyData,
       }}
     >
       {children}

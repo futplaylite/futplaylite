@@ -203,13 +203,8 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     teamTransactions,
     addTeamTransaction,
     deleteTeamTransaction,
-    refreshTeamTransactions,
+    refreshMonthlyData,
   } = useLeague();
-
-  // Sincroniza transações financeiras da nuvem sempre que abrir a tela Financeiro
-  useEffect(() => {
-    refreshTeamTransactions();
-  }, []);
 
   // Aba principal: 'caixa', 'mensalidades' ou 'relatorios' (preservada ao atualizar a página)
   const [activeTab, setActiveTab] = useState<'caixa' | 'mensalidades' | 'relatorios'>(() => {
@@ -226,6 +221,11 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     try {
       sessionStorage.setItem('futplay_finance_subtab_v1', activeTab);
     } catch {}
+  }, [activeTab]);
+
+  // Sincroniza mensalidades, config PIX e caixa com a nuvem ao abrir ou trocar de aba
+  useEffect(() => {
+    refreshMonthlyData();
   }, [activeTab]);
 
   // Identificação do perfil do usuário atual
@@ -334,7 +334,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   const paymentMap = useMemo(() => {
     const map = new Map<string, boolean>();
     (monthlyPayments || []).forEach((item) => {
-      if (item.yearMonth === selectedMonth) {
+      if ((item.yearMonth || '').trim() === selectedMonth) {
         map.set(item.playerId, item.isPaid);
       }
     });
@@ -356,7 +356,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
         exemptCount++;
         return;
       }
-      if (paymentMap.get(p.id)) {
+      if (paymentMap.get(p.id) || (p.userId && paymentMap.get(p.userId))) {
         paidCount++;
       } else {
         pendingCount++;
@@ -389,7 +389,11 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   // Dados do Jogador Atual para o Modo Pessoal
   const myPlayerId = myProfile?.id;
   const isMyGoalkeeper = isGoalkeeper(myProfile);
-  const isMyPaid = myPlayerId ? paymentMap.get(myPlayerId) === true : false;
+  const isMyPaid = Boolean(
+    (myPlayerId && paymentMap.get(myPlayerId) === true) ||
+      (myProfile?.userId && paymentMap.get(myProfile.userId) === true) ||
+      (currentUser?.id && paymentMap.get(currentUser.id) === true)
+  );
 
   // Ano atual selecionado para o histórico do atleta
   const selectedYear = useMemo(() => {
@@ -399,14 +403,16 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
   // Histórico anual pessoal do atleta (12 meses do ano selecionado)
   const myYearlyHistory = useMemo(() => {
-    if (!myPlayerId) return [];
+    if (!myPlayerId && !currentUser?.id) return [];
     return MONTH_NAMES.map((name, index) => {
       const mStr = String(index + 1).padStart(2, '0');
       const ym = `${selectedYear}-${mStr}`;
       const record = (monthlyPayments || []).find(
         (rec) =>
-          (rec.playerId === myPlayerId || (myProfile?.userId && rec.playerId === myProfile.userId)) &&
-          rec.yearMonth === ym
+          (rec.playerId === myPlayerId ||
+            (myProfile?.userId && rec.playerId === myProfile.userId) ||
+            (currentUser?.id && rec.playerId === currentUser.id)) &&
+          (rec.yearMonth || '').trim() === ym
       );
       return {
         monthIndex: index,

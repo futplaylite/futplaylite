@@ -382,6 +382,7 @@ export interface MonthlyPaymentRecord {
   paidAt?: string;
   amount?: number;
   confirmedBy?: string;
+  updatedAt?: string;
 }
 
 export interface PeladaMonthlyConfig {

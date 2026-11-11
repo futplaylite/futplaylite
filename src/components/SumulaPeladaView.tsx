@@ -126,6 +126,7 @@ export const getStoredSumulas = (): SumulaData[] => {
             s.id !== 'demo-sumula' &&
             s.id !== 'template' &&
             !s.id.startsWith('finance_ledger_') &&
+            !s.id.startsWith('monthly_') &&
             (s.status as string) !== 'financial_ledger'
         );
 
