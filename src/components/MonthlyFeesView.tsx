@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
-  ArrowLeft,
   Check,
   AlertCircle,
   Calendar,
@@ -48,7 +47,7 @@ import { PlayerProfile, TeamTransaction, TransactionType, TransactionCategory } 
 import { TeamCrestBadge } from './TeamCrestBadge';
 
 interface MonthlyFeesViewProps {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 const MONTH_NAMES = [
@@ -192,7 +191,7 @@ export const CATEGORY_INFO: Record<
   },
 };
 
-export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
+export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   const {
     profiles,
     currentPlayerProfile,
@@ -760,27 +759,17 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
 
   return (
     <div className="space-y-4 pb-20 animate-fadeIn">
-      {/* Barra Compacta Alinhada (Voltar + Abas) */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-95 cursor-pointer shrink-0"
-          title="Voltar ao Painel Principal"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-
-        {/* Alternador de Abas alinhado na mesma linha */}
+      {/* Barra Compacta Alinhada (Apenas Abas) */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
         <div
-          className={`flex-1 grid p-0.5 bg-slate-100 rounded-xl border border-slate-200/80 ${
+          className={`grid p-0.5 bg-slate-100 rounded-xl border border-slate-200/80 ${
             isCoachOrAdmin ? 'grid-cols-3' : 'grid-cols-2'
           }`}
         >
           <button
             type="button"
             onClick={() => setActiveTab('caixa')}
-            className={`flex items-center justify-center gap-1 h-8 px-1.5 rounded-lg text-[11px] sm:text-xs font-black transition cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 h-9 px-2 rounded-lg text-xs font-black transition cursor-pointer ${
               activeTab === 'caixa'
                 ? 'bg-white text-emerald-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -792,7 +781,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
           <button
             type="button"
             onClick={() => setActiveTab('mensalidades')}
-            className={`flex items-center justify-center gap-1 h-8 px-1.5 rounded-lg text-[11px] sm:text-xs font-black transition cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 h-9 px-2 rounded-lg text-xs font-black transition cursor-pointer ${
               activeTab === 'mensalidades'
                 ? 'bg-white text-emerald-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -805,7 +794,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
             <button
               type="button"
               onClick={() => setActiveTab('relatorios')}
-              className={`flex items-center justify-center gap-1 h-8 px-1.5 rounded-lg text-[11px] sm:text-xs font-black transition cursor-pointer ${
+              className={`flex items-center justify-center gap-1.5 h-9 px-2 rounded-lg text-xs font-black transition cursor-pointer ${
                 activeTab === 'relatorios'
                   ? 'bg-white text-emerald-700 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
