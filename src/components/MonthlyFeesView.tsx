@@ -760,40 +760,29 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = ({ onBack }) => {
 
   return (
     <div className="space-y-4 pb-20 animate-fadeIn">
-      {/* Cabeçalho Principal com Botão Voltar e Escudo do Time */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-95 cursor-pointer shrink-0"
-              title="Voltar ao Painel Principal"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div className="flex items-center gap-2">
-              <TeamCrestBadge name={userTeamName} size={32} />
-              <div>
-                <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-none">
-                  Financeiro do Time
-                </h1>
-                <p className="text-[11px] font-semibold text-slate-500 mt-0.5">
-                  {userTeamName} • Transparência para todos
-                </p>
-              </div>
-            </div>
-          </div>
+      {/* Cabeçalho Compacto de Navegação Financeira (Apenas Botões) */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition active:scale-95 cursor-pointer shrink-0"
+            title="Voltar ao Painel Principal"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Voltar</span>
+          </button>
 
           {/* Botão de Configurações do PIX e Valor (Apenas Treinador) */}
           {isCoachOrAdmin && (
             <button
               type="button"
               onClick={() => setShowConfig(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition active:scale-95 cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition active:scale-95 cursor-pointer shrink-0"
               title="Configurar Mensalidade e Chave PIX"
             >
-              <Settings className="h-4 w-4" />
+              <Settings className="h-3.5 w-3.5 text-slate-600" />
+              <span>Configurar PIX</span>
             </button>
           )}
         </div>
