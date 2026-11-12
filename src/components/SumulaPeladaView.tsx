@@ -1054,6 +1054,19 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     }
   };
 
+  const receiptPayload = useMemo(
+    () => ({
+      sumula,
+      teamName: sumula.teamName || userTeam || 'Meu Time',
+      venueName: 'Arena Planalto Society',
+    }),
+    [sumula, userTeam]
+  );
+
+  const closeReceiptModal = () => {
+    setShowReceiptModal(false);
+  };
+
   return (
     <div className="-mx-2.5 sm:mx-0 space-y-3 pb-8 relative">
       {/* Prancheta Física Estilizada com laterais expandidas */}
@@ -2110,7 +2123,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
       {/* Modal de Confirmação de Finalização da Súmula */}
       {showFinalizeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
@@ -2167,7 +2180,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
       {/* Popup / Modal de Confirmação de Exclusão */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-100 text-red-600">
@@ -2220,14 +2233,8 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
       {showReceiptModal && (
         <ShareSumulaReceiptModal
           isOpen={true}
-          onClose={() => {
-            setShowReceiptModal(false);
-          }}
-          data={{
-            sumula,
-            teamName: sumula.teamName || userTeam || 'Meu Time',
-            venueName: 'Arena Planalto Society',
-          }}
+          onClose={closeReceiptModal}
+          data={receiptPayload}
         />
       )}
     </div>

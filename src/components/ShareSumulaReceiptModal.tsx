@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Download,
   Loader2,
@@ -32,22 +33,57 @@ export const ShareSumulaReceiptModal: React.FC<ShareSumulaReceiptModalProps> = (
   const [exportType, setExportType] = useState<'image' | 'pdf'>('image');
   const [shareSuccess, setShareSuccess] = useState<string | null>(null);
 
+  const latestDataRef = useRef<SumulaReceiptImageData>(data);
+  latestDataRef.current = data;
+
+  // Assinatura estável apenas dos campos exibidos no comprovante (ignora ticks de cronômetro / auto-save)
+  const receiptSignature = useMemo(() => {
+    if (!isOpen) return '';
+    const { sumula, teamName, venueName } = data;
+    return JSON.stringify({
+      id: sumula.id,
+      status: sumula.status,
+      matchDate: sumula.matchDate,
+      startTime: sumula.startTime,
+      teamName: teamName || sumula.teamName,
+      venueName,
+      arrivalList: sumula.arrivalList,
+      goalkeepers: sumula.goalkeepers,
+      teamsGrid: sumula.teamsGrid,
+      teamLineups: sumula.teamLineups,
+      yellowCards: sumula.yellowCards,
+      blueCards: sumula.blueCards,
+      redCards: sumula.redCards,
+      highlightGoals: sumula.highlightGoals,
+    });
+  }, [isOpen, data]);
+
   useEffect(() => {
-    if (!isOpen) {
-      setReceiptData(null);
+    if (!isOpen || !receiptSignature) {
+      setReceiptData((prev) => {
+        if (prev?.pdfUrl) URL.revokeObjectURL(prev.pdfUrl);
+        return null;
+      });
       setLoading(true);
       setShareSuccess(null);
       return;
     }
 
     let isMounted = true;
-    setLoading(true);
-    setShareSuccess(null);
+    setLoading((prevLoading) => (receiptData ? prevLoading : true));
 
-    generateSumulaReceiptImage(data)
+    generateSumulaReceiptImage(latestDataRef.current)
       .then((generated) => {
-        if (!isMounted) return;
-        setReceiptData(generated);
+        if (!isMounted) {
+          if (generated.pdfUrl) URL.revokeObjectURL(generated.pdfUrl);
+          return;
+        }
+        setReceiptData((prev) => {
+          if (prev?.pdfUrl && prev.pdfUrl !== generated.pdfUrl) {
+            URL.revokeObjectURL(prev.pdfUrl);
+          }
+          return generated;
+        });
         setLoading(false);
       })
       .catch((err) => {
@@ -58,7 +94,18 @@ export const ShareSumulaReceiptModal: React.FC<ShareSumulaReceiptModalProps> = (
     return () => {
       isMounted = false;
     };
-  }, [isOpen, data]);
+  }, [isOpen, receiptSignature]);
+
+  const latestPdfUrlRef = useRef<string | null>(null);
+  latestPdfUrlRef.current = receiptData?.pdfUrl || null;
+
+  useEffect(() => {
+    return () => {
+      if (latestPdfUrlRef.current) {
+        URL.revokeObjectURL(latestPdfUrlRef.current);
+      }
+    };
+  }, []);
 
   if (!isOpen) return null;
 
@@ -173,20 +220,25 @@ export const ShareSumulaReceiptModal: React.FC<ShareSumulaReceiptModalProps> = (
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 overflow-y-auto animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md rounded-3xl bg-slate-900 border border-slate-700/80 p-4 text-white shadow-2xl space-y-3 my-auto max-h-[94vh] flex flex-col">
+  const modalContent = (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="relative w-full max-w-md max-h-[92dvh] flex flex-col overflow-hidden rounded-3xl bg-slate-900 border border-slate-700/80 p-4 text-white shadow-2xl gap-3">
         {/* Cabeçalho do Modal */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+        <div className="flex items-center justify-between border-b border-white/10 pb-2.5 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
               <CheckCircle2 className="h-5 w-5" />
             </div>
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-wide font-display text-white flex items-center gap-1.5">
+            <div className="min-w-0">
+              <h3 className="text-sm font-black uppercase tracking-wide font-display text-white truncate">
                 Comprovante da Súmula
               </h3>
-              <p className="text-[10px] text-emerald-300">
+              <p className="text-[10px] text-emerald-300 truncate">
                 Modelo idêntico à prancheta física oficial
               </p>
             </div>
@@ -195,16 +247,16 @@ export const ShareSumulaReceiptModal: React.FC<ShareSumulaReceiptModalProps> = (
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition active:scale-95"
+            className="shrink-0 rounded-full p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition active:scale-95 cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Pergunta: Imagem ou PDF? (Seletor Interativo) */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 shrink-0">
           <label className="text-[11px] font-black uppercase tracking-wider text-slate-300 flex items-center gap-1">
-            <Sparkles className="h-3 w-3 text-amber-400" />
+            <Sparkles className="h-3 w-3 text-amber-400 shrink-0" />
             <span>Como deseja exportar o comprovante?</span>
           </label>
 
@@ -215,17 +267,17 @@ export const ShareSumulaReceiptModal: React.FC<ShareSumulaReceiptModalProps> = (
               onClick={() => setExportType('image')}
               className={`p-2.5 rounded-2xl border text-left transition active:scale-95 flex flex-col gap-1 cursor-pointer ${
                 exportType === 'image'
-                  ? 'border-emerald-400 bg-emerald-950/60 text-white shadow-xs ring-2 ring-emerald-500/40'
+                  ? 'border-emerald-400 bg-emerald-950/60 text-white shadow-sm ring-2 ring-emerald-500/40'
                   : 'border-slate-800 bg-slate-800/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-1">
                 <span className="flex items-center gap-1.5 font-black text-xs">
-                  <ImageIcon className="h-4 w-4 text-emerald-400" />
+                  <ImageIcon className="h-4 w-4 text-emerald-400 shrink-0" />
                   <span>Imagem (PNG)</span>
                 </span>
                 {exportType === 'image' && (
-                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                  <span className="h-2 w-2 rounded-full bg-emerald-400 shrink-0" />
                 )}
               </div>
               <p className="text-[10px] text-slate-300 leading-tight">
@@ -239,17 +291,17 @@ export const ShareSumulaReceiptModal: React.FC<ShareSumulaReceiptModalProps> = (
               onClick={() => setExportType('pdf')}
               className={`p-2.5 rounded-2xl border text-left transition active:scale-95 flex flex-col gap-1 cursor-pointer ${
                 exportType === 'pdf'
-                  ? 'border-blue-400 bg-blue-950/60 text-white shadow-xs ring-2 ring-blue-500/40'
+                  ? 'border-blue-400 bg-blue-950/60 text-white shadow-sm ring-2 ring-blue-500/40'
                   : 'border-slate-800 bg-slate-800/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-1">
                 <span className="flex items-center gap-1.5 font-black text-xs">
-                  <FileText className="h-4 w-4 text-blue-400" />
+                  <FileText className="h-4 w-4 text-blue-400 shrink-0" />
                   <span>Documento (PDF)</span>
                 </span>
                 {exportType === 'pdf' && (
-                  <span className="h-2 w-2 rounded-full bg-blue-400" />
+                  <span className="h-2 w-2 rounded-full bg-blue-400 shrink-0" />
                 )}
               </div>
               <p className="text-[10px] text-slate-300 leading-tight">
@@ -260,29 +312,29 @@ export const ShareSumulaReceiptModal: React.FC<ShareSumulaReceiptModalProps> = (
         </div>
 
         {/* Pré-visualização do Comprovante da Súmula */}
-        <div className="flex-1 overflow-y-auto rounded-2xl bg-black/60 border border-white/10 p-2 flex items-center justify-center min-h-[260px] relative">
+        <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl bg-black/60 border border-white/10 p-2.5 flex flex-col items-center justify-center relative">
           {loading ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-12 text-slate-400">
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-slate-400">
               <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
-              <span className="text-xs font-bold">
+              <span className="text-xs font-bold text-center">
                 Gerando Comprovante Idêntico à Súmula...
               </span>
             </div>
           ) : receiptData?.dataUrl ? (
-            <div className="w-full flex flex-col items-center">
+            <div className="w-full h-full flex flex-col items-center justify-center gap-1.5">
               <img
                 src={receiptData.dataUrl}
                 alt="Comprovante Oficial da Súmula"
-                className="w-full h-auto max-h-[46vh] object-contain rounded-xl shadow-2xl border border-slate-700/60"
+                className="max-w-full max-h-[42dvh] w-auto h-auto object-contain rounded-xl shadow-2xl border border-slate-700/60"
               />
-              <span className="mt-1.5 text-[9px] font-mono text-slate-400">
+              <span className="text-[9px] font-mono text-slate-400 shrink-0">
                 {exportType === 'image'
-                  ? '🖼️ Formato Imagem HD (PNG 1200x1700)'
+                  ? '🖼️ Formato Imagem HD (PNG)'
                   : '📄 Documento Oficial A4 (Pronto para impressão)'}
               </span>
             </div>
           ) : (
-            <div className="text-xs text-red-400 py-8">
+            <div className="text-xs text-red-400 py-8 text-center">
               Não foi possível gerar a pré-visualização.
             </div>
           )}
@@ -290,72 +342,77 @@ export const ShareSumulaReceiptModal: React.FC<ShareSumulaReceiptModalProps> = (
 
         {/* Alerta de Feedback de Sucesso */}
         {shareSuccess && (
-          <div className="rounded-xl bg-emerald-500/20 border border-emerald-400/40 p-2 text-center text-xs font-bold text-emerald-300 animate-in fade-in">
+          <div className="rounded-xl bg-emerald-500/20 border border-emerald-400/40 p-2 text-center text-xs font-bold text-emerald-300 shrink-0">
             {shareSuccess}
           </div>
         )}
 
         {/* Botões de Ação para o Formato Selecionado */}
-        {exportType === 'image' ? (
-          /* Ações do Modo Imagem */
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleDownloadImage}
-              disabled={loading || !receiptData}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 py-2.5 px-3 text-xs font-bold text-white hover:bg-white/20 active:scale-95 transition disabled:opacity-50 cursor-pointer shadow-xs"
-              title="Baixar imagem no seu aparelho"
-            >
-              <Download className="h-4 w-4 text-emerald-400" />
-              <span>Baixar Imagem</span>
-            </button>
+        <div className="shrink-0">
+          {exportType === 'image' ? (
+            /* Ações do Modo Imagem */
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadImage}
+                disabled={loading || !receiptData}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/10 py-2.5 px-3 text-xs font-bold text-white hover:bg-white/20 active:scale-95 transition disabled:opacity-50 cursor-pointer shadow-sm"
+                title="Baixar imagem no seu aparelho"
+              >
+                <Download className="h-4 w-4 text-emerald-400 shrink-0" />
+                <span>Baixar Imagem</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleShareImage}
-              disabled={loading || !receiptData}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 py-2.5 px-3 text-xs font-black text-slate-950 shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
-              title="Compartilhar no WhatsApp ou redes sociais"
-            >
-              <Share2 className="h-4 w-4" />
-              <span>Compartilhar</span>
-            </button>
-          </div>
-        ) : (
-          /* Ações do Modo PDF */
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              disabled={loading || !receiptData}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 py-2.5 px-3 text-xs font-black text-white shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
-              title="Baixar arquivo PDF padrão A4"
-            >
-              <Download className="h-4 w-4" />
-              <span>Baixar PDF</span>
-            </button>
+              <button
+                type="button"
+                onClick={handleShareImage}
+                disabled={loading || !receiptData}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 py-2.5 px-3 text-xs font-black text-slate-950 shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
+                title="Compartilhar no WhatsApp ou redes sociais"
+              >
+                <Share2 className="h-4 w-4 shrink-0" />
+                <span>Compartilhar</span>
+              </button>
+            </div>
+          ) : (
+            /* Ações do Modo PDF */
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={loading || !receiptData}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 py-2.5 px-3 text-xs font-black text-white shadow-md active:scale-95 transition disabled:opacity-50 cursor-pointer"
+                title="Baixar arquivo PDF padrão A4"
+              >
+                <Download className="h-4 w-4 shrink-0" />
+                <span>Baixar PDF</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={loading || !receiptData}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-blue-400/50 bg-blue-950/70 hover:bg-blue-900 py-2.5 px-3 text-xs font-bold text-blue-200 active:scale-95 transition disabled:opacity-50 cursor-pointer"
-              title="Imprimir súmula em folha A4"
-            >
-              <Printer className="h-4 w-4 text-blue-300" />
-              <span>Imprimir A4</span>
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={handlePrint}
+                disabled={loading || !receiptData}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-blue-400/50 bg-blue-950/70 hover:bg-blue-900 py-2.5 px-3 text-xs font-bold text-blue-200 active:scale-95 transition disabled:opacity-50 cursor-pointer"
+                title="Imprimir súmula em folha A4"
+              >
+                <Printer className="h-4 w-4 text-blue-300 shrink-0" />
+                <span>Imprimir A4</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         <button
           type="button"
           onClick={onClose}
-          className="w-full text-center text-[11px] font-bold text-slate-400 hover:text-white transition py-1 cursor-pointer"
+          className="w-full shrink-0 text-center text-[11px] font-bold text-slate-400 hover:text-white transition py-1 cursor-pointer"
         >
           Fechar
         </button>
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return modalContent;
+  return createPortal(modalContent, document.body);
 };

@@ -92,9 +92,9 @@ export async function generateSumulaReceiptImage(
 ): Promise<GeneratedSumulaReceipt> {
   const { sumula, teamName = sumula.teamName || 'Pelada Oficial', venueName = 'Arena Society' } = data;
 
-  // Dimensões A4 em alta definição (1200 x 1700)
+  // Dimensões A4 em alta definição proporcionais ao conteúdo (1200 x 1540)
   const width = 1200;
-  const height = 1700;
+  const height = 1540;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -157,7 +157,7 @@ export async function generateSumulaReceiptImage(
 
   ctx.fillStyle = '#ffffff';
   ctx.font = '900 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(teamName.toUpperCase(), padX + 24, padY + 70);
+  ctx.fillText(truncateCanvasText(ctx, teamName.toUpperCase(), sheetW - 300), padX + 24, padY + 70);
 
   // Badge de Status à Direita
   const isFinalized = sumula.status === 'finalizada';
@@ -231,7 +231,7 @@ export async function generateSumulaReceiptImage(
   ctx.fillText('📍 LOCAL:', padX + 24 + box1W + box2W + 32, boxY + 24);
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.fillText(venueName, padX + 24 + box1W + box2W + 100, boxY + 24);
+  ctx.fillText(truncateCanvasText(ctx, venueName, box3W - 116), padX + 24 + box1W + box2W + 100, boxY + 24);
 
   // 3. SEÇÃO 1: LISTA DE PRESENÇA & GOLEIROS FIXOS
   let curY = padY + headH + 16;
@@ -272,7 +272,7 @@ export async function generateSumulaReceiptImage(
 
   // Grid de Atletas Confirmados (3 Colunas x até 6 linhas = até 18 atletas)
   const confirmedAthletes = arrivals.filter((a) => a.confirmed).slice(0, 18);
-  const colW = (presW - 40) / 3;
+  const colW = (presW - 44) / 3;
   let pIdx = 0;
   for (let c = 0; c < 3; c++) {
     for (let r = 0; r < 6; r++) {
@@ -286,18 +286,20 @@ export async function generateSumulaReceiptImage(
       ctx.textAlign = 'left';
       ctx.fillText('✓', aX, aY + 14);
 
+      const gkReserve = athlete.isGoalkeeper ? 50 : 12;
       ctx.fillStyle = '#1e293b';
       ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      const maxChars = athlete.isGoalkeeper ? 14 : 18;
-      const displayName = athlete.playerName.length > maxChars
-        ? athlete.playerName.slice(0, maxChars) + '..'
-        : athlete.playerName;
-      ctx.fillText(displayName, aX + 14, aY + 14);
+      ctx.fillText(
+        truncateCanvasText(ctx, athlete.playerName, colW - 16 - gkReserve),
+        aX + 14,
+        aY + 14
+      );
 
       if (athlete.isGoalkeeper) {
         ctx.fillStyle = '#2563eb';
         ctx.font = '900 9px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('🧤 GK', aX + colW - 35, aY + 14);
+        ctx.textAlign = 'right';
+        ctx.fillText('🧤 GK', aX + colW - 10, aY + 14);
       }
 
       pIdx++;
@@ -322,7 +324,7 @@ export async function generateSumulaReceiptImage(
   ctx.textAlign = 'left';
   ctx.fillText('🧤 GOLEIROS FIXOS', gkX + 16, curY + 24);
 
-  const goalkeepers = sumula.goalkeepers || [];
+  const goalkeepers = (sumula.goalkeepers || []).slice(0, 4);
   goalkeepers.forEach((gk, i) => {
     const boxGkY = curY + 40 + i * 39;
     ctx.fillStyle = '#ffffff';
@@ -333,18 +335,22 @@ export async function generateSumulaReceiptImage(
     roundRect(ctx, gkX + 14, boxGkY, gkW - 28, 32, 8);
     ctx.stroke();
 
+    ctx.textAlign = 'left';
     ctx.fillStyle = '#2563eb';
     ctx.font = '900 12px "Courier New", monospace';
     ctx.fillText(gk.num || `G${i + 1}`, gkX + 24, boxGkY + 20);
 
-    ctx.fillStyle = gk.name?.trim() ? '#0f172a' : '#94a3b8';
+    const hasName = Boolean(gk.name?.trim());
+    ctx.fillStyle = hasName ? '#0f172a' : '#94a3b8';
     ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(gk.name?.trim() ? gk.name.toUpperCase() : 'Não escalado', gkX + 52, boxGkY + 20);
+    const gkText = hasName ? gk.name.toUpperCase() : 'Não escalado';
+    ctx.fillText(truncateCanvasText(ctx, gkText, gkW - 92), gkX + 52, boxGkY + 20);
 
-    if (gk.name?.trim()) {
+    if (hasName) {
       ctx.fillStyle = '#10b981';
       ctx.font = '900 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText('✓', gkX + gkW - 32, boxGkY + 20);
+      ctx.textAlign = 'right';
+      ctx.fillText('✓', gkX + gkW - 22, boxGkY + 20);
     }
   });
 
@@ -375,16 +381,17 @@ export async function generateSumulaReceiptImage(
   ctx.textAlign = 'left';
   ctx.fillText('⚽ PONTOS E PARTIDAS DOS TIMES (JOGOS J1 A J15)', padX + 38, curY + 24);
 
-  // Tabela da Grade
+  // Tabela da Grade (132 + 15*52 + 3*48 = 1056 <= 1080 de largura interna)
   const tableX = padX + 36;
   const tableY = curY + 48;
-  const teamColW = 140;
-  const matchColW = 54;
-  const statColW = 50;
+  const tableW = sheetW - 72;
+  const teamColW = 132;
+  const matchColW = 52;
+  const statColW = 48;
 
   // Linha do Cabeçalho da Tabela
   ctx.fillStyle = '#0f172a';
-  roundRect(ctx, tableX, tableY, sheetW - 72, 30, 6);
+  roundRect(ctx, tableX, tableY, tableW, 30, 6);
   ctx.fill();
 
   ctx.fillStyle = '#ffffff';
@@ -405,23 +412,23 @@ export async function generateSumulaReceiptImage(
   ctx.fillText('PTS', tableX + teamColW + 15 * matchColW + statColW * 2 + statColW / 2, tableY + 20);
 
   // 4 Linhas dos Times
-  const teamsGrid = sumula.teamsGrid || [];
+  const teamsGrid = (sumula.teamsGrid || []).slice(0, 4);
   teamsGrid.forEach((row, tIdx) => {
     const rowY = tableY + 36 + tIdx * 42;
 
     ctx.fillStyle = tIdx % 2 === 0 ? '#f8fafc' : '#ffffff';
-    roundRect(ctx, tableX, rowY, sheetW - 72, 38, 6);
+    roundRect(ctx, tableX, rowY, tableW, 38, 6);
     ctx.fill();
     ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 1;
-    roundRect(ctx, tableX, rowY, sheetW - 72, 38, 6);
+    roundRect(ctx, tableX, rowY, tableW, 38, 6);
     ctx.stroke();
 
     // Nome do Time
     ctx.fillStyle = '#0f172a';
     ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(row.teamName, tableX + 12, rowY + 24);
+    ctx.fillText(truncateCanvasText(ctx, row.teamName, teamColW - 18), tableX + 12, rowY + 24);
 
     let vCount = 0;
     let eCount = 0;
@@ -429,9 +436,9 @@ export async function generateSumulaReceiptImage(
     // 15 Partidas
     for (let mIdx = 0; mIdx < 15; mIdx++) {
       const res = row.matches?.[mIdx] || '-';
-      const cellX = tableX + teamColW + mIdx * matchColW + 8;
+      const cellX = tableX + teamColW + mIdx * matchColW + 6;
       const cellY = rowY + 5;
-      const cellW = matchColW - 16;
+      const cellW = matchColW - 12;
       const cellH = 28;
 
       if (res === 'V') {
@@ -485,7 +492,7 @@ export async function generateSumulaReceiptImage(
   const rosterBoxW = (sheetW - 48 - 14) / 2;
   const rosterBoxH = 260;
 
-  const teamLineupEntries = Object.entries(sumula.teamLineups || {});
+  const teamLineupEntries = Object.entries(sumula.teamLineups || {}).slice(0, 4);
   teamLineupEntries.forEach(([tName, players], idx) => {
     const col = idx % 2;
     const row = Math.floor(idx / 2);
@@ -514,7 +521,7 @@ export async function generateSumulaReceiptImage(
     ctx.fillStyle = '#0f172a';
     ctx.font = '900 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(tName.toUpperCase(), boxX + 14, boxY + 23);
+    ctx.fillText(truncateCanvasText(ctx, tName.toUpperCase(), rosterBoxW - 110), boxX + 14, boxY + 23);
 
     ctx.fillStyle = '#059669';
     ctx.font = '900 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
@@ -525,18 +532,28 @@ export async function generateSumulaReceiptImage(
     const displayPlayers = players.slice(0, 8);
     displayPlayers.forEach((p, pI) => {
       const pY = boxY + 44 + pI * 26;
+      const hasGoals = Number(p.goals) > 0;
+      const goalsReserve = hasGoals ? 54 : 16;
+      const subReserve = p.isSub ? 42 : 0;
+
       ctx.textAlign = 'left';
       ctx.fillStyle = '#334155';
       ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(`• ${p.player}`, boxX + 14, pY + 14);
+      const playerLabel = truncateCanvasText(
+        ctx,
+        `• ${p.player}`,
+        rosterBoxW - 28 - goalsReserve - subReserve
+      );
+      ctx.fillText(playerLabel, boxX + 14, pY + 14);
 
       if (p.isSub) {
+        const nameW = ctx.measureText(playerLabel).width;
         ctx.fillStyle = '#64748b';
         ctx.font = 'italic 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        ctx.fillText('(Res)', boxX + 200, pY + 14);
+        ctx.fillText('(Res)', boxX + 20 + nameW, pY + 14);
       }
 
-      if (Number(p.goals) > 0) {
+      if (hasGoals) {
         ctx.textAlign = 'right';
         ctx.fillStyle = '#059669';
         ctx.font = '900 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
@@ -591,7 +608,7 @@ export async function generateSumulaReceiptImage(
       ctx.textAlign = 'left';
       ctx.fillStyle = '#0f172a';
       ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(`${cardIcon}: ${c.name}`, padX + 36, cY + 14);
+      ctx.fillText(truncateCanvasText(ctx, `${cardIcon}: ${c.name}`, halfW - 32), padX + 36, cY + 14);
     });
   }
 
@@ -631,11 +648,12 @@ export async function generateSumulaReceiptImage(
       ctx.textAlign = 'left';
       ctx.fillStyle = '#0f172a';
       ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-      ctx.fillText(`⚽ ${h.player}`, destX + 16, hY + 14);
+      ctx.fillText(truncateCanvasText(ctx, `⚽ ${h.player}`, halfW - 140), destX + 16, hY + 14);
 
       ctx.fillStyle = '#0284c7';
       ctx.font = 'bold 11px "Courier New", monospace';
-      ctx.fillText(`Horário: ${h.time}`, destX + 220, hY + 14);
+      ctx.textAlign = 'right';
+      ctx.fillText(`Horário: ${h.time}`, destX + halfW - 16, hY + 14);
     });
   }
 
@@ -721,6 +739,21 @@ export async function generateSumulaReceiptImage(
       0.95
     );
   });
+}
+
+function truncateCanvasText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string {
+  const safeText = (text || '').trim();
+  if (!safeText || maxWidth <= 12) return '';
+  if (ctx.measureText(safeText).width <= maxWidth) return safeText;
+  let clipped = safeText;
+  while (clipped.length > 1 && ctx.measureText(`${clipped}...`).width > maxWidth) {
+    clipped = clipped.slice(0, -1);
+  }
+  return `${clipped}...`;
 }
 
 function roundRect(
