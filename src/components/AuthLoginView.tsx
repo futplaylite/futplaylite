@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -88,6 +89,26 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [openFootDropdown, setOpenFootDropdown] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const errorBoxRef = useRef<HTMLDivElement>(null);
+
+  // Validações em tempo real se os campos de confirmação coincidem
+  const isIdentifierMatching = useMemo(() => {
+    const id1 = regIdentifier.trim();
+    const id2 = regConfirmIdentifier.trim();
+    if (!id1 || !id2) return null;
+    const isEmail1 = id1.includes('@');
+    const isEmail2 = id2.includes('@');
+    if (isEmail1 || isEmail2) {
+      return id1.toLowerCase() === id2.toLowerCase();
+    }
+    const d1 = id1.replace(/\D/g, '');
+    const d2 = id2.replace(/\D/g, '');
+    return d1 === d2;
+  }, [regIdentifier, regConfirmIdentifier]);
+
+  const isPasswordMatching = useMemo(() => {
+    if (!regPassword || !regConfirmPassword) return null;
+    return regPassword === regConfirmPassword;
+  }, [regPassword, regConfirmPassword]);
 
   // Sempre que surgir um erro, rola a tela até a mensagem (no celular ela ficava fora da tela)
   useEffect(() => {
@@ -295,7 +316,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       'Conta ainda não cadastrada com este e-mail ou telefone. Toque na aba "Criar Conta" acima para se cadastrar em segundos!'
     );
     setRegIdentifier(trimmed);
-    setRegConfirmIdentifier(trimmed);
+    setRegConfirmIdentifier('');
   };
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -334,11 +355,24 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
     const trimmedConfirmIdentifier = regConfirmIdentifier.trim();
     if (!trimmedConfirmIdentifier) {
-      setLoginError('Confirme seu e-mail ou telefone redigitando-o no campo de confirmação.');
+      setLoginError(
+        isEmail
+          ? 'Confirme seu e-mail redigitando-o no campo de confirmação.'
+          : 'Confirme seu telefone celular redigitando-o no campo de confirmação.'
+      );
       return;
     }
-    if (trimmedIdentifier.toLowerCase() !== trimmedConfirmIdentifier.toLowerCase()) {
-      setLoginError('A confirmação do e-mail/celular não confere com o que foi digitado.');
+
+    const identifiersMatch = isEmail
+      ? trimmedIdentifier.toLowerCase() === trimmedConfirmIdentifier.toLowerCase()
+      : digits === trimmedConfirmIdentifier.replace(/\D/g, '');
+
+    if (!identifiersMatch) {
+      setLoginError(
+        isEmail
+          ? 'Os e-mails informados não coincidem. Certifique-se de que foram preenchidos exatamente iguais.'
+          : 'Os números de celular informados não coincidem. Certifique-se de que foram preenchidos exatamente iguais.'
+      );
       return;
     }
 
@@ -701,12 +735,42 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     value={regConfirmIdentifier}
                     onChange={(e) => setRegConfirmIdentifier(formatIdentifierInput(e.target.value))}
                     placeholder="Redigite seu e-mail ou telefone"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                    className={`w-full rounded-xl border pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none transition ${
+                      isIdentifierMatching === true
+                        ? 'border-emerald-500 bg-emerald-50/20 focus:border-emerald-600'
+                        : isIdentifierMatching === false
+                        ? 'border-rose-500 bg-rose-50/20 focus:border-rose-600'
+                        : 'border-slate-200 bg-slate-50 focus:border-blue-600'
+                    }`}
                   />
+                  {isIdentifierMatching === true && (
+                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-emerald-600 flex items-center pointer-events-none">
+                      <Check className="h-4 w-4 stroke-[2.5]" />
+                    </div>
+                  )}
+                  {isIdentifierMatching === false && (
+                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 text-rose-500 flex items-center pointer-events-none">
+                      <AlertCircle className="h-4 w-4" />
+                    </div>
+                  )}
                 </div>
-                <p className="mt-1 text-[10px] text-slate-500">
-                  Você usará este e-mail ou número de telefone para entrar na sua conta.
-                </p>
+                {isIdentifierMatching === true && (
+                  <p className="mt-1 text-[10px] font-bold text-emerald-600 flex items-center gap-1 animate-in fade-in">
+                    <Check className="h-3 w-3 stroke-[2.5]" />
+                    {regIdentifier.includes('@') ? 'Os e-mails coincidem perfeitamente!' : 'Os telefones celulares coincidem perfeitamente!'}
+                  </p>
+                )}
+                {isIdentifierMatching === false && (
+                  <p className="mt-1 text-[10px] font-bold text-rose-600 flex items-center gap-1 animate-in fade-in">
+                    <AlertCircle className="h-3 w-3" />
+                    {regIdentifier.includes('@') ? 'Os e-mails digitados não coincidem.' : 'Os telefones celulares digitados não coincidem.'}
+                  </p>
+                )}
+                {isIdentifierMatching === null && (
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    Você usará este e-mail ou número de telefone para entrar na sua conta.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -749,7 +813,13 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     value={regConfirmPassword}
                     onChange={(e) => setRegConfirmPassword(e.target.value)}
                     placeholder="Redigite sua senha"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                    className={`w-full rounded-xl border pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none transition ${
+                      isPasswordMatching === true
+                        ? 'border-emerald-500 bg-emerald-50/20 focus:border-emerald-600'
+                        : isPasswordMatching === false
+                        ? 'border-rose-500 bg-rose-50/20 focus:border-rose-600'
+                        : 'border-slate-200 bg-slate-50 focus:border-blue-600'
+                    }`}
                   />
                   <button
                     type="button"
@@ -763,6 +833,18 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     )}
                   </button>
                 </div>
+                {isPasswordMatching === true && (
+                  <p className="mt-1 text-[10px] font-bold text-emerald-600 flex items-center gap-1 animate-in fade-in">
+                    <Check className="h-3 w-3 stroke-[2.5]" />
+                    As senhas coincidem!
+                  </p>
+                )}
+                {isPasswordMatching === false && (
+                  <p className="mt-1 text-[10px] font-bold text-rose-600 flex items-center gap-1 animate-in fade-in">
+                    <AlertCircle className="h-3 w-3" />
+                    As senhas não coincidem.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2.5 relative">
