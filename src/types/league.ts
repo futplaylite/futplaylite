@@ -467,3 +467,22 @@ export interface SumulaData {
   superCapasPhotoUrl?: string;
   isSuperCapasActive?: boolean;
 }
+
+export interface PlayerStatAdjustmentDiff {
+  field: string;
+  label: string;
+  before: number | string;
+  after: number | string;
+  delta?: number;
+}
+
+export interface PlayerAdminAdjustment {
+  id: string;
+  playerId: string;
+  playerName: string;
+  actorUserId: string;
+  actorName: string;
+  reason: string;
+  diffs: PlayerStatAdjustmentDiff[];
+  createdAt: string;
+}

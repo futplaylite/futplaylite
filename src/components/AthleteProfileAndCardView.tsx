@@ -11,6 +11,7 @@ import {
   EyeOff,
   Lock,
   Share2,
+  ShieldCheck,
   Star,
   Trash2,
   UserCheck,
@@ -73,6 +74,7 @@ export const AthleteProfileAndCardView: React.FC<
     divisions,
     cities,
     pointTransactions,
+    playerAdjustments,
     currentUser,
     currentPlayerProfile,
     selectedSeasonId,
@@ -975,6 +977,93 @@ export const AthleteProfileAndCardView: React.FC<
               )}
             </div>
           )}
+
+          {/* Histórico Privado de Ajustes da Moderação / Admin */}
+          {(() => {
+            const myAdjustments = (playerAdjustments || []).filter(
+              (a) =>
+                a.playerId === targetProfile.id ||
+                a.playerId === targetProfile.userId
+            );
+
+            if (myAdjustments.length === 0 && !isOwnProfile && currentUser.role !== 'admin') {
+              return null;
+            }
+
+            return (
+              <div className="rounded-2xl border border-blue-200/90 bg-white p-4 shadow-sm space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-blue-950">
+                    <ShieldCheck className="h-4 w-4 text-blue-600" />
+                    <span>Histórico de Ajustes da Moderação / Admin</span>
+                  </div>
+                  <span className="text-[10px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                    {myAdjustments.length} {myAdjustments.length === 1 ? 'registro' : 'registros'}
+                  </span>
+                </div>
+
+                {myAdjustments.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-1">
+                    Nenhum ajuste manual da administração neste perfil. Seus dados refletem fielmente as súmulas e partidas oficiais da Liga.
+                  </p>
+                ) : (
+                  <div className="space-y-3 divide-y divide-slate-100">
+                    {myAdjustments.map((adj) => (
+                      <div key={adj.id} className="pt-3 first:pt-0 space-y-2">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-blue-600" />
+                            Ajuste Oficial por {adj.actorName}
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {new Date(adj.createdAt).toLocaleString('pt-BR', {
+                              dateStyle: 'short',
+                              timeStyle: 'short',
+                            })}
+                          </span>
+                        </div>
+
+                        {adj.reason && (
+                          <div className="text-[11px] text-slate-600 italic bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+                            <strong>Motivo:</strong> "{adj.reason}"
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {adj.diffs.map((diff, dIdx) => {
+                            const isPositive = (diff.delta ?? 0) > 0;
+                            const isNegative = (diff.delta ?? 0) < 0;
+                            return (
+                              <span
+                                key={dIdx}
+                                className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 font-mono text-[10px] font-bold border ${
+                                  isPositive
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : isNegative
+                                    ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                    : 'bg-blue-50 text-blue-800 border-blue-200'
+                                }`}
+                              >
+                                <span>{diff.label}:</span>
+                                <span className="line-through opacity-60">{diff.before}</span>
+                                <span>➔</span>
+                                <span className="font-extrabold">{diff.after}</span>
+                                {diff.delta !== undefined && (
+                                  <span className="font-extrabold">
+                                    ({diff.delta > 0 ? `+${diff.delta}` : diff.delta})
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {isOwnProfile && (
             <div className="pt-2 text-center">

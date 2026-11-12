@@ -18,6 +18,8 @@ import {
   PlayerProfile,
   PlayerRatingLog,
   PeerEvaluation,
+  PlayerAdminAdjustment,
+  PlayerStatAdjustmentDiff,
   PointTransaction,
   ProfileVisibility,
   ResultConfirmation,
@@ -157,6 +159,7 @@ interface LeagueState {
   monthlyPayments: MonthlyPaymentRecord[];
   monthlyConfig: PeladaMonthlyConfig;
   teamTransactions: TeamTransaction[];
+  playerAdjustments: PlayerAdminAdjustment[];
 }
 
 interface LeagueContextValue extends LeagueState {
@@ -292,6 +295,14 @@ interface LeagueContextValue extends LeagueState {
     beforeData?: Record<string, unknown>;
     afterData?: Record<string, unknown>;
   }) => AuditLog;
+  updatePlayerStatsManually: (params: {
+    playerId: string;
+    statsUpdates: Partial<SeasonEntry>;
+    profileUpdates?: Partial<PlayerProfile>;
+    reason: string;
+    actorUserId?: string;
+    actorName?: string;
+  }) => boolean;
 }
 
 const LeagueContext = createContext<LeagueContextValue | null>(null);
@@ -339,6 +350,7 @@ function getInitialState(): LeagueState {
         monthlyPayments: payments,
         monthlyConfig: parsed.monthlyConfig || DEFAULT_MONTHLY_CONFIG,
         teamTransactions: transactions,
+        playerAdjustments: parsed.playerAdjustments || [],
       };
     }
   } catch (e) {
@@ -346,11 +358,14 @@ function getInitialState(): LeagueState {
   }
   let initialTx: TeamTransaction[] = [];
   let initialPay: MonthlyPaymentRecord[] = [];
+  let initialAdjustments: PlayerAdminAdjustment[] = [];
   try {
     const rawTx = localStorage.getItem('futplay_team_financial_transactions_v1');
     if (rawTx) initialTx = JSON.parse(rawTx);
     const rawPay = localStorage.getItem('futplay_monthly_payments_v1');
     if (rawPay) initialPay = JSON.parse(rawPay);
+    const rawAdj = localStorage.getItem('futplay_player_adjustments_v1');
+    if (rawAdj) initialAdjustments = JSON.parse(rawAdj);
   } catch (e) {}
   return {
     users: INITIAL_USERS,
@@ -373,6 +388,7 @@ function getInitialState(): LeagueState {
     monthlyPayments: initialPay,
     monthlyConfig: DEFAULT_MONTHLY_CONFIG,
     teamTransactions: initialTx,
+    playerAdjustments: initialAdjustments,
   };
 }
 
@@ -2892,7 +2908,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       monthlyPayments: [],
       monthlyConfig: DEFAULT_MONTHLY_CONFIG,
       teamTransactions: [],
+      playerAdjustments: [],
     });
+    try {
+      localStorage.removeItem('futplay_player_adjustments_v1');
+    } catch {}
 
     if (currentUser?.id) {
       setCurrentUserId(currentUser.id);
@@ -3599,6 +3619,225 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     return true;
   };
 
+  const updatePlayerStatsManually: LeagueContextValue['updatePlayerStatsManually'] = (params) => {
+    const { playerId, statsUpdates, profileUpdates, reason, actorUserId, actorName } = params;
+
+    const targetProfile = state.profiles.find((p) => p.id === playerId || p.userId === playerId);
+    if (!targetProfile) return false;
+
+    const currentSeasonEntry =
+      state.seasonEntries.find(
+        (se) => se.playerId === targetProfile.id && se.seasonId === selectedSeasonId
+      ) ||
+      state.seasonEntries.find((se) => se.playerId === targetProfile.id) ||
+      ({
+        id: `season-entry-${targetProfile.id}-${selectedSeasonId}`,
+        seasonId: selectedSeasonId,
+        playerId: targetProfile.id,
+        divisionId: targetProfile.currentDivisionId || 'div-ouro',
+        seasonPoints: 0,
+        pendingPoints: 0,
+        matchesPlayed: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        goals: 0,
+        assists: 0,
+        mvpCount: 0,
+        superCapas: 0,
+        goalkeeperCapas: 0,
+        yellowCards: 0,
+        blueCards: 0,
+        redCards: 0,
+        cleanSheets: 0,
+        defensiveActions: 0,
+        status: 'elegivel',
+        updatedAt: new Date().toISOString(),
+      } as SeasonEntry);
+
+    const diffs: PlayerStatAdjustmentDiff[] = [];
+    const beforeData: Record<string, unknown> = {};
+    const afterData: Record<string, unknown> = {};
+
+    const FIELD_LABELS: Record<string, string> = {
+      matchesPlayed: 'Partidas Jogadas (PJ)',
+      wins: 'Vitórias (V)',
+      draws: 'Empates (E)',
+      losses: 'Derrotas (D)',
+      goals: 'Gols Marcados (G)',
+      assists: 'Assistências (A)',
+      superCapas: 'Super Capas (SC)',
+      goalkeeperCapas: 'Capas de Goleiro (CG)',
+      yellowCards: 'Cartões Amarelos (CA)',
+      blueCards: 'Cartões Azuis (CB)',
+      redCards: 'Cartões Vermelhos (CV)',
+      cleanSheets: 'Jogos sem Sofrer Gols',
+      seasonPoints: 'Pontos na Temporada',
+      currentRating: 'Rating ELO',
+      position: 'Posição',
+    };
+
+    // Avalia campos de SeasonEntry
+    Object.entries(statsUpdates).forEach(([key, val]) => {
+      const fieldKey = key as keyof SeasonEntry;
+      const oldVal = currentSeasonEntry[fieldKey];
+      if (val !== undefined && oldVal !== val) {
+        beforeData[key] = oldVal ?? 0;
+        afterData[key] = val;
+        const numOld = typeof oldVal === 'number' ? oldVal : 0;
+        const numNew = typeof val === 'number' ? val : 0;
+        diffs.push({
+          field: key,
+          label: FIELD_LABELS[key] || key,
+          before: (oldVal as number | string) ?? 0,
+          after: val as number | string,
+          delta: typeof val === 'number' && typeof oldVal === 'number' ? numNew - numOld : undefined,
+        });
+      }
+    });
+
+    // Avalia campos de PlayerProfile (ex: currentRating, position)
+    if (profileUpdates) {
+      if (profileUpdates.currentRating !== undefined && profileUpdates.currentRating !== targetProfile.currentRating) {
+        beforeData['currentRating'] = targetProfile.currentRating;
+        afterData['currentRating'] = profileUpdates.currentRating;
+        diffs.push({
+          field: 'currentRating',
+          label: 'Rating ELO',
+          before: targetProfile.currentRating,
+          after: profileUpdates.currentRating,
+          delta: profileUpdates.currentRating - targetProfile.currentRating,
+        });
+      }
+      if (profileUpdates.position !== undefined && profileUpdates.position !== targetProfile.position) {
+        beforeData['position'] = targetProfile.position;
+        afterData['position'] = profileUpdates.position;
+        diffs.push({
+          field: 'position',
+          label: 'Posição no Elenco',
+          before: targetProfile.position,
+          after: profileUpdates.position,
+        });
+      }
+    }
+
+    if (diffs.length === 0) {
+      return true; // Nada a alterar
+    }
+
+    const now = new Date().toISOString();
+    const adjustmentId = `adj-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const newAdjustment: PlayerAdminAdjustment = {
+      id: adjustmentId,
+      playerId: targetProfile.id,
+      playerName: targetProfile.displayName,
+      actorUserId: actorUserId || currentUser.id,
+      actorName: actorName || currentUser.email || 'Administrador',
+      reason: reason.trim() || 'Ajuste manual de dados pelo Administrador',
+      diffs,
+      createdAt: now,
+    };
+
+    const newAuditLog: AuditLog = {
+      id: `audit-${adjustmentId}`,
+      actorUserId: actorUserId || currentUser.id,
+      actorName: actorName || currentUser.email || 'Administrador',
+      actorRole: 'admin',
+      actionType: 'ADMIN_MANUAL_PLAYER_UPDATE',
+      entityType: 'player_stats',
+      entityId: targetProfile.id,
+      reason: `${reason.trim() || 'Ajuste manual'} — Atleta: ${targetProfile.displayName} (${diffs
+        .map((d) => `${d.label}: ${d.before} ➔ ${d.after}`)
+        .join(', ')})`,
+      beforeData,
+      afterData,
+      createdAt: now,
+    };
+
+    setState((prev) => {
+      // 1. Atualiza SeasonEntry
+      const updatedSeasonEntries = [...prev.seasonEntries];
+      const sIdx = updatedSeasonEntries.findIndex(
+        (se) => se.playerId === targetProfile.id && se.seasonId === selectedSeasonId
+      );
+      const updatedEntry: SeasonEntry = {
+        ...currentSeasonEntry,
+        ...statsUpdates,
+        updatedAt: now,
+      };
+      if (sIdx >= 0) {
+        updatedSeasonEntries[sIdx] = updatedEntry;
+      } else {
+        updatedSeasonEntries.push(updatedEntry);
+      }
+
+      // 2. Atualiza Profile
+      const updatedProfiles = prev.profiles.map((p) => {
+        if (p.id !== targetProfile.id) return p;
+        const newRating = profileUpdates?.currentRating ?? p.currentRating;
+        const newPos = profileUpdates?.position ?? p.position;
+        const newDiv = resolveDivisionForPlayer(newRating, p.totalValidatedMatches, prev.divisions);
+        return {
+          ...p,
+          currentRating: newRating,
+          position: newPos,
+          currentDivisionId: newDiv.id,
+          updatedAt: now,
+        };
+      });
+
+      // 3. Atualiza Ajustes
+      const updatedAdjustments = [newAdjustment, ...(prev.playerAdjustments || [])];
+      try {
+        localStorage.setItem('futplay_player_adjustments_v1', JSON.stringify(updatedAdjustments));
+      } catch {}
+
+      // 4. Atualiza AuditLogs
+      const updatedLogs = [newAuditLog, ...(prev.auditLogs || [])];
+
+      const next = {
+        ...prev,
+        seasonEntries: updatedSeasonEntries,
+        profiles: updatedProfiles,
+        playerAdjustments: updatedAdjustments,
+        auditLogs: updatedLogs,
+      };
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+
+      return next;
+    });
+
+    if (isSupabaseConfigured() && targetProfile.userId) {
+      if (profileUpdates) {
+        supabaseService.updateProfile(targetProfile.userId, profileUpdates).catch(() => {});
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('futplay_player_stats_changed', {
+          detail: { playerId: targetProfile.id, adjustmentId },
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('futplay_sumulas_changed', {
+          detail: { count: 0 },
+        })
+      );
+    }
+
+    notify(
+      'success',
+      `Dados de ${targetProfile.displayName} Atualizados!`,
+      `Foram aplicadas ${diffs.length} alterações com registro oficial no perfil do atleta.`
+    );
+
+    return true;
+  };
+
   return (
     <LeagueContext.Provider
       value={{
@@ -3642,6 +3881,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         refreshTeamTransactions,
         refreshMonthlyData,
         recordAuditLog,
+        updatePlayerStatsManually,
+        playerAdjustments: state.playerAdjustments || [],
       }}
     >
       {children}
