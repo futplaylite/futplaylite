@@ -851,16 +851,15 @@ export const AthleteOnboardingWizard: React.FC<
           >
             <div>
               <h2 className="text-sm font-bold text-slate-900">
-                Como você quer competir na Liga?
+                Como você vai participar?
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Escolha se deseja fundar sua própria equipe ou entrar no elenco
-                do seu time usando o código do dono:
+                Crie seu time ou entre com o código do elenco:
               </p>
             </div>
 
-            {/* 2 Opções com Texto Melhorado */}
-            <div className="grid grid-cols-1 gap-2.5">
+            {/* 2 Opções lado a lado com mesmo design dos cards de Partidas/Súmulas */}
+            <div className="grid grid-cols-2 gap-2.5">
               {/* Opção 1: Fundar / Criar Meu Time */}
               <button
                 type="button"
@@ -868,32 +867,58 @@ export const AthleteOnboardingWizard: React.FC<
                   setTeamAction('create');
                   setError('');
                 }}
-                className={`w-full flex items-start gap-3 rounded-2xl border p-3.5 text-left transition ${
+                className={`p-3 rounded-2xl border text-left transition active:scale-[0.98] cursor-pointer flex flex-col justify-between relative overflow-hidden ${
                   teamAction === 'create'
-                    ? 'border-blue-600 bg-blue-50/70 shadow-xs'
-                    : 'border-slate-200 bg-white hover:border-blue-300'
+                    ? 'bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-950 border-blue-400 text-white shadow-md ring-2 ring-blue-500/30'
+                    : 'bg-white border-slate-200 text-slate-700 hover:border-blue-300 hover:bg-slate-50'
                 }`}
               >
-                <div
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                    teamAction === 'create'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  <PlusCircle className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-                      Criar Meu Time <span className="rounded-full bg-blue-100 text-blue-800 text-[10px] px-2 py-0.2 font-bold">Nível: Treinador</span>
-                    </span>
-                    {teamAction === 'create' && (
-                      <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
-                    )}
+                <div className="flex items-center justify-between mb-2">
+                  <div
+                    className={`p-2 rounded-xl ${
+                      teamAction === 'create'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-blue-50 text-blue-700 border border-blue-100'
+                    }`}
+                  >
+                    <PlusCircle className="h-4 w-4" />
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                    Você será o <strong>Treinador / Dono do Time</strong> com acesso para gerenciar súmulas, escalações e jogos oficiais.
+                  <span
+                    className={`text-[10px] font-black uppercase rounded-full px-2 py-0.5 ${
+                      teamAction === 'create'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-blue-50 text-blue-700 border border-blue-100'
+                    }`}
+                  >
+                    Treinador
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <h3
+                      className={`text-xs font-black uppercase tracking-tight ${
+                        teamAction === 'create' ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      Criar Time
+                    </h3>
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                        teamAction === 'create'
+                          ? 'bg-blue-500/40 text-blue-200'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      Dono
+                    </span>
+                  </div>
+                  <p
+                    className={`text-[10px] mt-1 leading-snug ${
+                      teamAction === 'create' ? 'text-blue-100' : 'text-slate-500'
+                    }`}
+                  >
+                    Funde sua equipe e gerencie o elenco
                   </p>
                 </div>
               </button>
@@ -905,32 +930,58 @@ export const AthleteOnboardingWizard: React.FC<
                   setTeamAction('join');
                   setError('');
                 }}
-                className={`w-full flex items-start gap-3 rounded-2xl border p-3.5 text-left transition ${
+                className={`p-3 rounded-2xl border text-left transition active:scale-[0.98] cursor-pointer flex flex-col justify-between relative overflow-hidden ${
                   teamAction === 'join'
-                    ? 'border-blue-600 bg-blue-50/70 shadow-xs'
-                    : 'border-slate-200 bg-white hover:border-blue-300'
+                    ? 'bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 border-amber-300 text-white shadow-md ring-2 ring-amber-400/30'
+                    : 'bg-white border-slate-200 text-slate-700 hover:border-amber-300 hover:bg-slate-50'
                 }`}
               >
-                <div
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                    teamAction === 'join'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  <Users className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-                      Entrar em um Time <span className="rounded-full bg-slate-100 text-slate-700 text-[10px] px-2 py-0.2 font-bold">Nível: Jogador</span>
-                    </span>
-                    {teamAction === 'join' && (
-                      <CheckCircle2 className="h-4 w-4 text-blue-600 shrink-0" />
-                    )}
+                <div className="flex items-center justify-between mb-2">
+                  <div
+                    className={`p-2 rounded-xl ${
+                      teamAction === 'join'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-amber-50 text-amber-700 border border-amber-100'
+                    }`}
+                  >
+                    <Users className="h-4 w-4" />
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                    Você será um <strong>Jogador</strong> no elenco. Acompanhe o ranking, suas estatísticas e súmulas validadas.
+                  <span
+                    className={`text-[10px] font-black uppercase rounded-full px-2 py-0.5 ${
+                      teamAction === 'join'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-amber-50 text-amber-700 border border-amber-100'
+                    }`}
+                  >
+                    Jogador
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <h3
+                      className={`text-xs font-black uppercase tracking-tight ${
+                        teamAction === 'join' ? 'text-white' : 'text-slate-900'
+                      }`}
+                    >
+                      Entrar no Time
+                    </h3>
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                        teamAction === 'join'
+                          ? 'bg-amber-400/40 text-amber-100'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      Código
+                    </span>
+                  </div>
+                  <p
+                    className={`text-[10px] mt-1 leading-snug ${
+                      teamAction === 'join' ? 'text-amber-100' : 'text-slate-500'
+                    }`}
+                  >
+                    Entre no elenco com o código do dono
                   </p>
                 </div>
               </button>
@@ -1194,7 +1245,7 @@ export const AthleteOnboardingWizard: React.FC<
                 {/* 1. Campo de Código do Time (Subido para cima do card de posições) */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Digite o Código Gerado pelo Dono do Time *
+                    Código do Time *
                   </label>
                   <div className="relative">
                     <KeyRound
@@ -1241,7 +1292,7 @@ export const AthleteOnboardingWizard: React.FC<
 
                   {!isJoinCodeEntered && (
                     <p className="mt-1.5 text-[11px] text-slate-500 leading-relaxed">
-                      Digite o código do time para carregar o brasão e liberar a escolha da sua posição.
+                      Informe o código para carregar o elenco e definir sua posição.
                     </p>
                   )}
                 </div>
