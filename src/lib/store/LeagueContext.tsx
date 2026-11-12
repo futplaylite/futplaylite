@@ -57,7 +57,7 @@ import {
   resolveDivisionForPlayer,
 } from '../engine/eloEngine';
 import { inspectMatchForFraudSignals } from '../engine/antiFraud';
-import { isSupabaseConfigured, supabaseService, generateUUID } from '../supabase';
+import { isSupabaseConfigured, supabaseService, supabase, generateUUID } from '../supabase';
 
 const STORAGE_KEY = 'futplay_lite_planalto_ba_v3_clean';
 const ACTIVE_USER_STORAGE_KEY = 'futplay_lite_active_user_id_v3';
@@ -614,31 +614,45 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       });
     });
 
-    // 4. Sincroniza súmulas da pelada do Supabase em tempo real para múltiplos aparelhos
-    supabaseService.getPeladaSumulas().then((remoteSumulas) => {
-      if (!remoteSumulas || remoteSumulas.length === 0) return;
+    // 4. Sincroniza súmulas da pelada do Supabase (reconciliando inclusões e EXCLUSÕES)
+    const reconcileSumulas = (remoteSumulas: SumulaData[] | null) => {
+      if (remoteSumulas === null) return;
       try {
         const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
         const ACTIVE_KEY = 'futplay_sumula_pelada_ativa_v1';
         const raw = localStorage.getItem(ALL_KEY);
         const localList: SumulaData[] = raw ? JSON.parse(raw) : [];
-        const localMap = new Map(localList.map((s) => [s.id, s]));
+        const remoteIds = new Set(remoteSumulas.map((s) => s.id));
+        const now = Date.now();
 
-        // Faz o merge das súmulas remotas com as locais (preservando sempre a versão com lastUpdated mais recente)
+        // Mapa inicial com as súmulas que existem no banco remoto
+        const resultMap = new Map<string, SumulaData>();
         for (const remote of remoteSumulas) {
-          const loc = localMap.get(remote.id);
-          if (!loc) {
-            localMap.set(remote.id, remote);
+          resultMap.set(remote.id, remote);
+        }
+
+        // Verifica itens locais: preserva rascunhos recém-criados (< 45s), remove os que foram excluídos na nuvem
+        for (const loc of localList) {
+          if (!remoteIds.has(loc.id)) {
+            const ageMs = now - new Date(loc.lastUpdated || 0).getTime();
+            // Apenas preserva se for rascunho offline em andamento ultra recente (< 45s)
+            if (ageMs < 45000 && loc.status === 'em_andamento') {
+              resultMap.set(loc.id, loc);
+            }
+            // Caso contrário, foi EXCLUÍDA no Supabase por outro usuário: é removida do celular do jogador!
           } else {
-            const locTime = new Date(loc.lastUpdated || 0).getTime();
-            const remTime = new Date(remote.lastUpdated || 0).getTime();
-            if (remTime > locTime) {
-              localMap.set(remote.id, remote);
+            const rem = resultMap.get(loc.id);
+            if (rem) {
+              const locTime = new Date(loc.lastUpdated || 0).getTime();
+              const remTime = new Date(rem.lastUpdated || 0).getTime();
+              if (locTime > remTime) {
+                resultMap.set(loc.id, loc);
+              }
             }
           }
         }
 
-        const mergedList = Array.from(localMap.values()).sort((a, b) => {
+        const mergedList = Array.from(resultMap.values()).sort((a, b) => {
           const tA = new Date(a.lastUpdated || a.matchDate || 0).getTime();
           const tB = new Date(b.lastUpdated || b.matchDate || 0).getTime();
           return tB - tA;
@@ -646,20 +660,23 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
         localStorage.setItem(ALL_KEY, JSON.stringify(mergedList));
 
-        // Atualiza a súmula ativa se a remota for mais recente
+        // Atualiza ou limpa a súmula ativa se a que estava ativa foi excluída
         const activeRaw = localStorage.getItem(ACTIVE_KEY);
-        const activeLocal: SumulaData | null = activeRaw ? JSON.parse(activeRaw) : null;
-        const newestActive = mergedList.find((s) => s.status === 'em_andamento') || mergedList[0];
-        if (newestActive) {
-          if (!activeLocal) {
-            localStorage.setItem(ACTIVE_KEY, JSON.stringify(newestActive));
-          } else {
-            const locTime = new Date(activeLocal.lastUpdated || 0).getTime();
-            const remTime = new Date(newestActive.lastUpdated || 0).getTime();
-            if (remTime > locTime || newestActive.id === activeLocal.id) {
-              localStorage.setItem(ACTIVE_KEY, JSON.stringify(newestActive));
+        if (activeRaw) {
+          try {
+            const activeLocal: SumulaData = JSON.parse(activeRaw);
+            if (!resultMap.has(activeLocal.id)) {
+              const nextActive = mergedList.find((s) => s.status === 'em_andamento') || mergedList[0];
+              if (nextActive) {
+                localStorage.setItem(ACTIVE_KEY, JSON.stringify(nextActive));
+              } else {
+                localStorage.removeItem(ACTIVE_KEY);
+              }
             }
-          }
+          } catch {}
+        } else if (mergedList.length > 0) {
+          const newest = mergedList.find((s) => s.status === 'em_andamento') || mergedList[0];
+          localStorage.setItem(ACTIVE_KEY, JSON.stringify(newest));
         }
 
         if (typeof window !== 'undefined') {
@@ -672,6 +689,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch (err) {
         console.warn('Erro ao sincronizar súmulas com o armazenamento local:', err);
       }
+    };
+
+    supabaseService.getPeladaSumulas().then((remoteSumulas) => {
+      reconcileSumulas(remoteSumulas);
     });
 
     // 5. Sincroniza transações financeiras (despesas e receitas) do Supabase
@@ -720,6 +741,85 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         };
       });
     });
+  }, []);
+
+  // Escuta em tempo real eventos na nuvem do Supabase (inclusão, alteração e EXCLUSÃO instantânea de súmulas para todos os aparelhos logados)
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !supabase) return;
+
+    const channel = supabase
+      .channel('futplay_pelada_sumulas_realtime_v1')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pelada_sumulas' },
+        (payload) => {
+          try {
+            const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
+            const ACTIVE_KEY = 'futplay_sumula_pelada_ativa_v1';
+            const raw = localStorage.getItem(ALL_KEY);
+            let list: SumulaData[] = raw ? JSON.parse(raw) : [];
+
+            if (payload.eventType === 'DELETE') {
+              const deletedId = (payload.old as { id?: string })?.id;
+              if (!deletedId) return;
+
+              list = list.filter((s) => s.id !== deletedId);
+              localStorage.setItem(ALL_KEY, JSON.stringify(list));
+
+              const activeRaw = localStorage.getItem(ACTIVE_KEY);
+              if (activeRaw) {
+                try {
+                  const active: SumulaData = JSON.parse(activeRaw);
+                  if (active.id === deletedId) {
+                    if (list.length > 0) {
+                      localStorage.setItem(ACTIVE_KEY, JSON.stringify(list[0]));
+                    } else {
+                      localStorage.removeItem(ACTIVE_KEY);
+                    }
+                  }
+                } catch {}
+              }
+
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('futplay_sumulas_changed', {
+                    detail: { deletedId, count: list.length },
+                  })
+                );
+              }
+            } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const newRow = payload.new as { data?: unknown; id?: string };
+              if (newRow && newRow.data) {
+                const updatedSumula = newRow.data as SumulaData;
+                const idx = list.findIndex((s) => s.id === updatedSumula.id);
+                if (idx >= 0) {
+                  list[idx] = updatedSumula;
+                } else {
+                  list.unshift(updatedSumula);
+                }
+                localStorage.setItem(ALL_KEY, JSON.stringify(list));
+
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(
+                    new CustomEvent('futplay_sumulas_changed', {
+                      detail: { savedId: updatedSumula.id, count: list.length },
+                    })
+                  );
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Erro ao processar alteração realtime em súmulas:', err);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (supabase) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
   // Listener entre abas do mesmo navegador para atualizar finanças e mensalidades em tempo real

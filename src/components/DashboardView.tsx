@@ -325,35 +325,41 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     // Busca súmulas online no Supabase na montagem para garantir sincronização entre aparelhos
     if (isSupabaseConfigured()) {
       supabaseService.getPeladaSumulas().then((remote) => {
-        if (remote && remote.length > 0) {
-          const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
-          const local = getStoredSumulas();
-          const localMap = new Map(local.map((s) => [s.id, s]));
-          let hasChanges = false;
-          for (const r of remote) {
-            const loc = localMap.get(r.id);
-            if (!loc) {
-              localMap.set(r.id, r);
-              hasChanges = true;
-            } else {
+        if (!remote) return;
+        const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
+        const local = getStoredSumulas();
+        const remoteIds = new Set(remote.map((r) => r.id));
+        const now = Date.now();
+        const resultMap = new Map<string, SumulaData>();
+
+        for (const r of remote) {
+          resultMap.set(r.id, r);
+        }
+
+        // Remove do cache local súmulas excluídas na nuvem (mantém apenas rascunhos recentes < 45s)
+        for (const loc of local) {
+          if (!remoteIds.has(loc.id)) {
+            const ageMs = now - new Date(loc.lastUpdated || 0).getTime();
+            if (ageMs < 45000 && loc.status === 'em_andamento') {
+              resultMap.set(loc.id, loc);
+            }
+          } else {
+            const rem = resultMap.get(loc.id);
+            if (rem) {
               const locT = new Date(loc.lastUpdated || 0).getTime();
-              const remT = new Date(r.lastUpdated || 0).getTime();
-              if (remT > locT) {
-                localMap.set(r.id, r);
-                hasChanges = true;
-              }
+              const remT = new Date(rem.lastUpdated || 0).getTime();
+              if (locT > remT) resultMap.set(loc.id, loc);
             }
           }
-          if (hasChanges) {
-            const merged = Array.from(localMap.values()).sort((a, b) => {
-              const tA = new Date(a.lastUpdated || a.matchDate || 0).getTime();
-              const tB = new Date(b.lastUpdated || b.matchDate || 0).getTime();
-              return tB - tA;
-            });
-            localStorage.setItem(ALL_KEY, JSON.stringify(merged));
-            setStoredSumulas(merged);
-          }
         }
+
+        const merged = Array.from(resultMap.values()).sort((a, b) => {
+          const tA = new Date(a.lastUpdated || a.matchDate || 0).getTime();
+          const tB = new Date(b.lastUpdated || b.matchDate || 0).getTime();
+          return tB - tA;
+        });
+        localStorage.setItem(ALL_KEY, JSON.stringify(merged));
+        setStoredSumulas(merged);
       });
     }
 
