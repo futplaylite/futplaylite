@@ -281,6 +281,17 @@ interface LeagueContextValue extends LeagueState {
   deleteTeamTransaction: (id: string) => boolean;
   refreshTeamTransactions: () => Promise<void>;
   refreshMonthlyData: () => Promise<void>;
+  recordAuditLog: (params: {
+    actionType: string;
+    entityType: string;
+    entityId: string;
+    reason: string;
+    actorUserId?: string;
+    actorName?: string;
+    actorRole?: UserRole;
+    beforeData?: Record<string, unknown>;
+    afterData?: Record<string, unknown>;
+  }) => AuditLog;
 }
 
 const LeagueContext = createContext<LeagueContextValue | null>(null);
@@ -910,6 +921,43 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       ? undefined
       : athleteProfiles.find((p: PlayerProfile) => p.userId === currentUser.id);
 
+  const recordAuditLog: LeagueContextValue['recordAuditLog'] = (params) => {
+    const now = new Date().toISOString();
+    const actorUser = params.actorUserId
+      ? state.users.find((u) => u.id === params.actorUserId) || currentUser
+      : currentUser;
+    const actorProf = params.actorUserId
+      ? state.profiles.find(
+          (p) => p.userId === params.actorUserId || p.id === params.actorUserId
+        ) || currentPlayerProfile
+      : currentPlayerProfile;
+
+    const newLog: AuditLog = {
+      id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: params.actorUserId || actorUser?.id || 'sistema',
+      actorName:
+        params.actorName ||
+        actorProf?.displayName ||
+        actorUser?.email?.split('@')[0] ||
+        'Usuário',
+      actorRole: params.actorRole || actorUser?.role || 'player',
+      actionType: params.actionType,
+      entityType: params.entityType,
+      entityId: params.entityId,
+      reason: params.reason,
+      beforeData: params.beforeData,
+      afterData: params.afterData,
+      createdAt: now,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      auditLogs: [newLog, ...(prev.auditLogs || [])],
+    }));
+
+    return newLog;
+  };
+
   const switchActiveUser = (userId: string) => {
     const target = state.users.find((u) => u.id === userId);
     if (target) {
@@ -920,6 +968,24 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         // Ignore
       }
       const prof = state.profiles.find((p) => p.userId === target.id);
+      const now = new Date().toISOString();
+      const loginLog: AuditLog = {
+        id: `audit-login-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        actorUserId: target.id,
+        actorName: prof ? prof.displayName : target.email || 'Usuário',
+        actorRole: target.role,
+        actionType: 'LOGIN_SESSAO',
+        entityType: 'users',
+        entityId: target.id,
+        reason: `Sessão ativa alternada para ${prof ? prof.displayName : target.email} (${target.role.toUpperCase()}).`,
+        createdAt: now,
+      };
+
+      setState((prev) => ({
+        ...prev,
+        auditLogs: [loginLog, ...(prev.auditLogs || [])],
+      }));
+
       notify(
         'info',
         `Sessão alternada: ${prof ? prof.displayName : 'Moderador Oficial'}`,
@@ -929,6 +995,19 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const setActiveUserWithData = (user: User, profile?: PlayerProfile) => {
+    const now = new Date().toISOString();
+    const loginLog: AuditLog = {
+      id: `audit-login-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: user.id,
+      actorName: profile?.displayName || user.email || 'Usuário',
+      actorRole: user.role,
+      actionType: 'LOGIN_SESSAO',
+      entityType: 'users',
+      entityId: user.id,
+      reason: `Login realizado por ${profile?.displayName || user.email} (${user.role.toUpperCase()}).`,
+      createdAt: now,
+    };
+
     setState((prev) => {
       const userIdx = prev.users.findIndex((u) => u.id === user.id);
       const newUsers = [...prev.users];
@@ -974,6 +1053,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         ...prev,
         users: newUsers,
         profiles: newProfiles,
+        auditLogs: [loginLog, ...(prev.auditLogs || [])],
       };
     });
 
@@ -1204,6 +1284,18 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         ? params.avatarUrl
         : currentPlayerProfile.avatarUrl;
 
+    const profLog: AuditLog = {
+      id: `audit-prof-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: currentUser.id,
+      actorName: trimmedName,
+      actorRole: currentUser.role,
+      actionType: 'PERFIL_ATUALIZADO',
+      entityType: 'player_profiles',
+      entityId: currentPlayerProfile.id,
+      reason: `Atleta ${trimmedName} atualizou seus dados cadastrais (${params.position}, ${params.neighborhood}).`,
+      createdAt: now,
+    };
+
     setState((prev) => ({
       ...prev,
       users: prev.users.map((u) =>
@@ -1228,6 +1320,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           : p
       ),
+      auditLogs: [profLog, ...(prev.auditLogs || [])],
     }));
 
     if (isSupabaseConfigured() && currentUser?.id) {
@@ -1321,10 +1414,23 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         return p;
       });
 
+      const teamLog: AuditLog = {
+        id: `audit-team-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        actorUserId: currentUser.id,
+        actorName: currentPlayerProfile?.displayName || currentUser.email || 'Treinador',
+        actorRole: currentUser.role,
+        actionType: 'TIME_ATUALIZADO',
+        entityType: 'teams',
+        entityId: currentUser.id,
+        reason: `Equipe atualizada para "${trimmedTeam}" (${trimmedCity}).`,
+        createdAt: now,
+      };
+
       return {
         ...prev,
         users: updatedUsers,
         profiles: updatedProfiles,
+        auditLogs: [teamLog, ...(prev.auditLogs || [])],
       };
     });
 
@@ -1414,11 +1520,25 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         (se) => !profileToDelete || se.playerId !== profileToDelete.id
       );
 
+      const now = new Date().toISOString();
+      const delLog: AuditLog = {
+        id: `audit-del-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        actorUserId: currentUser.id || 'sistema',
+        actorName: currentPlayerProfile?.displayName || currentUser.email || 'Usuário',
+        actorRole: currentUser.role || 'player',
+        actionType: 'CONTA_EXCLUIDA',
+        entityType: 'users',
+        entityId: userIdToDelete,
+        reason: `Exclusão permanente de conta: ${profileToDelete?.displayName || userToDelete?.email || userIdToDelete}.`,
+        createdAt: now,
+      };
+
       const nextState = {
         ...prev,
         users: remainingUsers,
         profiles: remainingProfiles,
         seasonEntries: remainingSeasonEntries,
+        auditLogs: [delLog, ...(prev.auditLogs || [])],
       };
 
       try {
@@ -1513,6 +1633,18 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         ((avgFin + avgMar + avgPas + avgRac + avgDri) / 5).toFixed(1)
       );
 
+      const skillLog: AuditLog = {
+        id: `audit-skill-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        actorUserId: currentUser.id,
+        actorName: currentPlayerProfile?.displayName || currentUser.email || 'Avaliador',
+        actorRole: currentUser.role,
+        actionType: 'SCOUT_AVALIACAO',
+        entityType: 'peer_evaluations',
+        entityId: playerId,
+        reason: `Avaliação de atributos (Scout) computada para ${p.displayName}. Média: ${overallStars} ⭐.`,
+        createdAt: now,
+      };
+
       return {
         ...prev,
         peerEvaluations: updatedEvals,
@@ -1534,6 +1666,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             : prof
         ),
+        auditLogs: [skillLog, ...(prev.auditLogs || [])],
       };
     });
 
@@ -2111,6 +2244,18 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         : null;
 
+      const scoreLog: AuditLog = {
+        id: `audit-score-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        actorUserId: currentUser.id,
+        actorName: currentPlayerProfile?.displayName || currentUser.email || 'Capitão',
+        actorRole: currentUser.role,
+        actionType: 'PLACAR_ENVIADO',
+        entityType: 'matches',
+        entityId: params.matchId,
+        reason: `Placar enviado: ${match.homeTeamName} ${params.homeScore} x ${params.awayScore} ${match.awayTeamName} (v${nextVersionNumber}) com ${newEvents.length} eventos registrados.`,
+        createdAt: now,
+      };
+
       setState((prev) => ({
         ...prev,
         matches: prev.matches.map((m) =>
@@ -2130,6 +2275,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         evidenceFiles: newEvidence
           ? [newEvidence, ...prev.evidenceFiles]
           : prev.evidenceFiles,
+        auditLogs: [scoreLog, ...(prev.auditLogs || [])],
       }));
 
       notify(
@@ -2604,8 +2750,29 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch {
       // Ignore
     }
+
+    const now = new Date().toISOString();
+    const resetLog: AuditLog = {
+      id: `audit-reset-${Date.now()}`,
+      actorUserId: currentUser?.id || 'admin',
+      actorName: currentPlayerProfile?.displayName || currentUser?.email || 'Administrador',
+      actorRole: currentUser?.role || 'admin',
+      actionType: 'BANCO_DADOS_RESTAURADO',
+      entityType: 'system',
+      entityId: 'database',
+      reason: 'Restauração de fábrica dos dados locais realizada pelo administrador com validação de senha.',
+      createdAt: now,
+    };
+
+    const adminUsers = state.users.filter(
+      (u) =>
+        u.role === 'admin' ||
+        u.email?.toLowerCase() === 'futplaylite@gmail.com' ||
+        u.id === currentUser?.id
+    );
+
     setState({
-      users: INITIAL_USERS,
+      users: adminUsers.length > 0 ? adminUsers : INITIAL_USERS,
       cities: INITIAL_CITIES,
       divisions: INITIAL_DIVISIONS,
       seasons: INITIAL_SEASONS,
@@ -2620,17 +2787,28 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       evidenceFiles: INITIAL_EVIDENCE_FILES,
       pointTransactions: INITIAL_POINT_TRANSACTIONS,
       ratingLogs: INITIAL_RATING_LOGS,
-      auditLogs: INITIAL_AUDIT_LOGS,
+      auditLogs: [resetLog],
       peerEvaluations: [],
       monthlyPayments: [],
       monthlyConfig: DEFAULT_MONTHLY_CONFIG,
       teamTransactions: [],
     });
-    setCurrentUserId('');
+
+    if (currentUser?.id) {
+      setCurrentUserId(currentUser.id);
+      try {
+        localStorage.setItem(ACTIVE_USER_STORAGE_KEY, currentUser.id);
+      } catch {
+        // Ignore
+      }
+    } else {
+      setCurrentUserId('');
+    }
+
     notify(
-      'info',
-      'Base Limpa com Sucesso',
-      'Todos os dados de teste foram removidos. Pronto para novos cadastros reais.'
+      'success',
+      'Base Restaurada com Sucesso',
+      'Todos os dados de teste foram reiniciados para o padrão de fábrica. A ação foi gravada nos logs.'
     );
   };
 
@@ -2657,6 +2835,26 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       updatedAt: now,
     };
 
+    const payLog: AuditLog = {
+      id: `audit-pay-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: currentUser.id,
+      actorName: currentPlayerProfile?.displayName || currentUser.email || 'Treinador',
+      actorRole: currentUser.role,
+      actionType: isPaid ? 'MENSALIDADE_PAGA' : 'MENSALIDADE_PENDENTE',
+      entityType: 'monthly_payments',
+      entityId: paymentId,
+      reason: `Mensalidade de ${playerDisplayName} (${yearMonth}) marcada como ${
+        isPaid ? `PAGA (R$ ${feeAmount})` : 'PENDENTE'
+      } por ${currentPlayerProfile?.displayName || currentUser.role}.`,
+      afterData: {
+        playerId,
+        yearMonth,
+        isPaid,
+        amount: feeAmount,
+      },
+      createdAt: now,
+    };
+
     setState((prev) => {
       const currentList = prev.monthlyPayments || [];
       const existingIdx = currentList.findIndex(
@@ -2675,6 +2873,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         ...prev,
         monthlyPayments: updatedPayments,
+        auditLogs: [payLog, ...(prev.auditLogs || [])],
       };
     });
 
@@ -2700,9 +2899,22 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       ...(state.monthlyConfig || DEFAULT_MONTHLY_CONFIG),
       ...config,
     };
+    const now = new Date().toISOString();
+    const cfgLog: AuditLog = {
+      id: `audit-mcfg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: currentUser.id,
+      actorName: currentPlayerProfile?.displayName || currentUser.email || 'Treinador',
+      actorRole: currentUser.role,
+      actionType: 'CONFIG_MENSALIDADE_ALTERADA',
+      entityType: 'monthly_config',
+      entityId: 'global',
+      reason: `Configuração da mensalidade alterada: R$ ${updatedConfig.monthlyAmount}, vencimento dia ${updatedConfig.dueDay}, chave PIX ${updatedConfig.pixKey}.`,
+      createdAt: now,
+    };
     setState((prev) => ({
       ...prev,
       monthlyConfig: updatedConfig,
+      auditLogs: [cfgLog, ...(prev.auditLogs || [])],
     }));
     if (isSupabaseConfigured()) {
       supabaseService.saveMonthlyConfig(updatedConfig).catch((err) => {
@@ -2904,9 +3116,24 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       });
 
+      const sumulaLog: AuditLog = {
+        id: `audit-sumula-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        actorUserId: currentUser.id,
+        actorName: currentPlayerProfile?.displayName || currentUser.email || 'Mesário',
+        actorRole: currentUser.role,
+        actionType: 'SUMULA_PELADA_FINALIZADA',
+        entityType: 'pelada_sumulas',
+        entityId: finalized.id,
+        reason: `Súmula de pelada "${finalized.teamName || finalized.matchDate || 'Pelada'}" finalizada. Equipe campeã: "${
+          championTeamName || 'Não definida'
+        }" com ${finalized.teamsGrid?.length || 0} times participantes.`,
+        createdAt: new Date().toISOString(),
+      };
+
       return {
         ...prev,
         seasonEntries: updatedEntries,
+        auditLogs: [sumulaLog, ...(prev.auditLogs || [])],
       };
     });
 
@@ -2936,11 +3163,26 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return false;
     }
 
+    const now = new Date().toISOString();
     const newTx: TeamTransaction = {
       ...tx,
       id: 'tx-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
+    const txLog: AuditLog = {
+      id: `audit-tx-add-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: currentUser.id,
+      actorName: currentPlayerProfile?.displayName || currentUser.email || 'Treinador',
+      actorRole: currentUser.role,
+      actionType: 'LANCAMENTO_CAIXA_ADICIONADO',
+      entityType: 'team_transactions',
+      entityId: newTx.id,
+      reason: `Lançamento [${tx.type === 'receita' ? 'RECEITA' : 'DESPESA'}] de R$ ${tx.amount.toFixed(
+        2
+      )} (${tx.category || 'Geral'}): "${tx.description}".`,
+      createdAt: now,
+    };
+
     setState((prev) => {
       const updated = [newTx, ...(prev.teamTransactions || [])];
       try {
@@ -2949,6 +3191,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         ...prev,
         teamTransactions: updated,
+        auditLogs: [txLog, ...(prev.auditLogs || [])],
       };
     });
     if (isSupabaseConfigured()) {
@@ -2982,6 +3225,21 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     const targetTx = (state.teamTransactions || []).find((t) => t.id === id);
+    const now = new Date().toISOString();
+    const delTxLog: AuditLog = {
+      id: `audit-tx-del-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: currentUser.id,
+      actorName: currentPlayerProfile?.displayName || currentUser.email || 'Treinador',
+      actorRole: currentUser.role,
+      actionType: 'LANCAMENTO_CAIXA_REMOVIDO',
+      entityType: 'team_transactions',
+      entityId: id,
+      reason: `Lançamento ${
+        targetTx?.description ? `"${targetTx.description}"` : id
+      } (R$ ${targetTx?.amount || 0}) excluído do caixa.`,
+      createdAt: now,
+    };
+
     setState((prev) => {
       const updated = (prev.teamTransactions || []).filter((t) => t.id !== id);
       try {
@@ -2990,6 +3248,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         ...prev,
         teamTransactions: updated,
+        auditLogs: [delTxLog, ...(prev.auditLogs || [])],
       };
     });
     if (isSupabaseConfigured()) {
@@ -3015,6 +3274,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     const now = new Date().toISOString();
+    const wppLog: AuditLog = {
+      id: `audit-wpp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: currentUser.id,
+      actorName: currentPlayerProfile?.displayName || currentUser.email || 'Usuário',
+      actorRole: currentUser.role,
+      actionType: 'CONTATO_WHATSAPP_ATUALIZADO',
+      entityType: 'users',
+      entityId: currentUser.id,
+      reason: `Número de WhatsApp atualizado para: ${cleaned}.`,
+      createdAt: now,
+    };
     setState((prev) => ({
       ...prev,
       users: prev.users.map((u) =>
@@ -3025,6 +3295,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           ? { ...p, whatsappNumber: cleaned, updatedAt: now }
           : p
       ),
+      auditLogs: [wppLog, ...(prev.auditLogs || [])],
     }));
 
     notify(
@@ -3127,6 +3398,21 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     const now = new Date().toISOString();
+    const onbLog: AuditLog = {
+      id: `audit-onb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      actorUserId: currentUser.id,
+      actorName: currentPlayerProfile?.displayName || currentUser.email || 'Atleta',
+      actorRole: mode === 'create' ? 'coach' : 'player',
+      actionType: mode === 'create' ? 'TIME_CRIADO' : 'TIME_INGRESSOU',
+      entityType: 'teams',
+      entityId: generatedCode,
+      reason:
+        mode === 'create'
+          ? `Criou a equipe "${trimmedTeam}" (${modalityLabel[teamModality]}, ${trimmedCity}) com código de convite ${generatedCode}.`
+          : `Ingressou na equipe "${trimmedTeam}" (${modalityLabel[teamModality]}, ${trimmedCity}).`,
+      createdAt: now,
+    };
+
     setState((prev) => ({
       ...prev,
       users: prev.users.map((u) =>
@@ -3162,6 +3448,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           : p
       ),
+      auditLogs: [onbLog, ...(prev.auditLogs || [])],
     }));
 
     if (isSupabaseConfigured() && currentUser?.id) {
@@ -3254,6 +3541,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         deleteTeamTransaction,
         refreshTeamTransactions,
         refreshMonthlyData,
+        recordAuditLog,
       }}
     >
       {children}
