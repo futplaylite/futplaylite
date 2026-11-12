@@ -170,117 +170,128 @@ export const AdminAndHomologationView: React.FC<
             Analisar Partida ou Contestação
           </h2>
 
-          <form onSubmit={handleExecuteModeration} className="space-y-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Partida:
-              </label>
-              <select
-                value={selectedMatch.id}
-                onChange={(e) => setTargetMatchId(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800"
-              >
-                {matches.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.homeTeamName} vs {m.awayTeamName} ({m.status})
-                  </option>
-                ))}
-              </select>
+          {!selectedMatch ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center space-y-1.5">
+              <p className="text-xs font-bold text-slate-700">
+                Nenhuma partida registrada para moderação ainda.
+              </p>
+              <p className="text-[11px] text-slate-500">
+                Quando houver partidas ou contestações enviadas pelos times, elas aparecerão aqui para auditoria e validação.
+              </p>
             </div>
-
-            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 space-y-1.5">
+          ) : (
+            <form onSubmit={handleExecuteModeration} className="space-y-3">
               <div>
-                Placar atual:{' '}
-                <strong className="text-blue-700 font-mono">
-                  {activeVersion
-                    ? `${activeVersion.homeScore} x ${activeVersion.awayScore}`
-                    : 'Sem placar'}
-                </strong>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Partida:
+                </label>
+                <select
+                  value={selectedMatch.id}
+                  onChange={(e) => setTargetMatchId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800"
+                >
+                  {matches.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.homeTeamName} vs {m.awayTeamName} ({m.status})
+                    </option>
+                  ))}
+                </select>
               </div>
-              {disputes
-                .filter((d) => d.matchId === selectedMatch.id)
-                .map((d) => (
-                  <div
-                    key={d.id}
-                    className="rounded-lg bg-red-50 border border-red-100 p-2 text-red-700"
-                  >
-                    <strong>Contestação:</strong> {d.description}
+
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 space-y-1.5">
+                <div>
+                  Placar atual:{' '}
+                  <strong className="text-blue-700 font-mono">
+                    {activeVersion
+                      ? `${activeVersion.homeScore} x ${activeVersion.awayScore}`
+                      : 'Sem placar'}
+                  </strong>
+                </div>
+                {disputes
+                  .filter((d) => d.matchId === selectedMatch.id)
+                  .map((d) => (
+                    <div
+                      key={d.id}
+                      className="rounded-lg bg-red-50 border border-red-100 p-2 text-red-700"
+                    >
+                      <strong>Contestação:</strong> {d.description}
+                    </div>
+                  ))}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Decisão da Moderação:
+                </label>
+                <select
+                  value={modAction}
+                  onChange={(e) => setModAction(e.target.value as any)}
+                  className="w-full rounded-xl border border-blue-200 bg-blue-50/50 px-3 py-2 text-xs font-bold text-blue-800"
+                >
+                  <option value="correct_and_validate">
+                    Corrigir Placar e Validar
+                  </option>
+                  <option value="validate_current">
+                    Aprovar Placar Original
+                  </option>
+                  <option value="annul_match">
+                    Anular Partida e Reverter Pontos
+                  </option>
+                </select>
+              </div>
+
+              {modAction === 'correct_and_validate' && (
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1 truncate">
+                      {selectedMatch.homeTeamName}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={correctedHome}
+                      onChange={(e) => setCorrectedHome(Number(e.target.value))}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono font-bold text-slate-900"
+                    />
                   </div>
-                ))}
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Decisão da Moderação:
-              </label>
-              <select
-                value={modAction}
-                onChange={(e) => setModAction(e.target.value as any)}
-                className="w-full rounded-xl border border-blue-200 bg-blue-50/50 px-3 py-2 text-xs font-bold text-blue-800"
-              >
-                <option value="correct_and_validate">
-                  Corrigir Placar e Validar
-                </option>
-                <option value="validate_current">
-                  Aprovar Placar Original
-                </option>
-                <option value="annul_match">
-                  Anular Partida e Reverter Pontos
-                </option>
-              </select>
-            </div>
-
-            {modAction === 'correct_and_validate' && (
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1 truncate">
-                    {selectedMatch.homeTeamName}
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={30}
-                    value={correctedHome}
-                    onChange={(e) => setCorrectedHome(Number(e.target.value))}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono font-bold text-slate-900"
-                  />
+                  <div>
+                    <label className="block text-[11px] text-slate-500 mb-1 truncate">
+                      {selectedMatch.awayTeamName}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={correctedAway}
+                      onChange={(e) => setCorrectedAway(Number(e.target.value))}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono font-bold text-slate-900"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1 truncate">
-                    {selectedMatch.awayTeamName}
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={30}
-                    value={correctedAway}
-                    onChange={(e) => setCorrectedAway(Number(e.target.value))}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono font-bold text-slate-900"
-                  />
-                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Motivo / Justificativa *
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={modReason}
+                  onChange={(e) => setModReason(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-900"
+                />
               </div>
-            )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">
-                Motivo / Justificativa *
-              </label>
-              <textarea
-                rows={2}
-                required
-                value={modReason}
-                onChange={(e) => setModReason(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-900"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-sm"
-            >
-              Confirmar Decisão
-            </button>
-          </form>
+              <button
+                type="submit"
+                className="w-full rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white shadow-sm"
+              >
+                Confirmar Decisão
+              </button>
+            </form>
+          )}
         </div>
       )}
 
@@ -290,27 +301,33 @@ export const AdminAndHomologationView: React.FC<
           <h2 className="text-sm font-bold text-slate-900">
             Histórico de Auditoria
           </h2>
-          <div className="divide-y divide-slate-100">
-            {auditLogs.map((log) => (
-              <div
-                key={log.id}
-                className="py-2.5 first:pt-0 last:pb-0 text-xs space-y-1"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[11px] font-bold text-blue-700">
-                    {log.actionType}
-                  </span>
-                  <span className="text-[10px] text-slate-400">
-                    {new Date(log.createdAt).toLocaleTimeString('pt-BR')}
-                  </span>
+          {auditLogs.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+              Nenhum registro de auditoria até o momento.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {auditLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="py-2.5 first:pt-0 last:pb-0 text-xs space-y-1"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[11px] font-bold text-blue-700">
+                      {log.actionType}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {new Date(log.createdAt).toLocaleTimeString('pt-BR')}
+                    </span>
+                  </div>
+                  <p className="text-slate-700 leading-snug">{log.reason}</p>
+                  <div className="text-[10px] text-slate-400">
+                    Responsável: {log.actorName}
+                  </div>
                 </div>
-                <p className="text-slate-700 leading-snug">{log.reason}</p>
-                <div className="text-[10px] text-slate-400">
-                  Responsável: {log.actorName}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

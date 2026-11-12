@@ -166,7 +166,10 @@ export const supabaseService = {
         teamModality: data.team_modality || undefined,
         teamInviteCode: data.team_invite_code || undefined,
         isTeamOwner: Boolean(data.is_team_owner),
-        role: data.role || 'player',
+        role:
+          (data.email || '').toLowerCase() === 'futplaylite@gmail.com'
+            ? 'admin'
+            : data.role || 'player',
         status: data.status || 'ativa',
         createdAt: data.created_at,
       };
