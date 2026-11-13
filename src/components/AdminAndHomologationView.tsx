@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { runPriorityHomologationTests } from '../lib/engine/homologationSuite';
-import { getDivisionBadgeStyle } from '../lib/engine/eloEngine';
 import {
   HomologationTestResult,
   PlayerPosition,
@@ -51,7 +50,6 @@ export const AdminAndHomologationView: React.FC<
     auditLogs,
     profiles,
     seasonEntries,
-    divisions,
     users,
     selectedSeasonId,
     updatePlayerStatsManually,
@@ -761,9 +759,8 @@ export const AdminAndHomologationView: React.FC<
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-600 tracking-wider">
-                      <th className="py-2.5 px-3">Atleta</th>
+                      <th className="py-2.5 px-3">Nome do Atleta</th>
                       <th className="py-2.5 px-2 text-center">Posição</th>
-                      <th className="py-2.5 px-2 text-center">Divisão</th>
                       <th className="py-2.5 px-2 text-center" title="Partidas Jogadas">PJ</th>
                       <th className="py-2.5 px-2 text-center" title="Vitórias - Empates - Derrotas">V-E-D</th>
                       <th className="py-2.5 px-2 text-center" title="Gols Marcados">Gols</th>
@@ -771,7 +768,6 @@ export const AdminAndHomologationView: React.FC<
                       <th className="py-2.5 px-2 text-center" title="Super Capas">SC</th>
                       <th className="py-2.5 px-2 text-center" title="Capas de Goleiro">CG</th>
                       <th className="py-2.5 px-2 text-center" title="Cartões: Amarelo / Azul / Vermelho">Cartões</th>
-                      <th className="py-2.5 px-2 text-center" title="Rating ELO Oficial">Rating ELO</th>
                       <th className="py-2.5 px-3 text-right">Ação</th>
                     </tr>
                   </thead>
@@ -793,50 +789,25 @@ export const AdminAndHomologationView: React.FC<
                       const ca = entry?.yellowCards ?? 0;
                       const cb = entry?.blueCards ?? 0;
                       const cv = entry?.redCards ?? 0;
-                      const div =
-                        divisions.find((divItem) => divItem.id === player.currentDivisionId) ||
-                        divisions[0];
-                      const divStyle = getDivisionBadgeStyle(div?.name || 'Bronze');
 
                       return (
                         <tr key={player.id} className="hover:bg-blue-50/40 transition">
                           <td className="py-2.5 px-3">
-                            <div className="flex items-center gap-2">
-                              {player.avatarUrl ? (
-                                <img
-                                  src={player.avatarUrl}
-                                  alt={player.displayName}
-                                  className="h-8 w-8 rounded-full object-cover border border-slate-200 shrink-0"
-                                />
-                              ) : (
-                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-white font-extrabold text-[11px] shrink-0">
-                                  {player.displayName.slice(0, 2).toUpperCase()}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <span className="font-extrabold text-slate-900 block truncate">
-                                  {player.displayName}
+                            <div className="min-w-0">
+                              <span className="font-extrabold text-slate-900 block truncate text-xs">
+                                {player.displayName}
+                              </span>
+                              {player.isTeamOwner && (
+                                <span className="text-[9px] font-black text-blue-700 uppercase">
+                                  Dono / Capitão
                                 </span>
-                                {player.isTeamOwner && (
-                                  <span className="text-[9px] font-black text-blue-700 uppercase">
-                                    Dono / Capitão
-                                  </span>
-                                )}
-                              </div>
+                              )}
                             </div>
                           </td>
 
                           <td className="py-2.5 px-2 text-center">
                             <span className="inline-block rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold px-1.5 py-0.5 capitalize">
                               {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
-                            </span>
-                          </td>
-
-                          <td className="py-2.5 px-2 text-center">
-                            <span
-                              className={`inline-block rounded-md px-1.5 py-0.5 text-[10px] font-bold ${divStyle.bg} ${divStyle.text} border ${divStyle.border}`}
-                            >
-                              {div?.name || 'Bronze'}
                             </span>
                           </td>
 
@@ -880,10 +851,6 @@ export const AdminAndHomologationView: React.FC<
                             </div>
                           </td>
 
-                          <td className="py-2.5 px-2 text-center font-mono font-extrabold text-blue-800">
-                            {player.currentRating}
-                          </td>
-
                           <td className="py-2.5 px-3 text-right">
                             <button
                               type="button"
@@ -920,10 +887,6 @@ export const AdminAndHomologationView: React.FC<
                   const ca = entry?.yellowCards ?? 0;
                   const cb = entry?.blueCards ?? 0;
                   const cv = entry?.redCards ?? 0;
-                  const div =
-                    divisions.find((divItem) => divItem.id === player.currentDivisionId) ||
-                    divisions[0];
-                  const divStyle = getDivisionBadgeStyle(div?.name || 'Bronze');
 
                   return (
                     <div
@@ -931,35 +894,19 @@ export const AdminAndHomologationView: React.FC<
                       className="p-3.5 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-3"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {player.avatarUrl ? (
-                            <img
-                              src={player.avatarUrl}
-                              alt={player.displayName}
-                              className="h-10 w-10 rounded-full object-cover border border-slate-200 shrink-0"
-                            />
-                          ) : (
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white font-extrabold text-xs shrink-0">
-                              {player.displayName.slice(0, 2).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <h4 className="text-xs font-black text-slate-900 truncate">
-                              {player.displayName}
-                            </h4>
-                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                              <span className="rounded bg-slate-100 px-1.5 py-0.2 text-[9px] font-bold text-slate-700 capitalize">
-                                {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
+                        <div className="min-w-0">
+                          <h4 className="text-xs font-black text-slate-900 truncate">
+                            {player.displayName}
+                          </h4>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-700 capitalize">
+                              {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
+                            </span>
+                            {player.isTeamOwner && (
+                              <span className="rounded bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 text-[9px] font-black uppercase">
+                                Dono / Capitão
                               </span>
-                              <span
-                                className={`rounded px-1.5 py-0.2 text-[9px] font-bold ${divStyle.bg} ${divStyle.text}`}
-                              >
-                                {div?.name || 'Bronze'}
-                              </span>
-                              <span className="rounded bg-blue-50 text-blue-700 px-1.5 py-0.2 text-[9px] font-extrabold font-mono">
-                                ELO {player.currentRating}
-                              </span>
-                            </div>
+                            )}
                           </div>
                         </div>
 
@@ -1563,26 +1510,13 @@ export const AdminAndHomologationView: React.FC<
             <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden my-6">
               {/* Cabeçalho do Modal */}
               <div className="flex items-center justify-between border-b border-slate-100 p-4 bg-slate-50">
-                <div className="flex items-center gap-3">
-                  {editingPlayer.avatarUrl ? (
-                    <img
-                      src={editingPlayer.avatarUrl}
-                      alt={editingPlayer.displayName}
-                      className="h-10 w-10 rounded-full object-cover border border-slate-200"
-                    />
-                  ) : (
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white font-extrabold text-xs">
-                      {editingPlayer.displayName.slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
-                  <div>
-                    <h3 className="text-sm font-black text-slate-900">
-                      Editar Dados: {editingPlayer.displayName}
-                    </h3>
-                    <p className="text-[11px] text-blue-700 font-semibold">
-                      {editingPlayer.teamName || 'Sem time'} · {editingPlayer.position}
-                    </p>
-                  </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-slate-900 truncate">
+                    Editar Dados: {editingPlayer.displayName}
+                  </h3>
+                  <p className="text-[11px] text-blue-700 font-semibold mt-0.5">
+                    {editingPlayer.teamName || 'Sem time'} · {editingPlayer.position}
+                  </p>
                 </div>
                 <button
                   type="button"
