@@ -3,7 +3,7 @@ export type AccountStatus = 'ativa' | 'suspensa' | 'encerrada';
 export type PlayerPosition = 'goleiro' | 'defensor' | 'meio-campista' | 'atacante' | 'multiplas';
 export type DominantFoot = 'direito' | 'esquerdo' | 'ambos';
 export type ProfileVisibility = 'publico' | 'restrito' | 'privado';
-export type DivisionName = 'Bronze' | 'Prata' | 'Ouro' | 'Platina' | 'Diamante';
+export type DivisionName = 'Geral' | 'Bronze' | 'Prata' | 'Ouro' | 'Platina' | 'Diamante';
 
 export type MatchFormat = '5v5' | '6v6' | '7v7' | '11v11' | 'personalizado';
 export type TeamModality =

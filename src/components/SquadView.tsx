@@ -38,7 +38,6 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
   const {
     profiles,
     seasonEntries,
-    divisions,
     cities,
     selectedCityId,
     selectedSeasonId,
@@ -169,7 +168,7 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     if (matches.length === 0 && currentPlayerProfile) {
       return [currentPlayerProfile];
     }
-    return matches.sort((a, b) => b.currentRating - a.currentRating);
+    return matches.sort((a, b) => a.displayName.localeCompare(b.displayName, 'pt-BR'));
   }, [profiles, userTeamName, currentPlayerProfile]);
 
   const counts = useMemo(() => {

@@ -6,47 +6,11 @@ export const PROVISIONAL_MATCHES_THRESHOLD = 5;
 export const DEFAULT_DIVISIONS: Division[] = [
   {
     id: '22222222-2222-4222-8222-222222222201',
-    name: 'Bronze',
+    name: 'Geral',
     tier: 1,
     minRating: 0,
-    maxRating: 1099,
-    minMatchesRequired: 0,
-    rulesetVersion: 'v1.0.0',
-  },
-  {
-    id: '22222222-2222-4222-8222-222222222202',
-    name: 'Prata',
-    tier: 2,
-    minRating: 1100,
-    maxRating: 1249,
-    minMatchesRequired: 5,
-    rulesetVersion: 'v1.0.0',
-  },
-  {
-    id: '22222222-2222-4222-8222-222222222203',
-    name: 'Ouro',
-    tier: 3,
-    minRating: 1250,
-    maxRating: 1399,
-    minMatchesRequired: 5,
-    rulesetVersion: 'v1.0.0',
-  },
-  {
-    id: '22222222-2222-4222-8222-222222222204',
-    name: 'Platina',
-    tier: 4,
-    minRating: 1400,
-    maxRating: 1549,
-    minMatchesRequired: 5,
-    rulesetVersion: 'v1.0.0',
-  },
-  {
-    id: '22222222-2222-4222-8222-222222222205',
-    name: 'Diamante',
-    tier: 5,
-    minRating: 1550,
     maxRating: null,
-    minMatchesRequired: 5,
+    minMatchesRequired: 0,
     rulesetVersion: 'v1.0.0',
   },
 ];
@@ -124,69 +88,23 @@ export function calculatePlayerEloUpdate(params: {
 }
 
 export function resolveDivisionForPlayer(
-  rating: number,
-  totalValidatedMatches: number,
+  _rating: number = 0,
+  _totalValidatedMatches: number = 0,
   divisions: Division[] = DEFAULT_DIVISIONS
 ): Division {
-  const bronze = divisions.find((d) => d.name === 'Bronze') || divisions[0];
-  if (totalValidatedMatches < PROVISIONAL_MATCHES_THRESHOLD) {
-    return bronze;
-  }
-
-  const sortedDesc = [...divisions].sort((a, b) => b.tier - a.tier);
-  for (const div of sortedDesc) {
-    if (
-      rating >= div.minRating &&
-      totalValidatedMatches >= div.minMatchesRequired
-    ) {
-      return div;
-    }
-  }
-  return bronze;
+  return divisions[0] || DEFAULT_DIVISIONS[0];
 }
 
-export function getDivisionBadgeStyle(divisionName: DivisionName): {
+export function getDivisionBadgeStyle(_divisionName?: DivisionName): {
   bg: string;
   border: string;
   text: string;
   accent: string;
 } {
-  switch (divisionName) {
-    case 'Diamante':
-      return {
-        bg: 'bg-blue-50',
-        border: 'border-blue-300',
-        text: 'text-blue-700',
-        accent: '#1D4ED8',
-      };
-    case 'Platina':
-      return {
-        bg: 'bg-sky-50',
-        border: 'border-sky-300',
-        text: 'text-sky-700',
-        accent: '#0284C7',
-      };
-    case 'Ouro':
-      return {
-        bg: 'bg-amber-50',
-        border: 'border-amber-300',
-        text: 'text-amber-700',
-        accent: '#B45309',
-      };
-    case 'Prata':
-      return {
-        bg: 'bg-slate-100',
-        border: 'border-slate-300',
-        text: 'text-slate-700',
-        accent: '#475569',
-      };
-    case 'Bronze':
-    default:
-      return {
-        bg: 'bg-orange-50',
-        border: 'border-orange-200',
-        text: 'text-orange-700',
-        accent: '#C2410C',
-      };
-  }
+  return {
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    text: 'text-blue-700',
+    accent: '#1D4ED8',
+  };
 }

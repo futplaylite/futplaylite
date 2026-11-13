@@ -273,7 +273,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     currentPlayerProfile,
     profiles,
     seasonEntries,
-    divisions,
     cities,
     matches,
     selectedCityId,
@@ -1120,10 +1119,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     status: 'provisorio' as const,
     updatedAt: activeProfile.updatedAt,
   };
-
-  const myDivision =
-    divisions.find((d) => d.id === activeProfile.currentDivisionId) ||
-    divisions[0];
 
   const cityEntriesWithProfile = seasonEntries
     .filter((se) => se.seasonId === selectedSeasonId)

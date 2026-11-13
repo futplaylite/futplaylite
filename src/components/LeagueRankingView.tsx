@@ -9,7 +9,6 @@ import {
   Trophy,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
-import { getDivisionBadgeStyle } from '../lib/engine/eloEngine';
 import { TeamCrestBadge } from './TeamCrestBadge';
 
 interface LeagueRankingViewProps {
@@ -413,7 +412,6 @@ export const LeagueRankingView: React.FC<LeagueRankingViewProps> = ({
   const {
     profiles,
     seasonEntries,
-    divisions,
     cities,
     selectedCityId,
     selectedSeasonId,
@@ -449,11 +447,6 @@ export const LeagueRankingView: React.FC<LeagueRankingViewProps> = ({
         const profile = profiles.find((p) => p.id === entry.playerId);
         if (!profile || profile.cityId !== selectedCityId) return null;
 
-        const division =
-          divisions.find((d) => d.id === entry.divisionId) ||
-          divisions.find((d) => d.id === profile.currentDivisionId) ||
-          divisions[0];
-
         const goals = entry.goals || 0;
         const presences = entry.matchesPlayed || 0;
         const superCapas = entry.superCapas ?? entry.mvpCount ?? 0;
@@ -471,7 +464,6 @@ export const LeagueRankingView: React.FC<LeagueRankingViewProps> = ({
         return {
           entry,
           profile,
-          division,
           goals,
           presences,
           superCapas,
@@ -565,7 +557,6 @@ export const LeagueRankingView: React.FC<LeagueRankingViewProps> = ({
     selectedSeasonId,
     profiles,
     selectedCityId,
-    divisions,
     category,
   ]);
 

@@ -68,11 +68,11 @@ export function compareSeasonRanking(
   if (b.entry.seasonPoints !== a.entry.seasonPoints) {
     return b.entry.seasonPoints - a.entry.seasonPoints;
   }
-  if (b.profile.currentRating !== a.profile.currentRating) {
-    return b.profile.currentRating - a.profile.currentRating;
-  }
   if (b.entry.wins !== a.entry.wins) {
     return b.entry.wins - a.entry.wins;
+  }
+  if ((b.entry.goals || 0) !== (a.entry.goals || 0)) {
+    return (b.entry.goals || 0) - (a.entry.goals || 0);
   }
   if (b.entry.matchesPlayed !== a.entry.matchesPlayed) {
     return b.entry.matchesPlayed - a.entry.matchesPlayed;

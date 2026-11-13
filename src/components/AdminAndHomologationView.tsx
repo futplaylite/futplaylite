@@ -82,7 +82,6 @@ export const AdminAndHomologationView: React.FC<
     blueCards: number;
     redCards: number;
     seasonPoints: number;
-    currentRating: number;
     position: PlayerPosition;
     reason: string;
   }>({
@@ -98,7 +97,6 @@ export const AdminAndHomologationView: React.FC<
     blueCards: 0,
     redCards: 0,
     seasonPoints: 0,
-    currentRating: 1200,
     position: 'atacante',
     reason: 'Ajuste manual de dados da súmula pelo Administrador',
   });
@@ -217,7 +215,6 @@ export const AdminAndHomologationView: React.FC<
       blueCards: Number(entry.blueCards ?? 0),
       redCards: Number(entry.redCards ?? 0),
       seasonPoints: Number(entry.seasonPoints ?? 0),
-      currentRating: Number(player.currentRating ?? 1200),
       position: player.position || 'atacante',
       reason: 'Ajuste manual de dados pelo Administrador',
     });
@@ -265,7 +262,6 @@ export const AdminAndHomologationView: React.FC<
         seasonPoints: Number(editForm.seasonPoints) || 0,
       },
       profileUpdates: {
-        currentRating: Number(editForm.currentRating) || 1200,
         position: editForm.position,
       },
       reason: editForm.reason.trim() || 'Ajuste manual realizado pelo Administrador',
@@ -297,7 +293,6 @@ export const AdminAndHomologationView: React.FC<
         players: PlayerProfile[];
         totalGoals: number;
         totalMatches: number;
-        avgRating: number;
       }
     >();
 
@@ -318,7 +313,6 @@ export const AdminAndHomologationView: React.FC<
           players: [],
           totalGoals: 0,
           totalMatches: 0,
-          avgRating: 0,
         };
         map.set(teamKey, item);
       }
@@ -342,17 +336,14 @@ export const AdminAndHomologationView: React.FC<
           players: [],
           totalGoals: 0,
           totalMatches: 0,
-          avgRating: 0,
         });
       }
     });
 
     Array.from(map.values()).forEach((item) => {
       let gSum = 0;
-      let rSum = 0;
       let mMax = 0;
       item.players.forEach((p) => {
-        rSum += p.currentRating || 1200;
         const entry =
           seasonEntries.find(
             (se) => se.playerId === p.id && se.seasonId === selectedSeasonId
@@ -364,8 +355,6 @@ export const AdminAndHomologationView: React.FC<
       });
       item.totalGoals = gSum;
       item.totalMatches = mMax;
-      item.avgRating =
-        item.players.length > 0 ? Math.round(rSum / item.players.length) : 1200;
     });
 
     return Array.from(map.values()).sort((a, b) => {
@@ -671,9 +660,6 @@ export const AdminAndHomologationView: React.FC<
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-800 px-2 py-0.5 font-bold">
                           ⚽ {team.totalGoals} gols
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 text-amber-800 px-2 py-0.5 font-bold">
-                          ⭐ ELO {team.avgRating}
                         </span>
                         {team.inviteCode && (
                           <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-700 px-1.5 py-0.5 font-mono font-bold">
@@ -1700,23 +1686,6 @@ export const AdminAndHomologationView: React.FC<
                         setEditForm({ ...editForm, redCards: Number(e.target.value) })
                       }
                       className="w-full rounded-xl border border-rose-200 bg-rose-50/30 p-2 text-xs font-bold text-rose-900 focus:border-blue-600 focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-blue-800 mb-1">
-                      ⭐ Rating ELO *
-                    </label>
-                    <input
-                      type="number"
-                      min="100"
-                      max="3000"
-                      required
-                      value={editForm.currentRating}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, currentRating: Number(e.target.value) })
-                      }
-                      className="w-full rounded-xl border border-blue-300 bg-blue-50/30 p-2 text-xs font-mono font-extrabold text-blue-900 focus:border-blue-600 focus:outline-none"
                     />
                   </div>
                 </div>

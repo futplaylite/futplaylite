@@ -1319,7 +1319,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
-  // RF-001, RF-002, RF-003: Cadastro de Novo Atleta com Classificação Provisória (Bronze, 1000 Elo)
+  // RF-001, RF-002, RF-003: Cadastro de Novo Atleta na Liga Municipal
   const registerNewAthlete: LeagueContextValue['registerNewAthlete'] = (
     params
   ) => {
@@ -1435,12 +1435,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       actionType: 'ATHLETE_REGISTERED',
       entityType: 'player_profiles',
       entityId: newPlayerId,
-      reason: 'Cadastro inicial na Liga Municipal com classificação provisória (1000 Elo, Bronze).',
+      reason: 'Cadastro inicial de atleta na Liga Municipal.',
       afterData: {
         displayName: trimmedName,
         cityId: targetCityId,
-        initialRating: 1000,
-        isProvisional: true,
       },
       createdAt: now,
     };
@@ -1473,7 +1471,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     notify(
       'success',
       'Bem-vindo ao FutPlay Lite!',
-      `${trimmedName} ingressou na temporada com Rating inicial 1000 (Classificação Provisória · Divisão Bronze).`
+      `${trimmedName} ingressou oficialmente na temporada!`
     );
     return newProfile;
   };
@@ -2579,8 +2577,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     notify(
       'success',
-      'Partida Validada! Pontos e Rating Elo calculados',
-      `Confirmação independente registrada. A fórmula P = 5 + R + 3G + 2A + 3M e o Elo coletivo foram creditados aos participantes.`
+      'Partida Validada! Pontos e Estatísticas calculados',
+      `Confirmação independente registrada. A pontuação oficial e estatísticas da partida foram creditadas aos participantes.`
     );
     return true;
   };
@@ -2955,9 +2953,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       entityType: 'player_profiles',
       entityId: currentPlayerProfile?.id || 'unknown',
       reason:
-        'Tentativa bloqueada (403 Forbidden - CA-030): Cliente tentou enviar payload direto { currentRating: 1850, seasonPoints: 999, division: "Diamante" } fora do motor de servidor.',
+        'Tentativa bloqueada (403 Forbidden - CA-030): Cliente tentou enviar payload direto { seasonPoints: 999 } fora do motor de servidor.',
       beforeData: {
-        currentRating: currentPlayerProfile?.currentRating,
+        points: 0,
       },
       afterData: {
         status: 'REJECTED_BY_SERVER_RLS_POLICY',
@@ -2973,7 +2971,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     notify(
       'error',
       'Bloqueio de Segurança Ativo (CA-030 · 403 Forbidden)',
-      'Usuários não podem manipular pontos, rating Elo, divisões ou estados de validação diretamente. Tentativa registrada no Log de Auditoria.'
+      'Usuários não podem manipular pontos, estatísticas ou estados de validação diretamente. Tentativa registrada no Log de Auditoria.'
     );
   };
 
@@ -3333,7 +3331,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               id: `se-${profile.id}-${Date.now()}`,
               seasonId: prev.seasons[0]?.id || 'season-2026-2',
               playerId: profile.id,
-              divisionId: profile.currentDivisionId || 'div-ouro',
+              divisionId: profile.currentDivisionId || 'div-geral',
               seasonPoints: isSuperCapa ? 3 : 1,
               pendingPoints: 0,
               matchesPlayed: newMatches,
@@ -3759,7 +3757,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         id: `season-entry-${targetProfile.id}-${selectedSeasonId}`,
         seasonId: selectedSeasonId,
         playerId: targetProfile.id,
-        divisionId: targetProfile.currentDivisionId || 'div-ouro',
+        divisionId: targetProfile.currentDivisionId || 'div-geral',
         seasonPoints: 0,
         pendingPoints: 0,
         matchesPlayed: 0,
@@ -3798,7 +3796,6 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       redCards: 'Cartões Vermelhos (CV)',
       cleanSheets: 'Jogos sem Sofrer Gols',
       seasonPoints: 'Pontos na Temporada',
-      currentRating: 'Rating ELO',
       position: 'Posição',
     };
 
@@ -3821,19 +3818,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     });
 
-    // Avalia campos de PlayerProfile (ex: currentRating, position)
+    // Avalia campos de PlayerProfile (ex: position)
     if (profileUpdates) {
-      if (profileUpdates.currentRating !== undefined && profileUpdates.currentRating !== targetProfile.currentRating) {
-        beforeData['currentRating'] = targetProfile.currentRating;
-        afterData['currentRating'] = profileUpdates.currentRating;
-        diffs.push({
-          field: 'currentRating',
-          label: 'Rating ELO',
-          before: targetProfile.currentRating,
-          after: profileUpdates.currentRating,
-          delta: profileUpdates.currentRating - targetProfile.currentRating,
-        });
-      }
       if (profileUpdates.position !== undefined && profileUpdates.position !== targetProfile.position) {
         beforeData['position'] = targetProfile.position;
         afterData['position'] = profileUpdates.position;
@@ -3899,14 +3885,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       // 2. Atualiza Profile
       const updatedProfiles = prev.profiles.map((p) => {
         if (p.id !== targetProfile.id) return p;
-        const newRating = profileUpdates?.currentRating ?? p.currentRating;
         const newPos = profileUpdates?.position ?? p.position;
-        const newDiv = resolveDivisionForPlayer(newRating, p.totalValidatedMatches, prev.divisions);
         return {
           ...p,
-          currentRating: newRating,
           position: newPos,
-          currentDivisionId: newDiv.id,
           updatedAt: now,
         };
       });

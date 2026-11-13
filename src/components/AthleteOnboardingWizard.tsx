@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { RosaliaCrest } from './RosaliaCrest';
-import { getDivisionBadgeStyle } from '../lib/engine/eloEngine';
 import { PlayerPosition, TeamModality } from '../types/league';
 
 interface AthleteOnboardingWizardProps {
@@ -37,8 +36,6 @@ interface RosterMemberPreview {
   id: string;
   name: string;
   position: PlayerPosition;
-  rating: number;
-  divisionName: 'Bronze' | 'Prata' | 'Ouro' | 'Platina' | 'Diamante';
   avatarUrl?: string;
   isCaptain?: boolean;
 }
@@ -226,7 +223,6 @@ export const AthleteOnboardingWizard: React.FC<
 > = ({ onCompleteWizard }) => {
   const {
     profiles,
-    divisions,
     currentUser,
     currentPlayerProfile,
     saveOnboardingStep1,
@@ -366,20 +362,13 @@ export const AthleteOnboardingWizard: React.FC<
               member.teamInviteCode?.toUpperCase() ===
               p.teamInviteCode?.toUpperCase()
           )
-          .map((member) => {
-            const div = divisions.find(
-              (d) => d.id === member.currentDivisionId
-            );
-            return {
-              id: member.id,
-              name: member.displayName,
-              position: member.position,
-              rating: member.currentRating,
-              divisionName: div?.name || 'Bronze',
-              avatarUrl: member.avatarUrl,
-              isCaptain: member.id === p.id,
-            };
-          });
+          .map((member) => ({
+            id: member.id,
+            name: member.displayName,
+            position: member.position,
+            avatarUrl: member.avatarUrl,
+            isCaptain: member.id === p.id,
+          }));
 
         customTeams.push({
           id: `custom-${p.id}`,
@@ -398,7 +387,7 @@ export const AthleteOnboardingWizard: React.FC<
       }
     });
     return [...customTeams, ...DEFAULT_TEAMS_PLANALTO];
-  }, [profiles, divisions]);
+  }, [profiles]);
 
   // Verifica se o código digitado encontra um time válido
   const matchedTeamByCode = useMemo<RegisteredTeamInfo | undefined>(() => {
@@ -1433,13 +1422,11 @@ export const AthleteOnboardingWizard: React.FC<
                 </div>
 
                 {/* Jogadores Atuais do Time */}
-                {teamToConfirm.roster.map((member) => {
-                  const divStyle = getDivisionBadgeStyle(member.divisionName);
-                  return (
-                    <div
-                      key={member.id}
-                      className="py-2.5 last:pb-0 flex items-center justify-between gap-2.5"
-                    >
+                {teamToConfirm.roster.map((member) => (
+                  <div
+                    key={member.id}
+                    className="py-2.5 last:pb-0 flex items-center justify-between gap-2.5"
+                  >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 border border-slate-200 font-display text-xs font-bold text-blue-800">
                           {member.avatarUrl ? (
@@ -1475,8 +1462,7 @@ export const AthleteOnboardingWizard: React.FC<
                         </span>
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
               </div>
             </div>
 

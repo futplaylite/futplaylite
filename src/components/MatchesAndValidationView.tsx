@@ -234,7 +234,7 @@ export const MatchesAndValidationView: React.FC<
   const [neighborhood, setNeighborhood] = useState('Centro - Planalto');
   const [format, setFormat] = useState<MatchFormat>('7v7');
   const [homeTeamName, setHomeTeamName] = useState('Esquadrão Azul');
-  const [awayTeamName, setAwayTeamName] = useState('Seleção Ouro');
+  const [awayTeamName, setAwayTeamName] = useState('Seleção Visitante');
   const [homePlayerIds, setHomePlayerIds] = useState<string[]>([]);
   const [awayPlayerIds, setAwayPlayerIds] = useState<string[]>([]);
 

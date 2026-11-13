@@ -17,7 +17,6 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
-import { getDivisionBadgeStyle } from '../lib/engine/eloEngine';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PlayerRatingModal } from './PlayerRatingModal';
 import { ShareCardModal } from './ShareCardModal';
@@ -71,7 +70,6 @@ export const AthleteProfileAndCardView: React.FC<
   const {
     profiles,
     seasonEntries,
-    divisions,
     cities,
     pointTransactions,
     playerAdjustments,
@@ -149,10 +147,6 @@ export const AthleteProfileAndCardView: React.FC<
 
   const targetCity =
     cities.find((c) => c.id === targetProfile.cityId) || cities[0];
-  const targetDivision =
-    divisions.find((d) => d.id === targetProfile.currentDivisionId) ||
-    divisions[0];
-  const divStyle = getDivisionBadgeStyle(targetDivision.name);
 
   const userTeamName =
     targetProfile.teamName ||
