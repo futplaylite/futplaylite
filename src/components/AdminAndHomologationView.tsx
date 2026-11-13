@@ -6,7 +6,6 @@ import {
   ChevronRight,
   ClipboardCheck,
   Download,
-  Edit3,
   Eye,
   EyeOff,
   FileWarning,
@@ -729,15 +728,20 @@ export const AdminAndHomologationView: React.FC<
               </div>
 
               {/* Busca de Atletas */}
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={playerSearch}
-                  onChange={(e) => setPlayerSearch(e.target.value)}
-                  placeholder="Filtrar atleta por nome, apelido ou posição..."
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2 text-xs font-semibold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
-                />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={playerSearch}
+                    onChange={(e) => setPlayerSearch(e.target.value)}
+                    placeholder="Filtrar atleta por nome, apelido ou posição..."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2 text-xs font-semibold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+                  />
+                </div>
+                <span className="text-[11px] text-slate-500 font-medium shrink-0 hidden sm:inline">
+                  💡 Clique na linha do atleta para editar
+                </span>
               </div>
 
               {/* TABELA DE ATLETAS (Visualização Desktop & Tablet) */}
@@ -745,8 +749,7 @@ export const AdminAndHomologationView: React.FC<
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase text-slate-600 tracking-wider">
-                      <th className="py-2.5 px-3">Nome do Atleta</th>
-                      <th className="py-2.5 px-2 text-center">Posição</th>
+                      <th className="py-2.5 px-3">Atleta / Posição</th>
                       <th className="py-2.5 px-2 text-center" title="Partidas Jogadas">PJ</th>
                       <th className="py-2.5 px-2 text-center" title="Vitórias - Empates - Derrotas">V-E-D</th>
                       <th className="py-2.5 px-2 text-center" title="Gols Marcados">Gols</th>
@@ -754,7 +757,6 @@ export const AdminAndHomologationView: React.FC<
                       <th className="py-2.5 px-2 text-center" title="Super Capas">SC</th>
                       <th className="py-2.5 px-2 text-center" title="Capas de Goleiro">CG</th>
                       <th className="py-2.5 px-2 text-center" title="Cartões: Amarelo / Azul / Vermelho">Cartões</th>
-                      <th className="py-2.5 px-3 text-right">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -777,24 +779,28 @@ export const AdminAndHomologationView: React.FC<
                       const cv = entry?.redCards ?? 0;
 
                       return (
-                        <tr key={player.id} className="hover:bg-blue-50/40 transition">
+                        <tr
+                          key={player.id}
+                          onClick={() => handleOpenEditPlayer(player)}
+                          title={`Clique na linha para editar os dados de ${player.displayName}`}
+                          className="hover:bg-blue-50/70 transition cursor-pointer group"
+                        >
                           <td className="py-2.5 px-3">
                             <div className="min-w-0">
-                              <span className="font-extrabold text-slate-900 block truncate text-xs">
+                              <span className="font-extrabold text-slate-900 block truncate text-xs group-hover:text-blue-700 transition-colors">
                                 {player.displayName}
                               </span>
-                              {player.isTeamOwner && (
-                                <span className="text-[9px] font-black text-blue-700 uppercase">
-                                  Dono / Capitão
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="inline-block rounded bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.2 capitalize">
+                                  {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
                                 </span>
-                              )}
+                                {player.isTeamOwner && (
+                                  <span className="rounded bg-blue-50 text-blue-700 border border-blue-200 px-1 py-0.2 text-[9px] font-black uppercase">
+                                    Capitão
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </td>
-
-                          <td className="py-2.5 px-2 text-center">
-                            <span className="inline-block rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold px-1.5 py-0.5 capitalize">
-                              {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
-                            </span>
                           </td>
 
                           <td className="py-2.5 px-2 text-center font-bold text-slate-800">
@@ -836,17 +842,6 @@ export const AdminAndHomologationView: React.FC<
                               </span>
                             </div>
                           </td>
-
-                          <td className="py-2.5 px-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditPlayer(player)}
-                              className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-2xs hover:bg-blue-700 transition cursor-pointer"
-                            >
-                              <Edit3 className="h-3 w-3" />
-                              <span>Editar</span>
-                            </button>
-                          </td>
                         </tr>
                       );
                     })}
@@ -877,11 +872,13 @@ export const AdminAndHomologationView: React.FC<
                   return (
                     <div
                       key={player.id}
-                      className="p-3.5 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-3"
+                      onClick={() => handleOpenEditPlayer(player)}
+                      title={`Clique para editar os dados de ${player.displayName}`}
+                      className="p-3.5 rounded-2xl border border-slate-200 bg-white shadow-2xs space-y-3 cursor-pointer hover:border-blue-300 hover:shadow-xs transition active:scale-[0.99] group"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <h4 className="text-xs font-black text-slate-900 truncate">
+                          <h4 className="text-xs font-black text-slate-900 truncate group-hover:text-blue-700 transition-colors">
                             {player.displayName}
                           </h4>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -896,14 +893,9 @@ export const AdminAndHomologationView: React.FC<
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditPlayer(player)}
-                          className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-700 transition cursor-pointer shrink-0"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                          <span>Editar</span>
-                        </button>
+                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-2 py-0.5 shrink-0 group-hover:bg-blue-600 group-hover:text-white transition">
+                          Editar ✎
+                        </span>
                       </div>
 
                       {/* Grade de Estatísticas do Jogador */}
