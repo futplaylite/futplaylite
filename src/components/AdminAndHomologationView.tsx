@@ -442,95 +442,52 @@ export const AdminAndHomologationView: React.FC<
 
   return (
     <div className="space-y-4">
-      {/* 1. Card Superior de Moderação e Abas */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-bold text-slate-900">
-            Moderação & Auditoria
-          </h1>
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
-              isStaff
-                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            <ShieldCheck className="h-3 w-3" />
-            {currentUser.role}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          {!isStaff ? (
-            <button
-              onClick={() => switchActiveUser('user-mod')}
-              className="rounded-xl bg-blue-600 py-2 px-3 text-xs font-bold text-white shadow-sm"
-            >
-              Entrar como Moderador
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleOpenResetModal}
-              className="inline-flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 py-2 px-3 text-xs font-semibold text-slate-700 transition cursor-pointer"
-            >
-              <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
-              Restaurar Dados
-            </button>
-          )}
-
-          <button
-            onClick={attemptDirectManipulationAttack}
-            className="rounded-xl border border-red-200 bg-red-50 py-2 px-3 text-xs font-bold text-red-700"
-          >
-            Testar Bloqueio API
-          </button>
-        </div>
-
+      {/* 1. Barra de Abas Principal */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
         <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
           <button
             onClick={() => setSubView('teams')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-bold transition ${
+            className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
               subView === 'teams'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <Shield className="h-3.5 w-3.5" />
-            Times & Atletas
+            <span className="truncate">Times & Atletas</span>
           </button>
           <button
             onClick={() => setSubView('moderation')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-bold transition ${
+            className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
               subView === 'moderation'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <FileWarning className="h-3.5 w-3.5" />
-            Disputas
+            <span className="truncate">Disputas</span>
           </button>
           <button
             onClick={() => setSubView('audit')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-bold transition ${
+            className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
               subView === 'audit'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <History className="h-3.5 w-3.5" />
-            Logs ({auditLogs.length})
+            <span className="truncate">Logs ({auditLogs.length})</span>
           </button>
           <button
             onClick={() => setSubView('homolog')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-bold transition ${
+            className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
               subView === 'homolog'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <ClipboardCheck className="h-3.5 w-3.5" />
-            Testes ({passedCount}/10)
+            <span className="truncate">Testes ({passedCount}/10)</span>
           </button>
         </div>
       </div>
@@ -562,7 +519,7 @@ export const AdminAndHomologationView: React.FC<
             /* 1. LISTA DE TIMES CADASTRADOS NA LIGA                              */
             /* =================================================================== */
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3">
                 <div>
                   <h2 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
                     <Shield className="h-4 w-4 text-blue-600" />
@@ -572,9 +529,19 @@ export const AdminAndHomologationView: React.FC<
                     Selecione um time para abrir a tabela de atletas, auditar estatísticas e editar qualquer dado com senha.
                   </p>
                 </div>
-                <span className="text-[11px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full self-start sm:self-auto">
-                  {teamItems.length} {teamItems.length === 1 ? 'time cadastrado' : 'times cadastrados'}
-                </span>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <span className="text-[11px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-xl">
+                    {teamItems.length} {teamItems.length === 1 ? 'time cadastrado' : 'times cadastrados'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleOpenResetModal}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 py-1.5 px-3 text-xs font-semibold text-slate-700 transition cursor-pointer shadow-xs hover:border-slate-300"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
+                    Restaurar Dados
+                  </button>
+                </div>
               </div>
 
               {/* Barra de Busca de Times */}
@@ -699,10 +666,18 @@ export const AdminAndHomologationView: React.FC<
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                <div className="flex items-center gap-2 self-start sm:self-auto">
                   <span className="text-[10px] font-extrabold uppercase rounded-full bg-blue-100 text-blue-800 px-2.5 py-1">
                     Modo Edição Admin Ativo
                   </span>
+                  <button
+                    type="button"
+                    onClick={handleOpenResetModal}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 py-1.5 px-3 text-xs font-semibold text-slate-700 transition cursor-pointer shadow-xs hover:border-slate-300"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
+                    Restaurar Dados
+                  </button>
                 </div>
               </div>
 
@@ -1277,22 +1252,33 @@ export const AdminAndHomologationView: React.FC<
       {/* ABA 3: TESTES DE HOMOLOGAÇÃO */}
       {subView === 'homolog' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3">
             <div>
               <h2 className="text-sm font-bold text-slate-900">
                 Testes de Homologação ({passedCount}/10)
               </h2>
               <p className="text-[11px] text-slate-500">
-                Verificação das regras de negócio
+                Verificação das regras de negócio e proteção da API
               </p>
             </div>
-            <button
-              onClick={handleRunHomologationSuite}
-              className="inline-flex items-center gap-1 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
-            >
-              <Play className="h-3 w-3" />
-              Executar
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={attemptDirectManipulationAttack}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 py-1.5 px-3 text-xs font-bold text-red-700 transition cursor-pointer shadow-xs"
+              >
+                <ShieldAlert className="h-3.5 w-3.5 text-red-600" />
+                Testar Bloqueio API
+              </button>
+              <button
+                type="button"
+                onClick={handleRunHomologationSuite}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 py-1.5 px-3 text-xs font-bold text-white transition cursor-pointer shadow-xs"
+              >
+                <Play className="h-3 w-3" />
+                Executar
+              </button>
+            </div>
           </div>
 
           <div className="space-y-2">
