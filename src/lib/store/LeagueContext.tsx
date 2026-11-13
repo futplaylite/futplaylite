@@ -315,6 +315,74 @@ export const DEFAULT_MONTHLY_CONFIG: PeladaMonthlyConfig = {
   pixReceiverName: 'Rosália Esportes',
 };
 
+export function ensureAthleteAuditLogs(
+  profiles: PlayerProfile[],
+  existingLogs: AuditLog[] = []
+): AuditLog[] {
+  const existingKeys = new Set(
+    (existingLogs || []).map((l) => `${l.actionType}_${l.actorUserId}`)
+  );
+  const createdLogs: AuditLog[] = [];
+
+  for (const prof of profiles) {
+    if (!prof.userId) continue;
+
+    // 1. Log de Cadastro Inicial do Atleta
+    const regKey = `ATHLETE_REGISTERED_${prof.userId}`;
+    if (!existingKeys.has(regKey)) {
+      const regLog: AuditLog = {
+        id: `audit-cloud-reg-${prof.userId}`,
+        actorUserId: prof.userId,
+        actorName: prof.displayName || 'Atleta',
+        actorRole: prof.isTeamOwner ? 'coach' : 'player',
+        actionType: 'ATHLETE_REGISTERED',
+        entityType: 'player_profiles',
+        entityId: prof.id,
+        reason: `Cadastro de atleta oficial na Liga de Planalto - BA (${prof.position || 'defensor'}, ${prof.neighborhood || 'Centro'}).`,
+        afterData: {
+          displayName: prof.displayName,
+          teamName: prof.teamName,
+          position: prof.position,
+          initialRating: prof.currentRating || 1000,
+          isProvisional: prof.isProvisional,
+        },
+        createdAt: prof.createdAt || new Date().toISOString(),
+      };
+      createdLogs.push(regLog);
+      existingKeys.add(regKey);
+    }
+
+    // 2. Log de Ingresso ou Criação de Equipe
+    if (prof.teamName && prof.teamName.trim()) {
+      const teamAction = prof.isTeamOwner ? 'TIME_CRIADO' : 'TIME_INGRESSOU';
+      const teamKey = `${teamAction}_${prof.userId}`;
+      if (!existingKeys.has(teamKey)) {
+        const teamLog: AuditLog = {
+          id: `audit-cloud-team-${prof.userId}`,
+          actorUserId: prof.userId,
+          actorName: prof.displayName || 'Atleta',
+          actorRole: prof.isTeamOwner ? 'coach' : 'player',
+          actionType: teamAction,
+          entityType: 'teams',
+          entityId: prof.teamInviteCode || prof.teamName,
+          reason: prof.isTeamOwner
+            ? `Criou a equipe "${prof.teamName}" (${prof.teamModality || 'Society'}, ${prof.teamCity || 'Planalto - BA'}).`
+            : `Ingressou no elenco da equipe "${prof.teamName}" (${prof.teamModality || 'Society'}, ${prof.teamCity || 'Planalto - BA'}).`,
+          createdAt: prof.updatedAt || prof.createdAt || new Date().toISOString(),
+        };
+        createdLogs.push(teamLog);
+        existingKeys.add(teamKey);
+      }
+    }
+  }
+
+  if (createdLogs.length === 0) return existingLogs;
+
+  const combined = [...(existingLogs || []), ...createdLogs];
+  combined.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  return combined;
+}
+
 function getInitialState(): LeagueState {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -341,6 +409,7 @@ function getInitialState(): LeagueState {
           if (rawPay) payments = JSON.parse(rawPay);
         } catch (e) {}
       }
+      const initialLogs = ensureAthleteAuditLogs(cleanProfiles, parsed.auditLogs || []);
       return {
         ...parsed,
         users: parsed.users || [],
@@ -351,6 +420,7 @@ function getInitialState(): LeagueState {
         monthlyConfig: parsed.monthlyConfig || DEFAULT_MONTHLY_CONFIG,
         teamTransactions: transactions,
         playerAdjustments: parsed.playerAdjustments || [],
+        auditLogs: initialLogs,
       };
     }
   } catch (e) {
@@ -383,7 +453,7 @@ function getInitialState(): LeagueState {
     evidenceFiles: INITIAL_EVIDENCE_FILES,
     pointTransactions: INITIAL_POINT_TRANSACTIONS,
     ratingLogs: INITIAL_RATING_LOGS,
-    auditLogs: INITIAL_AUDIT_LOGS,
+    auditLogs: ensureAthleteAuditLogs(INITIAL_PROFILES, INITIAL_AUDIT_LOGS),
     peerEvaluations: [],
     monthlyPayments: initialPay,
     monthlyConfig: DEFAULT_MONTHLY_CONFIG,
@@ -564,12 +634,32 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           };
         });
 
-        const next = { ...prev, profiles: merged };
+        const enrichedAuditLogs = ensureAthleteAuditLogs(merged, prev.auditLogs || []);
+        const next = { ...prev, profiles: merged, auditLogs: enrichedAuditLogs };
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
         } catch {
           // Ignore
         }
+        return next;
+      });
+    });
+
+    // 2.5. Sincroniza logs de auditoria da nuvem (Supabase)
+    supabaseService.getAuditLogs().then((remoteLogs) => {
+      if (!remoteLogs || remoteLogs.length === 0) return;
+      setState((prev) => {
+        const map = new Map<string, AuditLog>();
+        remoteLogs.forEach((l) => map.set(l.id, l));
+        (prev.auditLogs || []).forEach((l) => {
+          if (!map.has(l.id)) map.set(l.id, l);
+        });
+        const list = Array.from(map.values());
+        list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        const next = { ...prev, auditLogs: list };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {}
         return next;
       });
     });
@@ -805,7 +895,21 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const newRow = payload.new as { data?: unknown; id?: string };
-              if (newRow && newRow.data) {
+              if (newRow && newRow.id === 'audit_logs_ledger_v1' && newRow.data) {
+                const auditData = newRow.data as { logs?: AuditLog[] };
+                if (Array.isArray(auditData.logs)) {
+                  setState((prev) => {
+                    const map = new Map<string, AuditLog>();
+                    auditData.logs!.forEach((l) => map.set(l.id, l));
+                    (prev.auditLogs || []).forEach((l) => {
+                      if (!map.has(l.id)) map.set(l.id, l);
+                    });
+                    const list = Array.from(map.values());
+                    list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+                    return { ...prev, auditLogs: list };
+                  });
+                }
+              } else if (newRow && newRow.data) {
                 const updatedSumula = newRow.data as SumulaData;
                 const idx = list.findIndex((s) => s.id === updatedSumula.id);
                 if (idx >= 0) {
@@ -1071,6 +1175,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       auditLogs: [newLog, ...(prev.auditLogs || [])],
     }));
 
+    if (isSupabaseConfigured()) {
+      supabaseService.recordAuditLogInSupabase(newLog).catch(() => {});
+    }
+
     return newLog;
   };
 
@@ -1334,6 +1442,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Sincroniza diretamente com o Supabase para persistência multi-dispositivo
     if (isSupabaseConfigured()) {
+      supabaseService.recordAuditLogInSupabase(newAudit).catch(() => {});
       supabaseService
         .registerAthleteInSupabase({
           user: newUser,
@@ -3571,16 +3680,19 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       auditLogs: [onbLog, ...(prev.auditLogs || [])],
     }));
 
-    if (isSupabaseConfigured() && currentUser?.id) {
-      supabaseService.updateProfile(currentUser.id, {
-        position: position || undefined,
-        teamName: trimmedTeam,
-        teamCity: trimmedCity,
-        teamCrestUrl: teamCrestUrl || undefined,
-        teamModality,
-        teamInviteCode: generatedCode,
-        isTeamOwner: mode === 'create',
-      });
+    if (isSupabaseConfigured()) {
+      supabaseService.recordAuditLogInSupabase(onbLog).catch(() => {});
+      if (currentUser?.id) {
+        supabaseService.updateProfile(currentUser.id, {
+          position: position || undefined,
+          teamName: trimmedTeam,
+          teamCity: trimmedCity,
+          teamCrestUrl: teamCrestUrl || undefined,
+          teamModality,
+          teamInviteCode: generatedCode,
+          isTeamOwner: mode === 'create',
+        });
+      }
     }
 
     notify(
@@ -3810,8 +3922,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
 
-    if (isSupabaseConfigured() && targetProfile.userId) {
-      if (profileUpdates) {
+    if (isSupabaseConfigured()) {
+      supabaseService.recordAuditLogInSupabase(newAuditLog).catch(() => {});
+      if (targetProfile.userId && profileUpdates) {
         supabaseService.updateProfile(targetProfile.userId, profileUpdates).catch(() => {});
       }
     }

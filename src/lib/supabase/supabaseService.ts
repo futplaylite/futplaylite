@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './client';
 import {
+  AuditLog,
   DominantFoot,
   MonthlyPaymentRecord,
   PeladaMonthlyConfig,
@@ -24,6 +25,7 @@ export function generateUUID(): string {
 }
 
 let monthlyLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
+let auditLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
 
 /**
  * Serviço de sincronização e comunicação com a API do Supabase.
@@ -1240,6 +1242,143 @@ export const supabaseService = {
       return !upsertErr;
     } catch (err) {
       console.warn('Exceção ao excluir transação financeira no Supabase:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Busca a lista de logs de auditoria sincronizados no Supabase (multi-aparelho)
+   */
+  async getAuditLogs(): Promise<AuditLog[] | null> {
+    if (!isSupabaseConfigured() || !supabase) return null;
+
+    try {
+      const mergedMap = new Map<string, AuditLog>();
+
+      // 1. Tenta buscar no livro de auditoria em pelada_sumulas
+      const { data: ledgerRow, error: ledgerErr } = await supabase
+        .from('pelada_sumulas')
+        .select('*')
+        .eq('id', 'audit_logs_ledger_v1')
+        .maybeSingle();
+
+      if (!ledgerErr && ledgerRow) {
+        const ledgerData = (ledgerRow.data as unknown as { logs?: AuditLog[] }) || null;
+        if (Array.isArray(ledgerData?.logs)) {
+          for (const log of ledgerData.logs) {
+            if (log && log.id) {
+              mergedMap.set(log.id, log);
+            }
+          }
+        }
+      }
+
+      // 2. Tenta também ler da tabela audit_logs (caso RLS permita leitura)
+      try {
+        const { data: tableLogs, error: tableErr } = await supabase
+          .from('audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (!tableErr && tableLogs) {
+          for (const item of tableLogs as any[]) {
+            if (!mergedMap.has(item.id)) {
+              mergedMap.set(item.id, {
+                id: item.id,
+                actorUserId: item.actor_user_id,
+                actorName: item.actor_name || 'Usuário',
+                actorRole: item.actor_role,
+                actionType: item.action_type,
+                entityType: item.entity_type,
+                entityId: item.entity_id,
+                reason: item.reason,
+                beforeData: item.before_data,
+                afterData: item.after_data,
+                createdAt: item.created_at,
+              });
+            }
+          }
+        }
+      } catch {}
+
+      if (mergedMap.size === 0) return null;
+      const list = Array.from(mergedMap.values());
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return list;
+    } catch (err) {
+      console.warn('Exceção ao buscar logs de auditoria no Supabase:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Registra um novo log de auditoria na nuvem para sincronização multi-aparelho
+   */
+  async recordAuditLogInSupabase(log: AuditLog): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
+
+    try {
+      const nowIso = new Date().toISOString();
+
+      // 1. Tenta gravar na tabela dedicada audit_logs se possível
+      try {
+        await supabase.from('audit_logs').insert([
+          {
+            id: generateUUID(),
+            actor_user_id: log.actorUserId,
+            actor_role: log.actorRole,
+            action_type: log.actionType,
+            entity_type: log.entityType,
+            entity_id: log.entityId && log.entityId.length === 36 ? log.entityId : generateUUID(),
+            reason: log.reason,
+            before_data: log.beforeData || null,
+            after_data: log.afterData || null,
+            created_at: log.createdAt || nowIso,
+          } as any,
+        ]);
+      } catch {}
+
+      // 2. Salva e propaga via pelada_sumulas com id='audit_logs_ledger_v1'
+      const writeFallbackLedger = async (): Promise<boolean> => {
+        if (!supabase) return false;
+
+        const { data: existingRow } = await supabase
+          .from('pelada_sumulas')
+          .select('*')
+          .eq('id', 'audit_logs_ledger_v1')
+          .maybeSingle();
+
+        const existingData = (existingRow?.data as unknown as { logs?: AuditLog[] }) || {};
+        const existingList = Array.isArray(existingData.logs) ? existingData.logs : [];
+
+        // Mantém os últimos 300 logs para alta performance e histórico completo
+        const updatedList = [
+          log,
+          ...existingList.filter((item) => item.id !== log.id),
+        ].slice(0, 300);
+
+        const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
+          {
+            id: 'audit_logs_ledger_v1',
+            team_name: 'Sistema',
+            status: 'audit_ledger',
+            match_date: null,
+            start_time: null,
+            data: { logs: updatedList } as unknown as Record<string, unknown>,
+            last_updated: nowIso,
+          },
+          { onConflict: 'id' }
+        );
+
+        return !fallbackErr;
+      };
+
+      const queuedWrite = auditLedgerWriteQueue.then(writeFallbackLedger, writeFallbackLedger);
+      auditLedgerWriteQueue = queuedWrite.catch(() => false);
+      return await queuedWrite;
+    } catch (err) {
+      console.warn('Exceção ao salvar log de auditoria no Supabase:', err);
       return false;
     }
   },
