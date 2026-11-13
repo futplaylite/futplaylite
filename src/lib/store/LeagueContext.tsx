@@ -330,6 +330,8 @@ export function ensureAthleteAuditLogs(
     // 1. Log de Cadastro Inicial do Atleta
     const regKey = `ATHLETE_REGISTERED_${prof.userId}`;
     if (!existingKeys.has(regKey)) {
+      const createdAt = prof.createdAt || new Date().toISOString();
+      const retentionUntil = new Date(new Date(createdAt).getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
       const regLog: AuditLog = {
         id: `audit-cloud-reg-${prof.userId}`,
         actorUserId: prof.userId,
@@ -346,7 +348,10 @@ export function ensureAthleteAuditLogs(
           initialRating: prof.currentRating || 1000,
           isProvisional: prof.isProvisional,
         },
-        createdAt: prof.createdAt || new Date().toISOString(),
+        clientApp: 'FutPlay Lite PWA v1.0',
+        legalRetentionPolicy: 'Marco Civil da Internet (Art. 15, Lei 12.965/2014) & LGPD',
+        retentionUntil,
+        createdAt,
       };
       createdLogs.push(regLog);
       existingKeys.add(regKey);
@@ -357,6 +362,8 @@ export function ensureAthleteAuditLogs(
       const teamAction = prof.isTeamOwner ? 'TIME_CRIADO' : 'TIME_INGRESSOU';
       const teamKey = `${teamAction}_${prof.userId}`;
       if (!existingKeys.has(teamKey)) {
+        const createdAt = prof.updatedAt || prof.createdAt || new Date().toISOString();
+        const retentionUntil = new Date(new Date(createdAt).getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
         const teamLog: AuditLog = {
           id: `audit-cloud-team-${prof.userId}`,
           actorUserId: prof.userId,
@@ -368,7 +375,10 @@ export function ensureAthleteAuditLogs(
           reason: prof.isTeamOwner
             ? `Criou a equipe "${prof.teamName}" (${prof.teamModality || 'Society'}, ${prof.teamCity || 'Planalto - BA'}).`
             : `Ingressou no elenco da equipe "${prof.teamName}" (${prof.teamModality || 'Society'}, ${prof.teamCity || 'Planalto - BA'}).`,
-          createdAt: prof.updatedAt || prof.createdAt || new Date().toISOString(),
+          clientApp: 'FutPlay Lite PWA v1.0',
+          legalRetentionPolicy: 'Marco Civil da Internet (Art. 15, Lei 12.965/2014) & LGPD',
+          retentionUntil,
+          createdAt,
         };
         createdLogs.push(teamLog);
         existingKeys.add(teamKey);
@@ -1167,6 +1177,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       reason: params.reason,
       beforeData: params.beforeData,
       afterData: params.afterData,
+      clientApp: 'FutPlay Lite PWA v1.0',
+      legalRetentionPolicy: 'Marco Civil da Internet (Art. 15, Lei 12.965/2014) & LGPD',
+      retentionUntil: new Date(new Date(now).getTime() + 180 * 24 * 60 * 60 * 1000).toISOString(),
       createdAt: now,
     };
 

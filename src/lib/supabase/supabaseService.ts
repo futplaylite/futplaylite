@@ -1352,11 +1352,18 @@ export const supabaseService = {
         const existingData = (existingRow?.data as unknown as { logs?: AuditLog[] }) || {};
         const existingList = Array.isArray(existingData.logs) ? existingData.logs : [];
 
-        // Mantém os últimos 300 logs para alta performance e histórico completo
-        const updatedList = [
-          log,
-          ...existingList.filter((item) => item.id !== log.id),
-        ].slice(0, 300);
+        // Garantia de Conformidade com o Marco Civil da Internet (Art. 15, Lei 12.965/2014):
+        // Preserva integralmente todos os registros de no mínimo 180 dias (e até 5.000 entradas para auditoria estendida)
+        const minRetentionMs = 180 * 24 * 60 * 60 * 1000;
+        const nowMs = Date.now();
+        const combined = [log, ...existingList.filter((item) => item.id !== log.id)];
+        
+        // Mantém todos os logs dentro do período de retenção legal de 180 dias
+        const updatedList = combined.filter((item, idx) => {
+          if (idx < 500) return true;
+          const itemAgeMs = nowMs - new Date(item.createdAt || 0).getTime();
+          return itemAgeMs <= minRetentionMs;
+        }).slice(0, 5000);
 
         const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
           {

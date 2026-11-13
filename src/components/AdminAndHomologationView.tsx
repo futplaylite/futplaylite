@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  Download,
   Edit3,
   Eye,
   EyeOff,
@@ -66,6 +67,7 @@ export const AdminAndHomologationView: React.FC<
   const [selectedTeamName, setSelectedTeamName] = useState<string | null>(null);
   const [teamSearch, setTeamSearch] = useState<string>('');
   const [playerSearch, setPlayerSearch] = useState<string>('');
+  const [logPeriodFilter, setLogPeriodFilter] = useState<'all' | '7d' | '30d' | '180d'>('all');
 
   // Estados para edição manual de dados do atleta pelo Administrador
   const [editingPlayer, setEditingPlayer] = useState<PlayerProfile | null>(null);
@@ -408,16 +410,77 @@ export const AdminAndHomologationView: React.FC<
   }, [activeSelectedTeam, playerSearch]);
 
   const filteredAuditLogs = useMemo(() => {
-    if (!logSearch.trim()) return auditLogs;
+    let list = auditLogs;
+    if (logPeriodFilter !== 'all') {
+      const nowMs = Date.now();
+      const days = logPeriodFilter === '7d' ? 7 : logPeriodFilter === '30d' ? 30 : 180;
+      const thresholdMs = days * 24 * 60 * 60 * 1000;
+      list = list.filter((l) => {
+        const itemMs = new Date(l.createdAt || 0).getTime();
+        return nowMs - itemMs <= thresholdMs;
+      });
+    }
+
+    if (!logSearch.trim()) return list;
     const q = logSearch.toLowerCase();
-    return auditLogs.filter(
+    return list.filter(
       (l) =>
         (l.actionType || '').toLowerCase().includes(q) ||
         (l.actorName || '').toLowerCase().includes(q) ||
         (l.reason || '').toLowerCase().includes(q) ||
         (l.actorRole || '').toLowerCase().includes(q)
     );
-  }, [auditLogs, logSearch]);
+  }, [auditLogs, logSearch, logPeriodFilter]);
+
+  const handleExportAuditLogsCsv = () => {
+    if (auditLogs.length === 0) return;
+
+    const headers = [
+      'ID',
+      'Data e Hora (ISO)',
+      'Data e Hora (Local)',
+      'Tipo de Acao',
+      'Responsavel',
+      'Papel',
+      'Tipo de Entidade',
+      'ID da Entidade',
+      'Motivo / Descricao',
+      'Politica de Retencao Legal',
+      'Validade Minima de Retencao',
+    ];
+
+    const rows = filteredAuditLogs.map((l) => {
+      let localDate = l.createdAt;
+      try {
+        localDate = new Date(l.createdAt).toLocaleString('pt-BR');
+      } catch {}
+
+      return [
+        l.id,
+        l.createdAt,
+        localDate,
+        l.actionType,
+        l.actorName,
+        l.actorRole,
+        l.entityType,
+        l.entityId,
+        `"${(l.reason || '').replace(/"/g, '""')}"`,
+        l.legalRetentionPolicy || 'Marco Civil (Art. 15, Lei 12.965/2014)',
+        l.retentionUntil || '',
+      ].join(';');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `relatorio_auditoria_futplay_marcocivil_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const handleRunHomologationSuite = () => {
     setTestResults(runPriorityHomologationTests());
@@ -1094,42 +1157,123 @@ export const AdminAndHomologationView: React.FC<
 
       {/* ABA 2: LOGS DE AUDITORIA */}
       {subView === 'audit' && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <History className="h-4 w-4 text-blue-600" />
                 Histórico de Auditoria & Ações
               </h2>
               <p className="text-[11px] text-slate-500">
-                Trilha de registro das ações realizadas pelos usuários
+                Trilha de registro imutável das ações dos usuários e administradores
               </p>
             </div>
-            <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold text-blue-700 border border-blue-200">
-              {auditLogs.length} {auditLogs.length === 1 ? 'registro' : 'registros'}
-            </span>
-          </div>
-
-          {/* Campo de Busca nos Logs */}
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-              <Search className="w-3.5 h-3.5" />
-            </div>
-            <input
-              type="text"
-              value={logSearch}
-              onChange={(e) => setLogSearch(e.target.value)}
-              placeholder="Buscar por ação, usuário ou descrição..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-8 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none"
-            />
-            {logSearch && (
+            <div className="flex items-center gap-2 self-start sm:self-auto">
               <button
                 type="button"
-                onClick={() => setLogSearch('')}
-                className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                onClick={handleExportAuditLogsCsv}
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition cursor-pointer shadow-xs"
+                title="Baixar arquivo oficial de auditoria (CSV) conforme Marco Civil"
               >
-                <X className="w-3.5 h-3.5" />
+                <Download className="h-3.5 w-3.5 text-blue-600" />
+                Exportar CSV
               </button>
-            )}
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 border border-blue-200">
+                {filteredAuditLogs.length} {filteredAuditLogs.length === 1 ? 'registro' : 'registros'}
+              </span>
+            </div>
+          </div>
+
+          {/* Selo de Conformidade com o Marco Civil e LGPD */}
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5 flex items-start gap-2.5 text-emerald-950">
+            <ShieldCheck className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" />
+            <div className="text-[11px] leading-tight space-y-0.5 flex-1">
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <strong className="font-bold text-emerald-900">
+                  Conformidade Marco Civil da Internet (Art. 15 · Lei 12.965/2014) & LGPD
+                </strong>
+                <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                  Retenção Mínima: 180 dias
+                </span>
+              </div>
+              <p className="text-emerald-800 text-[10.5px]">
+                Trilha de auditoria protegida e imutável. Todos os registros de acesso, cadastros, transferências, súmulas e ajustes financeiros são guardados com validade jurídica comprovada.
+              </p>
+            </div>
+          </div>
+
+          {/* Filtros: Busca e Período Legal */}
+          <div className="space-y-2">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Search className="w-3.5 h-3.5" />
+              </div>
+              <input
+                type="text"
+                value={logSearch}
+                onChange={(e) => setLogSearch(e.target.value)}
+                placeholder="Buscar por ação, usuário ou descrição..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-8 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none"
+              />
+              {logSearch && (
+                <button
+                  type="button"
+                  onClick={() => setLogSearch('')}
+                  className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Abas de Período */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
+              <span className="text-slate-400 font-semibold text-[10px] mr-1 shrink-0">Período:</span>
+              <button
+                type="button"
+                onClick={() => setLogPeriodFilter('all')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition shrink-0 cursor-pointer ${
+                  logPeriodFilter === 'all'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Todo o Histórico ({auditLogs.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogPeriodFilter('180d')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition shrink-0 cursor-pointer ${
+                  logPeriodFilter === '180d'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                180 dias (Marco Civil)
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogPeriodFilter('30d')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition shrink-0 cursor-pointer ${
+                  logPeriodFilter === '30d'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Últimos 30 dias
+              </button>
+              <button
+                type="button"
+                onClick={() => setLogPeriodFilter('7d')}
+                className={`px-2.5 py-1 rounded-lg font-bold transition shrink-0 cursor-pointer ${
+                  logPeriodFilter === '7d'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Últimos 7 dias
+              </button>
+            </div>
           </div>
 
           {auditLogs.length === 0 ? (
@@ -1235,11 +1379,19 @@ export const AdminAndHomologationView: React.FC<
                           {log.actorName}
                         </strong>
                       </div>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.2 text-[9px] font-bold border uppercase ${roleBadge}`}
-                      >
-                        {roleLabel}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className="inline-flex items-center rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5 text-[9px] font-semibold border border-slate-200"
+                          title="Guarda legal mínima de 180 dias garantida pelo Marco Civil da Internet (Lei 12.965/14)"
+                        >
+                          🛡️ 180d
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.2 text-[9px] font-bold border uppercase ${roleBadge}`}
+                        >
+                          {roleLabel}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );

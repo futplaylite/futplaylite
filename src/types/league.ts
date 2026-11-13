@@ -361,6 +361,10 @@ export interface AuditLog {
   beforeData?: Record<string, unknown>;
   afterData?: Record<string, unknown>;
   createdAt: string;
+  // Campos de Conformidade Marco Civil da Internet (Lei 12.965/2014, Art. 15) & LGPD
+  clientApp?: string;
+  legalRetentionPolicy?: string;
+  retentionUntil?: string;
 }
 
 export interface HomologationTestResult {
