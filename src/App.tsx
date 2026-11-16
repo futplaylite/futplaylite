@@ -53,6 +53,7 @@ const MainMobileShell: React.FC = () => {
     notification,
     clearNotification,
     sumulaStopwatch,
+    isCloudSyncReady,
   } = useLeague();
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -65,6 +66,17 @@ const MainMobileShell: React.FC = () => {
       return false;
     }
   });
+
+  // Mantém autenticação sincronizada assim que os dados do usuário chegam da nuvem
+  useEffect(() => {
+    try {
+      const hasSession = localStorage.getItem('futplay_lite_auth_session_v3') === 'true';
+      const storedUserId = localStorage.getItem('futplay_lite_active_user_id_v3');
+      if (hasSession && (currentUser.id || storedUserId)) {
+        setIsAuthenticated(true);
+      }
+    } catch {}
+  }, [currentUser.id]);
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     try {
       const saved = sessionStorage.getItem('futplay_nav_active_tab_v1') as ActiveTab | null;
@@ -251,6 +263,46 @@ const MainMobileShell: React.FC = () => {
     setActiveTab(tab);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // 0. TELA DE CARREGAMENTO DA NUVEM: Garante que nada abre incompleto ou sem time
+  if (!isCloudSyncReady) {
+    return (
+      <div className="fixed inset-0 z-50 flex min-h-screen w-full flex-col items-center justify-center bg-slate-950 px-6 text-white select-none">
+        <div className="absolute h-72 w-72 rounded-full bg-emerald-500/15 blur-3xl pointer-events-none" />
+        <div className="absolute h-60 w-60 rounded-full bg-blue-600/10 blur-2xl pointer-events-none" />
+
+        <div className="relative flex flex-col items-center">
+          <div className="relative mb-6">
+            <div className="absolute -inset-2 rounded-3xl bg-gradient-to-r from-blue-600 via-emerald-500 to-emerald-400 opacity-75 blur-md animate-pulse" />
+            <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-emerald-400/30 bg-slate-900 shadow-2xl">
+              <ShieldCheck className="h-12 w-12 text-emerald-400" />
+            </div>
+          </div>
+
+          <div className="text-center space-y-1.5">
+            <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-2">
+              FUTPLAY <span className="rounded-full border border-emerald-500/40 bg-emerald-950/80 px-2.5 py-0.5 text-xs font-black text-emerald-400 uppercase tracking-widest">LITE</span>
+            </h1>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+              Liga de Futebol Amador · Planalto - BA
+            </p>
+          </div>
+
+          <div className="mt-8 flex flex-col items-center space-y-3">
+            <div className="flex items-center space-x-2.5 text-emerald-400">
+              <div className="h-4 w-4 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+              <span className="text-xs font-bold tracking-wide">
+                Carregando dados da nuvem...
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 text-center max-w-[260px]">
+              Atualizando elencos, times e partidas do servidor
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // 1. TELA INICIAL: LOGIN OU CRIAR CONTA (Exibida para qualquer novo visitante)
   if (!isAuthenticated || !currentUser.id) {

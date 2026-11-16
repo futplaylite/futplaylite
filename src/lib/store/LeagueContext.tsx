@@ -172,6 +172,7 @@ interface LeagueState {
 }
 
 interface LeagueContextValue extends LeagueState {
+  isCloudSyncReady: boolean;
   currentUser: User;
   currentPlayerProfile: PlayerProfile | undefined;
   selectedCityId: string;
@@ -657,6 +658,7 @@ function getInitialState(): LeagueState {
 export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  const [isCloudSyncReady, setIsCloudSyncReady] = useState<boolean>(() => !isSupabaseConfigured());
   const [state, setState] = useState<LeagueState>(getInitialState);
   const [currentUserId, setCurrentUserId] = useState<string>(() => {
     try {
@@ -746,17 +748,112 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   // Trava para evitar execuções concorrentes simultâneas de refreshLeagueData
   const isRefreshingRef = useRef<boolean>(false);
 
-  // Sincronização centralizada e segura de dados com o Supabase (garante que atletas e escudos nunca sumam)
+  // Reconciliação robusta de súmulas de peladas do Supabase (inclusões, alterações e exclusões)
+  const reconcileSumulas = (remoteSumulas: SumulaData[] | null) => {
+    if (remoteSumulas === null) return;
+    try {
+      const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
+      const ACTIVE_KEY = 'futplay_sumula_pelada_ativa_v1';
+      const raw = localStorage.getItem(ALL_KEY);
+      const localList: SumulaData[] = raw ? JSON.parse(raw) : [];
+      const remoteIds = new Set(remoteSumulas.map((s) => s.id));
+      const now = Date.now();
+
+      // Mapa inicial com as súmulas que existem no banco remoto
+      const resultMap = new Map<string, SumulaData>();
+      for (const remote of remoteSumulas) {
+        resultMap.set(remote.id, remote);
+      }
+
+      // Verifica itens locais: preserva rascunhos recém-criados (< 45s), remove os que foram excluídos na nuvem
+      for (const loc of localList) {
+        if (!remoteIds.has(loc.id)) {
+          const ageMs = now - new Date(loc.lastUpdated || 0).getTime();
+          if (ageMs < 45000 && loc.status === 'em_andamento') {
+            resultMap.set(loc.id, loc);
+          }
+        } else {
+          const rem = resultMap.get(loc.id);
+          if (rem) {
+            const locTime = new Date(loc.lastUpdated || 0).getTime();
+            const remTime = new Date(rem.lastUpdated || 0).getTime();
+            if (locTime > remTime) {
+              resultMap.set(loc.id, loc);
+            }
+          }
+        }
+      }
+
+      const mergedList = Array.from(resultMap.values()).sort((a, b) => {
+        const tA = new Date(a.lastUpdated || a.matchDate || 0).getTime();
+        const tB = new Date(b.lastUpdated || b.matchDate || 0).getTime();
+        return tB - tA;
+      });
+
+      localStorage.setItem(ALL_KEY, JSON.stringify(mergedList));
+
+      // Atualiza ou limpa a súmula ativa se a que estava ativa foi excluída
+      const activeRaw = localStorage.getItem(ACTIVE_KEY);
+      if (activeRaw) {
+        try {
+          const activeLocal: SumulaData = JSON.parse(activeRaw);
+          if (!resultMap.has(activeLocal.id)) {
+            const nextActive = mergedList.find((s) => s.status === 'em_andamento') || mergedList[0];
+            if (nextActive) {
+              localStorage.setItem(ACTIVE_KEY, JSON.stringify(nextActive));
+            } else {
+              localStorage.removeItem(ACTIVE_KEY);
+            }
+          }
+        } catch {}
+      } else if (mergedList.length > 0) {
+        const newest = mergedList.find((s) => s.status === 'em_andamento') || mergedList[0];
+        localStorage.setItem(ACTIVE_KEY, JSON.stringify(newest));
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('futplay_sumulas_changed', {
+            detail: { count: mergedList.length },
+          })
+        );
+      }
+    } catch (err) {
+      console.warn('Erro ao sincronizar súmulas com o armazenamento local:', err);
+    }
+  };
+
+  // Sincronização centralizada e completa de dados com o Supabase
   const refreshLeagueData: LeagueContextValue['refreshLeagueData'] = async () => {
-    if (!isSupabaseConfigured()) return;
+    if (!isSupabaseConfigured()) {
+      setIsCloudSyncReady(true);
+      return;
+    }
     if (isRefreshingRef.current) return;
     isRefreshingRef.current = true;
 
     try {
-      const [remoteUsers, remoteProfiles] = await Promise.all([
+      const [
+        remoteUsers,
+        remoteProfiles,
+        remoteSumulas,
+        remotePayments,
+        remoteTx,
+        remoteCfg,
+        remoteLogs,
+      ] = await Promise.all([
         supabaseService.getUsers(),
         supabaseService.getProfiles(),
+        supabaseService.getPeladaSumulas(),
+        supabaseService.getMonthlyPayments(),
+        supabaseService.getTeamTransactions(),
+        supabaseService.getMonthlyConfig(),
+        supabaseService.getAuditLogs(),
       ]);
+
+      if (remoteSumulas !== null) {
+        reconcileSumulas(remoteSumulas);
+      }
 
       setState((prev) => {
         // 1. Catálogo unificado de escudos por nome de time (minúsculas)
@@ -937,7 +1034,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             } as PlayerProfile;
           });
 
-          // PRESERVA TODOS OS ATLETAS LOCAIS QUE NÃO VIERAM DO SUPABASE!
+          // PRESERVA TODOS OS ATLETAS LOCAIS QUE NÃO VIERAM DO SUPABASE
           const unmatchedLocal: PlayerProfile[] = prev.profiles
             .filter((lp) => !matchedLocalIds.has(lp.id) && !adminIds.has(lp.userId))
             .map((lp) => {
@@ -953,7 +1050,6 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           const poolIds = new Set(mergedPool.map((p) => p.id));
           const poolNames = new Set(mergedPool.map((p) => (p.displayName || '').trim().toUpperCase()));
 
-          // Garante atletas base de INITIAL_PROFILES caso não estejam no pool
           INITIAL_PROFILES.forEach((ip) => {
             if (!poolIds.has(ip.id) && !poolNames.has((ip.displayName || '').trim().toUpperCase())) {
               mergedPool.push(ip);
@@ -961,56 +1057,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           });
 
-          // Garante atletas do elenco de times registrados (futplay_registered_teams_v1)
-          try {
-            const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
-            if (rawTeams) {
-              const parsedTeams = JSON.parse(rawTeams);
-              if (Array.isArray(parsedTeams)) {
-                parsedTeams.forEach((t: any) => {
-                  if (t.roster && Array.isArray(t.roster)) {
-                    t.roster.forEach((rm: any) => {
-                      if (rm && rm.id && !poolIds.has(rm.id)) {
-                        mergedPool.push({
-                          id: rm.id,
-                          userId: rm.userId || rm.id,
-                          displayName: rm.displayName || rm.name || 'Atleta',
-                          avatarUrl: rm.avatarUrl,
-                          avatarColor: '#126B46',
-                          cityId: '11111111-1111-4111-8111-111111111101',
-                          neighborhood: rm.neighborhood || 'Centro',
-                          position: rm.position || 'atacante',
-                          dominantFoot: rm.dominantFoot || 'direito',
-                          profileVisibility: 'publico',
-                          teamName: t.name,
-                          teamCrestUrl: t.crestUrl,
-                          teamInviteCode: t.inviteCode,
-                          currentRating: rm.currentRating || 1000,
-                          ratingUncertainty: 100,
-                          isProvisional: true,
-                          currentDivisionId: 'div-geral',
-                          totalValidatedMatches: 0,
-                          experimentalPositionScore: null,
-                          badges: [],
-                          createdAt: new Date().toISOString(),
-                          updatedAt: new Date().toISOString(),
-                        } as PlayerProfile);
-                        poolIds.add(rm.id);
-                      }
-                    });
-                  }
-                });
-              }
-            }
-          } catch {}
-
           mergedProfiles = computeProfilesWithPeerEvaluations(
             mergedPool,
             prev.peerEvaluations || []
           );
         }
 
-        // Salva catálogo de escudos atualizado sem sobrescrever o existente
+        // 4. Salva catálogo de escudos atualizado sem sobrescrever o existente
         try {
           const rawExisting = localStorage.getItem('futplay_team_crests_v1');
           const existingObj: Record<string, string> = rawExisting ? JSON.parse(rawExisting) : {};
@@ -1021,14 +1074,14 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           localStorage.setItem('futplay_team_crests_v1', JSON.stringify(mergedCrests));
         } catch {}
 
-        // 4. Marca todas as contas remotas confirmadas no Supabase como primeiro acesso concluído
+        // 5. Marca todas as contas remotas confirmadas no Supabase como primeiro acesso concluído
         if (remoteUsers) {
           remoteUsers.forEach((ru) => {
             markFirstAccessCompletedInStorage(ru.id, ru.email, ru.whatsappNumber);
           });
         }
 
-        // 5. Reconstrução e sincronização centralizada de TIMES REGISTRADOS (futplay_registered_teams_v1)
+        // 6. Reconstrução e sincronização centralizada de TIMES REGISTRADOS (futplay_registered_teams_v1)
         try {
           const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
           const existingTeams: any[] = rawTeams ? JSON.parse(rawTeams) : [];
@@ -1110,12 +1163,60 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           console.warn('Erro ao sincronizar times registrados:', teamSyncErr);
         }
 
-        const enrichedAuditLogs = ensureAthleteAuditLogs(mergedProfiles, prev.auditLogs || []);
+        // 7. Sincroniza mensalidades remotas
+        let mergedPayments = prev.monthlyPayments || [];
+        if (remotePayments) {
+          const payMap = new Map<string, MonthlyPaymentRecord>();
+          remotePayments.forEach((p) => payMap.set(p.id, p));
+          (prev.monthlyPayments || []).forEach((locP) => {
+            if (!payMap.has(locP.id)) payMap.set(locP.id, locP);
+          });
+          mergedPayments = Array.from(payMap.values());
+          try {
+            localStorage.setItem('futplay_monthly_payments_v1', JSON.stringify(mergedPayments));
+          } catch {}
+        }
+
+        // 8. Sincroniza transações financeiras remotas
+        let mergedTx = prev.teamTransactions || [];
+        if (remoteTx) {
+          const txMap = new Map<string, TeamTransaction>();
+          remoteTx.forEach((tx) => txMap.set(tx.id, tx));
+          (prev.teamTransactions || []).forEach((locTx) => {
+            if (!txMap.has(locTx.id)) txMap.set(locTx.id, locTx);
+          });
+          mergedTx = Array.from(txMap.values()).sort((a, b) => {
+            const tA = new Date(a.date || a.createdAt || 0).getTime();
+            const tB = new Date(b.date || b.createdAt || 0).getTime();
+            return tB - tA;
+          });
+          try {
+            localStorage.setItem('futplay_team_financial_transactions_v1', JSON.stringify(mergedTx));
+          } catch {}
+        }
+
+        // 9. Sincroniza logs de auditoria remotos
+        let mergedLogs = prev.auditLogs || [];
+        if (remoteLogs && remoteLogs.length > 0) {
+          const logMap = new Map<string, AuditLog>();
+          remoteLogs.forEach((l) => logMap.set(l.id, l));
+          (prev.auditLogs || []).forEach((l) => {
+            if (!logMap.has(l.id)) logMap.set(l.id, l);
+          });
+          mergedLogs = Array.from(logMap.values()).sort(
+            (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          );
+        }
+
+        const enrichedAuditLogs = ensureAthleteAuditLogs(mergedProfiles, mergedLogs);
         const next = {
           ...prev,
           users: mergedUsers,
           profiles: mergedProfiles,
           auditLogs: enrichedAuditLogs,
+          monthlyPayments: mergedPayments,
+          teamTransactions: mergedTx,
+          monthlyConfig: remoteCfg || prev.monthlyConfig,
         };
 
         try {
@@ -1128,12 +1229,25 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       console.warn('Erro ao atualizar dados da liga com o Supabase:', err);
     } finally {
       isRefreshingRef.current = false;
+      setIsCloudSyncReady(true);
     }
   };
 
-  // Dispara a sincronização imediatamente na montagem e ao voltar à aba
+  // Dispara a sincronização imediatamente na montagem com trava de carregamento e ao voltar à aba
   useEffect(() => {
-    refreshLeagueData();
+    let isMounted = true;
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted) {
+        setIsCloudSyncReady(true);
+      }
+    }, 4500);
+
+    refreshLeagueData().finally(() => {
+      if (isMounted) {
+        clearTimeout(safetyTimeout);
+        setIsCloudSyncReady(true);
+      }
+    });
 
     const handleFocusOrVisible = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -1145,216 +1259,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     document.addEventListener('visibilitychange', handleFocusOrVisible);
 
     return () => {
+      isMounted = false;
+      clearTimeout(safetyTimeout);
       window.removeEventListener('focus', handleFocusOrVisible);
       document.removeEventListener('visibilitychange', handleFocusOrVisible);
     };
-  }, []);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return;
-
-    // 2.5. Sincroniza logs de auditoria da nuvem (Supabase)
-    supabaseService.getAuditLogs().then((remoteLogs) => {
-      if (!remoteLogs || remoteLogs.length === 0) return;
-      setState((prev) => {
-        const map = new Map<string, AuditLog>();
-        remoteLogs.forEach((l) => map.set(l.id, l));
-        (prev.auditLogs || []).forEach((l) => {
-          if (!map.has(l.id)) map.set(l.id, l);
-        });
-        const list = Array.from(map.values());
-        list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-        const next = { ...prev, auditLogs: list };
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {}
-        return next;
-      });
-    });
-
-    // 3. Sincroniza configurações e mensalidades
-    supabaseService.getMonthlyConfig().then((cfg) => {
-      if (cfg) {
-        setState((prev) => ({ ...prev, monthlyConfig: cfg }));
-      }
-    });
-
-    supabaseService.getMonthlyPayments().then((remotePayments) => {
-      if (!remotePayments) return;
-      setState((prev) => {
-        const mergedMap = new Map<string, MonthlyPaymentRecord>();
-        remotePayments.forEach((p) => mergedMap.set(p.id, p));
-
-        const now = Date.now();
-        const isMigrated = localStorage.getItem('futplay_payments_cloud_migrated_v1') === 'true';
-        const unSyncedToPush: MonthlyPaymentRecord[] = [];
-
-        (prev.monthlyPayments || []).forEach((locP) => {
-          const remP = mergedMap.get(locP.id);
-          if (!remP) {
-            const ageMs = now - new Date(locP.updatedAt || locP.paidAt || 0).getTime();
-            if (ageMs < 60000 || !isMigrated) {
-              mergedMap.set(locP.id, locP);
-              unSyncedToPush.push(locP);
-            }
-          } else {
-            const locTime = new Date(locP.updatedAt || locP.paidAt || 0).getTime();
-            const remTime = new Date(remP.updatedAt || remP.paidAt || 0).getTime();
-            if (locTime > remTime) {
-              mergedMap.set(locP.id, locP);
-              unSyncedToPush.push(locP);
-            }
-          }
-        });
-
-        if (unSyncedToPush.length > 0) {
-          unSyncedToPush.forEach((rec) => {
-            supabaseService.upsertMonthlyPayment(rec).catch(() => {});
-          });
-        }
-        try {
-          localStorage.setItem('futplay_payments_cloud_migrated_v1', 'true');
-        } catch {}
-
-        const mergedList = Array.from(mergedMap.values());
-        try {
-          localStorage.setItem('futplay_monthly_payments_v1', JSON.stringify(mergedList));
-        } catch {}
-
-        return {
-          ...prev,
-          monthlyPayments: mergedList,
-        };
-      });
-    });
-
-    // 4. Sincroniza súmulas da pelada do Supabase (reconciliando inclusões e EXCLUSÕES)
-    const reconcileSumulas = (remoteSumulas: SumulaData[] | null) => {
-      if (remoteSumulas === null) return;
-      try {
-        const ALL_KEY = 'futplay_todas_sumulas_peladas_v1';
-        const ACTIVE_KEY = 'futplay_sumula_pelada_ativa_v1';
-        const raw = localStorage.getItem(ALL_KEY);
-        const localList: SumulaData[] = raw ? JSON.parse(raw) : [];
-        const remoteIds = new Set(remoteSumulas.map((s) => s.id));
-        const now = Date.now();
-
-        // Mapa inicial com as súmulas que existem no banco remoto
-        const resultMap = new Map<string, SumulaData>();
-        for (const remote of remoteSumulas) {
-          resultMap.set(remote.id, remote);
-        }
-
-        // Verifica itens locais: preserva rascunhos recém-criados (< 45s), remove os que foram excluídos na nuvem
-        for (const loc of localList) {
-          if (!remoteIds.has(loc.id)) {
-            const ageMs = now - new Date(loc.lastUpdated || 0).getTime();
-            // Apenas preserva se for rascunho offline em andamento ultra recente (< 45s)
-            if (ageMs < 45000 && loc.status === 'em_andamento') {
-              resultMap.set(loc.id, loc);
-            }
-            // Caso contrário, foi EXCLUÍDA no Supabase por outro usuário: é removida do celular do jogador!
-          } else {
-            const rem = resultMap.get(loc.id);
-            if (rem) {
-              const locTime = new Date(loc.lastUpdated || 0).getTime();
-              const remTime = new Date(rem.lastUpdated || 0).getTime();
-              if (locTime > remTime) {
-                resultMap.set(loc.id, loc);
-              }
-            }
-          }
-        }
-
-        const mergedList = Array.from(resultMap.values()).sort((a, b) => {
-          const tA = new Date(a.lastUpdated || a.matchDate || 0).getTime();
-          const tB = new Date(b.lastUpdated || b.matchDate || 0).getTime();
-          return tB - tA;
-        });
-
-        localStorage.setItem(ALL_KEY, JSON.stringify(mergedList));
-
-        // Atualiza ou limpa a súmula ativa se a que estava ativa foi excluída
-        const activeRaw = localStorage.getItem(ACTIVE_KEY);
-        if (activeRaw) {
-          try {
-            const activeLocal: SumulaData = JSON.parse(activeRaw);
-            if (!resultMap.has(activeLocal.id)) {
-              const nextActive = mergedList.find((s) => s.status === 'em_andamento') || mergedList[0];
-              if (nextActive) {
-                localStorage.setItem(ACTIVE_KEY, JSON.stringify(nextActive));
-              } else {
-                localStorage.removeItem(ACTIVE_KEY);
-              }
-            }
-          } catch {}
-        } else if (mergedList.length > 0) {
-          const newest = mergedList.find((s) => s.status === 'em_andamento') || mergedList[0];
-          localStorage.setItem(ACTIVE_KEY, JSON.stringify(newest));
-        }
-
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(
-            new CustomEvent('futplay_sumulas_changed', {
-              detail: { count: mergedList.length },
-            })
-          );
-        }
-      } catch (err) {
-        console.warn('Erro ao sincronizar súmulas com o armazenamento local:', err);
-      }
-    };
-
-    supabaseService.getPeladaSumulas().then((remoteSumulas) => {
-      reconcileSumulas(remoteSumulas);
-    });
-
-    // 5. Sincroniza transações financeiras (despesas e receitas) do Supabase
-    supabaseService.getTeamTransactions().then((remoteTx) => {
-      if (!remoteTx) return;
-      setState((prev) => {
-        const mergedMap = new Map<string, TeamTransaction>();
-        remoteTx.forEach((tx) => mergedMap.set(tx.id, tx));
-
-        const now = Date.now();
-        const isAlreadyMigrated = localStorage.getItem('futplay_tx_cloud_migrated_v1') === 'true';
-        const unSyncedToPush: TeamTransaction[] = [];
-
-        (prev.teamTransactions || []).forEach((locTx) => {
-          if (!mergedMap.has(locTx.id)) {
-            const ageMs = now - new Date(locTx.createdAt || 0).getTime();
-            if (ageMs < 60000 || (!isAlreadyMigrated && remoteTx.length === 0)) {
-              mergedMap.set(locTx.id, locTx);
-              unSyncedToPush.push(locTx);
-            }
-          }
-        });
-
-        if (unSyncedToPush.length > 0) {
-          unSyncedToPush.forEach((tx) => {
-            supabaseService.saveTeamTransaction(tx).catch(() => {});
-          });
-        }
-        try {
-          localStorage.setItem('futplay_tx_cloud_migrated_v1', 'true');
-        } catch {}
-
-        const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
-          const tA = new Date(a.date || a.createdAt || 0).getTime();
-          const tB = new Date(b.date || b.createdAt || 0).getTime();
-          return tB - tA;
-        });
-
-        try {
-          localStorage.setItem('futplay_team_financial_transactions_v1', JSON.stringify(mergedList));
-        } catch {}
-
-        return {
-          ...prev,
-          teamTransactions: mergedList,
-        };
-      });
-    });
   }, []);
 
   // Escuta em tempo real eventos na nuvem do Supabase (inclusão, alteração e EXCLUSÃO instantânea de súmulas para todos os aparelhos logados)
@@ -4760,6 +4669,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         refreshTeamTransactions,
         refreshMonthlyData,
         refreshLeagueData,
+        isCloudSyncReady,
         recordAuditLog,
         updatePlayerStatsManually,
         playerAdjustments: state.playerAdjustments || [],
