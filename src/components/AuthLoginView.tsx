@@ -150,7 +150,15 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         }
       }
 
-      // 3. Fallback genérico de e-mail
+      // 3. Match por nome do atleta / apelido
+      if (!isEmail && digits.length < 8 && trimmed.length >= 2) {
+        const prof = profiles.find((p) => p.userId === u.id);
+        if (prof?.displayName && prof.displayName.trim().toLowerCase() === trimmed.toLowerCase()) {
+          return true;
+        }
+      }
+
+      // 4. Fallback genérico de e-mail
       if (u.email.toLowerCase() === trimmed.toLowerCase()) {
         return true;
       }
@@ -167,8 +175,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     const digits = trimmed.replace(/\D/g, '');
     const isEmail = trimmed.includes('@');
 
-    if (!isEmail && digits.length < 8) {
-      setLoginError('Informe um e-mail válido ou seu telefone celular com DDD.');
+    if (!isEmail && digits.length < 8 && trimmed.length < 2) {
+      setLoginError('Informe seu e-mail, telefone celular com DDD ou apelido.');
       return;
     }
     if (isEmail && (!trimmed.includes('.') || trimmed.length < 5)) {
@@ -262,17 +270,25 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         ? profiles.find((p) => p.userId === localUser.id)
         : undefined;
 
+      const isOwner =
+        existingUser.isTeamOwner !== undefined
+          ? existingUser.isTeamOwner
+          : Boolean(localUser?.isTeamOwner || matchedProfile?.isTeamOwner || localProfile?.isTeamOwner);
+
       const finalUserToActivate: User = {
         ...existingUser,
-        teamName: existingUser.teamName || localUser?.teamName,
-        teamCrestUrl: existingUser.teamCrestUrl || localUser?.teamCrestUrl,
-        teamCity: existingUser.teamCity || localUser?.teamCity,
-        teamModality: existingUser.teamModality || localUser?.teamModality,
-        teamInviteCode: existingUser.teamInviteCode || localUser?.teamInviteCode,
-        isTeamOwner:
-          existingUser.isTeamOwner !== undefined
-            ? existingUser.isTeamOwner
-            : localUser?.isTeamOwner,
+        teamName: existingUser.teamName || localUser?.teamName || matchedProfile?.teamName || localProfile?.teamName,
+        teamCrestUrl: existingUser.teamCrestUrl || localUser?.teamCrestUrl || matchedProfile?.teamCrestUrl || localProfile?.teamCrestUrl,
+        teamCity: existingUser.teamCity || localUser?.teamCity || matchedProfile?.teamCity || localProfile?.teamCity,
+        teamModality: existingUser.teamModality || localUser?.teamModality || matchedProfile?.teamModality || localProfile?.teamModality,
+        teamInviteCode: existingUser.teamInviteCode || localUser?.teamInviteCode || matchedProfile?.teamInviteCode || localProfile?.teamInviteCode,
+        isTeamOwner: isOwner,
+        role:
+          existingUser.role === 'admin'
+            ? 'admin'
+            : isOwner || existingUser.role === 'coach'
+            ? 'coach'
+            : existingUser.role || 'player',
         onboardingCompleted: true,
         onboardingStep: 4,
       };
@@ -300,14 +316,15 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
               matchedProfile.teamInviteCode ||
               localProfile?.teamInviteCode ||
               finalUserToActivate.teamInviteCode,
-            isTeamOwner:
-              matchedProfile.isTeamOwner !== undefined
-                ? matchedProfile.isTeamOwner
-                : (localProfile?.isTeamOwner ?? finalUserToActivate.isTeamOwner),
+            isTeamOwner: isOwner,
           }
         : localProfile;
 
       setActiveUserWithData(finalUserToActivate, finalProfileToActivate);
+      try {
+        localStorage.setItem('futplay_lite_auth_session_v3', 'true');
+        localStorage.setItem('futplay_lite_active_user_id_v3', finalUserToActivate.id);
+      } catch {}
       onAuthenticated();
       return;
     }
@@ -599,7 +616,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             <form onSubmit={handleLogin} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  E-mail ou Celular
+                  E-mail, Celular ou Apelido
                 </label>
                 <div className="relative">
                   {loginIdentifier && !loginIdentifier.includes('@') && loginIdentifier.replace(/\D/g, '').length > 0 ? (
@@ -612,7 +629,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     required
                     value={loginIdentifier}
                     onChange={(e) => setLoginIdentifier(formatIdentifierInput(e.target.value))}
-                    placeholder="seuemail@exemplo.com ou (77) 99999-8888"
+                    placeholder="seuemail@exemplo.com, (77) 99999-8888 ou Kelvin"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>

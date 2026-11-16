@@ -80,11 +80,20 @@ function getCompletedFirstAccessSet(): Set<string> {
   return new Set();
 }
 
-function markFirstAccessCompletedInStorage(userId: string, email?: string) {
+function markFirstAccessCompletedInStorage(
+  userId?: string,
+  email?: string,
+  whatsappNumber?: string
+) {
   try {
     const set = getCompletedFirstAccessSet();
     if (userId) set.add(userId.toLowerCase());
     if (email) set.add(email.trim().toLowerCase());
+    const digits = (whatsappNumber || '').replace(/\D/g, '');
+    if (digits) {
+      set.add(digits);
+      set.add(`${digits}@celular.futplay.com`);
+    }
     localStorage.setItem(
       COMPLETED_FIRST_ACCESS_KEY,
       JSON.stringify(Array.from(set))
@@ -1012,6 +1021,95 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           localStorage.setItem('futplay_team_crests_v1', JSON.stringify(mergedCrests));
         } catch {}
 
+        // 4. Marca todas as contas remotas confirmadas no Supabase como primeiro acesso concluído
+        if (remoteUsers) {
+          remoteUsers.forEach((ru) => {
+            markFirstAccessCompletedInStorage(ru.id, ru.email, ru.whatsappNumber);
+          });
+        }
+
+        // 5. Reconstrução e sincronização centralizada de TIMES REGISTRADOS (futplay_registered_teams_v1)
+        try {
+          const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+          const existingTeams: any[] = rawTeams ? JSON.parse(rawTeams) : [];
+          const teamsByCode = new Map<string, any>();
+
+          existingTeams.forEach((t) => {
+            if (t && t.inviteCode) {
+              const code = t.inviteCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+              if (code) teamsByCode.set(code, t);
+            }
+          });
+
+          const modalityLabelMap: Record<string, string> = {
+            society: 'Society',
+            futsal: 'Futsal',
+            futebol_areia: 'Futebol de Areia',
+            futebol_campo: 'Futebol de Campo',
+          };
+
+          const allEntities = [...mergedProfiles, ...mergedUsers];
+          allEntities.forEach((entity: any) => {
+            const tName = (entity.teamName || '').trim();
+            const tCode = (entity.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            if (!tName || tName === 'Meu Time' || tName === 'Sem Time' || !tCode) return;
+
+            const existing = teamsByCode.get(tCode);
+            const crest = entity.teamCrestUrl || crestCatalog.get(tName.toLowerCase()) || existing?.crestUrl;
+            const modality = (entity.teamModality || existing?.modality || 'society') as TeamModality;
+            const city = entity.teamCity || existing?.city || 'Planalto - BA';
+
+            const isOwner = Boolean(entity.isTeamOwner || entity.role === 'coach');
+            let ownerUserId = existing?.ownerUserId;
+            let ownerName = existing?.ownerName;
+
+            if (isOwner) {
+              ownerUserId = entity.userId || entity.id;
+              ownerName = entity.displayName || entity.email?.split('@')[0] || ownerName;
+            }
+
+            const updatedTeam = {
+              id: existing?.id || `custom-${tCode}`,
+              inviteCode: tCode,
+              name: tName,
+              city,
+              neighborhood: existing?.neighborhood || 'Centro',
+              foundedYear: existing?.foundedYear || '2026',
+              crestUrl: crest,
+              crestColor: existing?.crestColor || '#1D4ED8',
+              modality,
+              modalityLabel: modalityLabelMap[modality] || 'Society',
+              ownerName: ownerName || 'Comissão Técnica',
+              ownerUserId: ownerUserId || undefined,
+              roster: existing?.roster || [],
+            };
+
+            teamsByCode.set(tCode, updatedTeam);
+          });
+
+          // Monta o elenco (roster) completo para cada time a partir de mergedProfiles
+          teamsByCode.forEach((team, code) => {
+            const teamProfiles = mergedProfiles.filter((p) => {
+              const pCode = (p.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+              const pName = (p.teamName || '').trim().toLowerCase();
+              return pCode === code || pName === team.name.trim().toLowerCase();
+            });
+
+            if (!team.ownerUserId && teamProfiles.length > 0) {
+              const ownerProf = teamProfiles.find((p) => p.isTeamOwner) || teamProfiles[0];
+              team.ownerUserId = ownerProf.userId || ownerProf.id;
+              team.ownerName = ownerProf.displayName;
+            }
+
+            team.roster = teamProfiles;
+          });
+
+          const syncedTeams = Array.from(teamsByCode.values());
+          localStorage.setItem('futplay_registered_teams_v1', JSON.stringify(syncedTeams));
+        } catch (teamSyncErr) {
+          console.warn('Erro ao sincronizar times registrados:', teamSyncErr);
+        }
+
         const enrichedAuditLogs = ensureAthleteAuditLogs(mergedProfiles, prev.auditLogs || []);
         const next = {
           ...prev,
@@ -1489,18 +1587,36 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     rawCurrentUser.onboardingCompleted === false &&
     (rawCurrentUser.onboardingStep || 1) < 4;
 
+  const digits = (rawCurrentUser.whatsappNumber || '').replace(/\D/g, '');
+  const hasLinkedTeam = Boolean(
+    (rawCurrentUser.teamName &&
+      rawCurrentUser.teamName !== 'Meu Time' &&
+      rawCurrentUser.teamName !== 'Sem Time') ||
+      rawCurrentUser.teamInviteCode
+  );
+
   const isAlreadyCompleted =
     Boolean(rawCurrentUser.id) &&
     (rawCurrentUser.role === 'admin' ||
+      rawCurrentUser.isTeamOwner === true ||
+      rawCurrentUser.role === 'coach' ||
+      hasLinkedTeam ||
       (!isExplicitlyInOnboarding &&
         (rawCurrentUser.onboardingCompleted === true ||
           (rawCurrentUser.onboardingStep || 1) >= 4 ||
           completedSet.has(rawCurrentUser.id.toLowerCase()) ||
-          (rawCurrentUser.email && completedSet.has(rawCurrentUser.email.toLowerCase())))));
+          (rawCurrentUser.email && completedSet.has(rawCurrentUser.email.toLowerCase())) ||
+          (digits && (completedSet.has(digits) || completedSet.has(`${digits}@celular.futplay.com`))))));
 
   const currentUser: User = isAlreadyCompleted
     ? {
         ...rawCurrentUser,
+        role:
+          rawCurrentUser.role === 'admin'
+            ? 'admin'
+            : rawCurrentUser.isTeamOwner || rawCurrentUser.role === 'coach'
+            ? 'coach'
+            : rawCurrentUser.role || 'player',
         onboardingCompleted: true,
         onboardingStep: 4,
       }
@@ -1598,6 +1714,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   const switchActiveUser = (userId: string) => {
     const target = state.users.find((u) => u.id === userId);
     if (target) {
+      markFirstAccessCompletedInStorage(target.id, target.email, target.whatsappNumber);
       setCurrentUserId(target.id);
       try {
         localStorage.setItem(ACTIVE_USER_STORAGE_KEY, target.id);
@@ -1632,6 +1749,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const setActiveUserWithData = (user: User, profile?: PlayerProfile) => {
+    markFirstAccessCompletedInStorage(user.id, user.email, user.whatsappNumber);
     const now = new Date().toISOString();
     const loginLog: AuditLog = {
       id: `audit-login-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1648,20 +1766,37 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     setState((prev) => {
       const userIdx = prev.users.findIndex((u) => u.id === user.id);
       const newUsers = [...prev.users];
+      const isOwner = user.isTeamOwner !== undefined ? user.isTeamOwner : (userIdx >= 0 ? prev.users[userIdx].isTeamOwner : false);
+      const effectiveRole: UserRole =
+        user.role === 'admin'
+          ? 'admin'
+          : isOwner || user.role === 'coach'
+          ? 'coach'
+          : user.role || 'player';
+
       if (userIdx >= 0) {
         const prevU = newUsers[userIdx];
         newUsers[userIdx] = {
           ...prevU,
           ...user,
+          role: effectiveRole,
           teamName: user.teamName || prevU.teamName,
           teamCrestUrl: user.teamCrestUrl || prevU.teamCrestUrl,
           teamCity: user.teamCity || prevU.teamCity,
           teamModality: user.teamModality || prevU.teamModality,
           teamInviteCode: user.teamInviteCode || prevU.teamInviteCode,
-          isTeamOwner: user.isTeamOwner !== undefined ? user.isTeamOwner : prevU.isTeamOwner,
+          isTeamOwner: isOwner,
+          onboardingCompleted: true,
+          onboardingStep: 4,
         };
       } else {
-        newUsers.push(user);
+        newUsers.push({
+          ...user,
+          role: effectiveRole,
+          isTeamOwner: isOwner,
+          onboardingCompleted: true,
+          onboardingStep: 4,
+        });
       }
 
       let newProfiles = [...prev.profiles];
@@ -1679,10 +1814,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             teamCity: profile.teamCity || prevP.teamCity,
             teamModality: profile.teamModality || prevP.teamModality,
             teamInviteCode: profile.teamInviteCode || prevP.teamInviteCode,
-            isTeamOwner: profile.isTeamOwner !== undefined ? profile.isTeamOwner : prevP.isTeamOwner,
+            isTeamOwner: profile.isTeamOwner !== undefined ? profile.isTeamOwner : (isOwner || prevP.isTeamOwner),
           };
         } else {
-          newProfiles.push(profile);
+          newProfiles.push({
+            ...profile,
+            isTeamOwner: profile.isTeamOwner !== undefined ? profile.isTeamOwner : isOwner,
+          });
         }
       }
 

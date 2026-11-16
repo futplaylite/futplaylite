@@ -73,20 +73,32 @@ export const supabaseService = {
         return null;
       }
 
-      return data.map((u) => ({
-        id: u.id,
-        email: u.email,
-        whatsappNumber: u.whatsapp_number || undefined,
-        teamName: u.team_name || undefined,
-        teamCrestUrl: u.team_crest_url || undefined,
-        teamCity: u.team_city || undefined,
-        teamModality: u.team_modality || undefined,
-        teamInviteCode: u.team_invite_code || undefined,
-        isTeamOwner: Boolean(u.is_team_owner),
-        role: u.role || 'player',
-        status: u.status || 'ativa',
-        createdAt: u.created_at,
-      }));
+      return data.map((u) => {
+        const isOwner = Boolean(u.is_team_owner);
+        const role =
+          (u.email || '').toLowerCase() === 'futplaylite@gmail.com'
+            ? 'admin'
+            : isOwner
+            ? 'coach'
+            : u.role || 'player';
+
+        return {
+          id: u.id,
+          email: u.email,
+          whatsappNumber: u.whatsapp_number || undefined,
+          teamName: u.team_name || undefined,
+          teamCrestUrl: u.team_crest_url || undefined,
+          teamCity: u.team_city || undefined,
+          teamModality: u.team_modality || undefined,
+          teamInviteCode: u.team_invite_code || undefined,
+          isTeamOwner: isOwner,
+          role,
+          status: u.status || 'ativa',
+          createdAt: u.created_at,
+          onboardingCompleted: true,
+          onboardingStep: 4,
+        };
+      });
     } catch (err) {
       console.warn('Exceção ao buscar usuários do Supabase:', err);
       return null;
@@ -115,7 +127,7 @@ export const supabaseService = {
           .limit(1)
           .maybeSingle();
         data = res.data;
-      } else {
+      } else if (digits.length >= 8) {
         // Tenta buscar por whatsapp_number (apenas dígitos para não quebrar parser do PostgREST com parênteses) ou email gerado
         const last8 = digits.length > 8 ? digits.slice(-8) : digits;
         const orFilter = [
@@ -156,7 +168,35 @@ export const supabaseService = {
         }
       }
 
+      // Busca por apelido / display_name do atleta se ainda não encontrou por e-mail ou celular
+      if (!data && trimmed) {
+        const { data: profMatch } = await supabase
+          .from('player_profiles')
+          .select('user_id')
+          .ilike('display_name', trimmed)
+          .limit(1)
+          .maybeSingle();
+
+        if (profMatch?.user_id) {
+          const { data: uData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', profMatch.user_id)
+            .limit(1)
+            .maybeSingle();
+          data = uData;
+        }
+      }
+
       if (!data) return null;
+
+      const isOwner = Boolean(data.is_team_owner);
+      const userRole =
+        (data.email || '').toLowerCase() === 'futplaylite@gmail.com'
+          ? 'admin'
+          : isOwner
+          ? 'coach'
+          : data.role || 'player';
 
       const user: User = {
         id: data.id,
@@ -167,13 +207,12 @@ export const supabaseService = {
         teamCity: data.team_city || undefined,
         teamModality: data.team_modality || undefined,
         teamInviteCode: data.team_invite_code || undefined,
-        isTeamOwner: Boolean(data.is_team_owner),
-        role:
-          (data.email || '').toLowerCase() === 'futplaylite@gmail.com'
-            ? 'admin'
-            : data.role || 'player',
+        isTeamOwner: isOwner,
+        role: userRole,
         status: data.status || 'ativa',
         createdAt: data.created_at,
+        onboardingCompleted: true,
+        onboardingStep: 4,
       };
 
       // 2. Busca perfil de atleta vinculado
@@ -187,6 +226,7 @@ export const supabaseService = {
       let profile: PlayerProfile | undefined = undefined;
       // Contas de administradores não possuem perfil de atleta e não participam de jogos
       if (pData && user.role !== 'admin' && user.email.toLowerCase() !== 'futplaylite@gmail.com') {
+        const isProfileOwner = Boolean(pData.is_team_owner || data.is_team_owner);
         profile = {
           id: pData.id,
           userId: pData.user_id,
@@ -197,7 +237,7 @@ export const supabaseService = {
           teamCity: pData.team_city || data.team_city || undefined,
           teamModality: pData.team_modality || data.team_modality || undefined,
           teamInviteCode: pData.team_invite_code || data.team_invite_code || undefined,
-          isTeamOwner: Boolean(pData.is_team_owner || data.is_team_owner),
+          isTeamOwner: isProfileOwner,
           avatarColor: '#1D4ED8',
           cityId: pData.city_id,
           neighborhood: 'Centro',
@@ -214,8 +254,19 @@ export const supabaseService = {
           experimentalPositionScore: null,
           badges: [],
           createdAt: pData.created_at,
-          updatedAt: pData.updated_at,
+          updatedAt: pData.updated_at || new Date().toISOString(),
         };
+
+        // Garante coerência caso os dados do time estivessem salvos no perfil
+        if (!user.teamName && profile.teamName) user.teamName = profile.teamName;
+        if (!user.teamCrestUrl && profile.teamCrestUrl) user.teamCrestUrl = profile.teamCrestUrl;
+        if (!user.teamCity && profile.teamCity) user.teamCity = profile.teamCity;
+        if (!user.teamModality && profile.teamModality) user.teamModality = profile.teamModality;
+        if (!user.teamInviteCode && profile.teamInviteCode) user.teamInviteCode = profile.teamInviteCode;
+        if (isProfileOwner) {
+          user.isTeamOwner = true;
+          user.role = 'coach';
+        }
       }
 
       return {
@@ -281,13 +332,19 @@ export const supabaseService = {
       // 1. Inserir ou atualizar na tabela users (com fallback caso colunas estendidas ainda não existam)
       let uErr: any = null;
       const whatsappToStore = cleanDigits || params.user.whatsappNumber || null;
+      const sanitizedRole =
+        (userEmail || '').toLowerCase() === 'futplaylite@gmail.com'
+          ? 'admin'
+          : params.user.role === 'admin' || params.user.role === 'moderator'
+          ? params.user.role
+          : 'player';
 
       const userPayloadFull: Record<string, any> = {
         id: finalUserId,
         email: userEmail,
         whatsapp_number: whatsappToStore,
         password_hash: params.password || null,
-        role: params.user.role || 'player',
+        role: sanitizedRole,
         status: params.user.status || 'ativa',
         updated_at: new Date().toISOString(),
       };
@@ -318,7 +375,7 @@ export const supabaseService = {
           email: userEmail,
           whatsapp_number: whatsappToStore,
           password_hash: params.password || null,
-          role: params.user.role || 'player',
+          role: sanitizedRole,
           status: params.user.status || 'ativa',
           updated_at: new Date().toISOString(),
         });
@@ -326,7 +383,7 @@ export const supabaseService = {
           const { error: baseErr } = await supabase.from('users').upsert({
             id: finalUserId,
             email: userEmail,
-            role: params.user.role || 'player',
+            role: sanitizedRole,
             status: params.user.status || 'ativa',
             updated_at: new Date().toISOString(),
           });
@@ -671,7 +728,7 @@ export const supabaseService = {
       experimentalPositionScore: null,
       badges: [],
       createdAt: p.created_at,
-      updatedAt: p.updated_at,
+      updatedAt: p.updated_at || new Date().toISOString(),
     }));
   },
 
