@@ -612,7 +612,7 @@ export const AdminAndHomologationView: React.FC<
                   Nenhum time encontrado para a busca "{teamSearch}".
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {filteredTeams.map((team) => (
                     <button
                       key={team.name}
@@ -621,27 +621,29 @@ export const AdminAndHomologationView: React.FC<
                         setSelectedTeamName(team.name);
                         setPlayerSearch('');
                       }}
-                      className="group p-3.5 rounded-2xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md active:scale-[0.99] transition text-left cursor-pointer flex items-center gap-3.5"
+                      className="group p-4 rounded-2xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md active:scale-[0.98] transition text-center cursor-pointer flex flex-col items-center justify-between gap-2.5"
                     >
-                      {/* Brasão do Time */}
-                      {team.crestUrl ? (
-                        <img
-                          src={team.crestUrl}
-                          alt={team.name}
-                          className="h-12 w-12 rounded-xl object-contain shrink-0 drop-shadow-xs"
-                        />
-                      ) : (
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white font-extrabold text-base shrink-0 shadow-xs">
-                          {team.name.slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
+                      {/* Brasão em cima */}
+                      <div className="flex items-center justify-center w-full py-1">
+                        {team.crestUrl ? (
+                          <img
+                            src={team.crestUrl}
+                            alt={team.name}
+                            className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl object-contain drop-shadow-sm group-hover:scale-105 transition-transform"
+                          />
+                        ) : (
+                          <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-xl shadow-xs group-hover:scale-105 transition-transform">
+                            {team.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
 
-                      {/* Nome do Time Completo e Quantidade de Atletas */}
-                      <div className="min-w-0 flex-1">
+                      {/* Nome do Time embaixo e Quantidade de Atletas */}
+                      <div className="w-full flex-1 flex flex-col items-center justify-center">
                         <h3 className="text-xs sm:text-sm font-black text-slate-900 uppercase leading-snug group-hover:text-blue-700 transition break-words">
                           {team.name}
                         </h3>
-                        <p className="text-[11px] font-bold text-slate-500 mt-1 flex items-center gap-1.5">
+                        <p className="text-[11px] font-bold text-slate-500 mt-1 flex items-center justify-center gap-1.5">
                           <Users className="h-3.5 w-3.5 text-blue-600 shrink-0" />
                           <span>
                             {team.players.length} {team.players.length === 1 ? 'atleta' : 'atletas'}
