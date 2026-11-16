@@ -49,12 +49,13 @@ export const MatchesAndValidationView: React.FC<
     notify,
   } = useLeague();
 
-  // Nível de acesso: Treinador (coach / dono de time) ou Admin podem criar/gerenciar súmulas em andamento
-  const isCoachOrAdmin =
-    currentUser.role === 'admin' ||
+  // Nível de acesso: Apenas Treinador (coach / dono de time) pode abrir nova súmula
+  const isCoach =
     currentUser.role === 'coach' ||
     currentUser.isTeamOwner === true ||
     currentPlayerProfile?.isTeamOwner === true;
+
+  const isCoachOrAdmin = isCoach || currentUser.role === 'admin';
 
   // Categoria de Partida: 'treino' (via Súmula) ou 'oficial' (Time vs Time cadastrado)
   const [matchCategory, setMatchCategory] = useState<'treino' | 'oficial'>(() => {
@@ -605,8 +606,8 @@ export const MatchesAndValidationView: React.FC<
 
               return (
                 <div className="space-y-2.5">
-                  {/* Botão de Criação de Súmula no INÍCIO da lista (Disponível apenas para Treinadores/Admin) */}
-                  {isCoachOrAdmin && (
+                  {/* Botão de Criação de Súmula no INÍCIO da lista (Disponível exclusivamente para Treinadores) */}
+                  {isCoach && (
                     <button
                       type="button"
                       onClick={() => {
@@ -738,12 +739,14 @@ export const MatchesAndValidationView: React.FC<
                           Nenhuma súmula ativa no momento.
                         </p>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          {isCoachOrAdmin
+                          {isCoach
                             ? 'Toque abaixo para abrir e preencher a súmula da rodada.'
+                            : currentUser.role === 'admin'
+                            ? 'Aguarde os treinadores das equipes abrirem as súmulas das rodadas.'
                             : 'Aguarde o treinador da sua equipe abrir a súmula da rodada.'}
                         </p>
                       </div>
-                      {isCoachOrAdmin && (
+                      {isCoach && (
                         <button
                           type="button"
                           onClick={() => {

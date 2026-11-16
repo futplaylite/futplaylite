@@ -323,6 +323,9 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     }));
 
     if (isNew) {
+      if (currentUser?.role === 'admin') {
+        return DEFAULT_INITIAL_SUMULA;
+      }
       const newId = `sumula-pelada-${Date.now()}`;
       return createCleanSumula({
         id: newId,
@@ -374,6 +377,13 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
   const isLocked = sumula.status === 'finalizada';
   const canEdit = isCoachOrAdmin && !isLocked;
+
+  // Administrador não tem permissão para abrir nova súmula; redireciona com segurança
+  useEffect(() => {
+    if (isNew && currentUser?.role === 'admin') {
+      onBack();
+    }
+  }, [isNew, currentUser?.role, onBack]);
 
   // Ativa o cronômetro no cabeçalho do app enquanto a súmula estiver aberta
   useEffect(() => {
