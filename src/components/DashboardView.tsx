@@ -1533,6 +1533,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* ================================================================= */}
       {/* 2. CARD DO DIA DA PELADA COM DATA ATUAL OU CONTAGEM EM HORAS     */}
       {/* ================================================================= */}
+      {!isAdmin && (
       <div className="w-full rounded-2xl border border-blue-200/80 bg-gradient-to-b from-blue-700 via-blue-800 to-blue-950 p-3.5 text-white shadow-md relative overflow-hidden">
         {/* Imagem de Fundo Oficial do Estádio com Refletores */}
         <div
@@ -2024,6 +2025,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Modal para Ajustar Data e Horário da Pelada */}
       {showEditScheduleModal && (
