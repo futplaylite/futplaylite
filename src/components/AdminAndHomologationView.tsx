@@ -640,11 +640,11 @@ export const AdminAndHomologationView: React.FC<
 
                       {/* Nome do Time embaixo e Quantidade de Atletas */}
                       <div className="w-full flex-1 flex flex-col items-center justify-center">
-                        <h3 className="text-[11px] sm:text-xs font-black text-slate-900 uppercase leading-snug tracking-tight group-hover:text-blue-700 transition break-words">
+                        <h3 className="text-[10px] sm:text-[11px] font-black text-slate-800 uppercase leading-tight tracking-tight group-hover:text-blue-700 transition break-words">
                           {team.name}
                         </h3>
-                        <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-0.5 flex items-center justify-center gap-1">
-                          <Users className="h-3 w-3 text-blue-600 shrink-0" />
+                        <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 mt-0.5 flex items-center justify-center gap-1">
+                          <Users className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-blue-600 shrink-0" />
                           <span>
                             {team.players.length} {team.players.length === 1 ? 'atleta' : 'atletas'}
                           </span>
