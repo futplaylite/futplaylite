@@ -1688,19 +1688,20 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     return true;
   };
 
-  // Exclusão de Conta de Atleta (Direito de eliminação / LGPD)
+  // Exclusão de Conta de Atleta ou Treinador (Direito de eliminação / LGPD / Admin)
   const deleteUserAccount: LeagueContextValue['deleteUserAccount'] = async (targetUserId) => {
     const userIdToDelete = targetUserId || currentUserId;
     if (!userIdToDelete) return false;
 
-    const userToDelete = state.users.find((u) => u.id === userIdToDelete);
-    const profileToDelete = state.profiles.find((p) => p.userId === userIdToDelete);
+    const profileToDelete = state.profiles.find((p) => p.userId === userIdToDelete || p.id === userIdToDelete);
+    const userToDelete = state.users.find((u) => u.id === userIdToDelete || (profileToDelete && u.id === profileToDelete.userId));
+    const effectiveUserId = userToDelete?.id || profileToDelete?.userId || userIdToDelete;
 
     // 1. Sincroniza exclusão no Supabase PRIMEIRO (aguardando conclusão antes de eventual reload)
     if (isSupabaseConfigured()) {
       try {
         await supabaseService.deleteUser(
-          userIdToDelete,
+          effectiveUserId,
           userToDelete?.email,
           userToDelete?.whatsappNumber
         );
@@ -1711,15 +1712,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // 2. Remove senhas, credenciais locais e histórico de primeiro acesso
     unmarkFirstAccessCompletedInStorage(
-      userIdToDelete,
+      effectiveUserId,
       userToDelete?.email,
       userToDelete?.whatsappNumber
     );
     try {
       const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
+      delete stored[effectiveUserId];
       delete stored[userIdToDelete];
       if (profileToDelete) {
         delete stored[profileToDelete.id];
+        delete stored[profileToDelete.userId];
       }
       if (userToDelete?.whatsappNumber) {
         delete stored[userToDelete.whatsappNumber.replace(/\D/g, '')];
@@ -1733,7 +1736,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     // 3. Se o usuário excluído for o ativo, limpa as sessões locais de login
-    const isCurrentActive = userIdToDelete === currentUserId;
+    const isCurrentActive = effectiveUserId === currentUserId || userIdToDelete === currentUserId;
     if (isCurrentActive) {
       setCurrentUserId('');
       try {
@@ -1748,9 +1751,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // 4. Remove o usuário e perfil do estado da liga e persiste imediatamente no localStorage
     setState((prev) => {
-      const remainingUsers = prev.users.filter((u) => u.id !== userIdToDelete);
+      const remainingUsers = prev.users.filter(
+        (u) => u.id !== effectiveUserId && u.id !== userIdToDelete && (!profileToDelete || u.id !== profileToDelete.userId)
+      );
       const remainingProfiles = prev.profiles.filter(
-        (p) => p.userId !== userIdToDelete && (!profileToDelete || p.id !== profileToDelete.id)
+        (p) => p.userId !== effectiveUserId && p.userId !== userIdToDelete && (!profileToDelete || p.id !== profileToDelete.id)
       );
       const remainingSeasonEntries = prev.seasonEntries.filter(
         (se) => !profileToDelete || se.playerId !== profileToDelete.id
@@ -1760,16 +1765,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       const delLog: AuditLog = {
         id: `audit-del-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         actorUserId: currentUser.id || 'sistema',
-        actorName: currentPlayerProfile?.displayName || currentUser.email || 'Usuário',
-        actorRole: currentUser.role || 'player',
+        actorName: currentPlayerProfile?.displayName || currentUser.email || 'Administrador',
+        actorRole: currentUser.role || 'admin',
         actionType: 'CONTA_EXCLUIDA',
         entityType: 'users',
-        entityId: userIdToDelete,
-        reason: `Exclusão permanente de conta: ${profileToDelete?.displayName || userToDelete?.email || userIdToDelete}.`,
+        entityId: effectiveUserId,
+        reason: `Exclusão permanente de conta: ${profileToDelete?.displayName || userToDelete?.email || effectiveUserId} (${profileToDelete?.role === 'coach' || profileToDelete?.isTeamOwner ? 'Treinador' : 'Atleta'}).`,
         createdAt: now,
       };
 
-      const nextState = {
+      const nextState: LeagueState = {
         ...prev,
         users: remainingUsers,
         profiles: remainingProfiles,
@@ -1789,7 +1794,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     notify(
       'info',
       'Conta Excluída com Sucesso',
-      `A conta de ${profileToDelete?.displayName || userToDelete?.email || 'atleta'} foi removida permanentemente da liga.`
+      `A conta de ${profileToDelete?.displayName || userToDelete?.email || 'membro'} foi removida permanentemente da liga.`
     );
 
     return true;

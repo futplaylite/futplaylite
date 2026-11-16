@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
+  Trash2,
   Trophy,
   Users,
   X,
@@ -50,6 +51,7 @@ export const AdminAndHomologationView: React.FC<
     users,
     selectedSeasonId,
     updatePlayerStatsManually,
+    deleteUserAccount,
     switchActiveUser,
     moderateMatchResolution,
     attemptDirectManipulationAttack,
@@ -106,6 +108,13 @@ export const AdminAndHomologationView: React.FC<
   const [showEditAdminPassword, setShowEditAdminPassword] = useState<boolean>(false);
   const [editAdminPasswordError, setEditAdminPasswordError] = useState<string>('');
   const [editSuccessAlert, setEditSuccessAlert] = useState<string | null>(null);
+
+  // Popup de Senha de Administrador para exclusão definitiva de conta
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState<boolean>(false);
+  const [deleteAdminPassword, setDeleteAdminPassword] = useState<string>('');
+  const [showDeleteAdminPassword, setShowDeleteAdminPassword] = useState<boolean>(false);
+  const [deleteAdminPasswordError, setDeleteAdminPasswordError] = useState<string>('');
+  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
 
   const [targetMatchId, setTargetMatchId] = useState<string>(
     initialMatchId || 'match-103'
@@ -282,6 +291,52 @@ export const AdminAndHomologationView: React.FC<
       );
       setTimeout(() => setEditSuccessAlert(null), 6000);
       setEditingPlayer(null);
+    }
+  };
+
+  // Abre o popup de senha para excluir conta de atleta ou treinador
+  const handleRequestDeletePlayerAccount = () => {
+    setDeleteAdminPassword('');
+    setDeleteAdminPasswordError('');
+    setShowDeleteAdminPassword(false);
+    setIsDeleteAccountModalOpen(true);
+  };
+
+  // Confirmação final após digitar senha de administrador para excluir conta
+  const handleConfirmDeletePlayerAccountWithPassword = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!editingPlayer) return;
+
+    const trimmed = deleteAdminPassword.trim();
+    if (!trimmed) {
+      setDeleteAdminPasswordError('Informe a senha do administrador.');
+      return;
+    }
+
+    if (!verifyAdminPassword(trimmed)) {
+      setDeleteAdminPasswordError('Senha de administrador incorreta. Tente novamente.');
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      const targetId = editingPlayer.userId || editingPlayer.id;
+      const playerName = editingPlayer.displayName;
+      const roleText = editForm.memberRole === 'coach' ? 'Treinador' : 'Atleta';
+      const ok = await deleteUserAccount(targetId);
+
+      if (ok) {
+        setIsDeleteAccountModalOpen(false);
+        setEditingPlayer(null);
+        setEditSuccessAlert(`A conta de ${playerName} (${roleText}) foi excluída permanentemente com sucesso!`);
+        setTimeout(() => setEditSuccessAlert(null), 6000);
+      } else {
+        setDeleteAdminPasswordError('Não foi possível excluir a conta. Tente novamente.');
+      }
+    } catch {
+      setDeleteAdminPasswordError('Erro ao processar exclusão de conta.');
+    } finally {
+      setIsDeletingAccount(false);
     }
   };
 
@@ -1743,6 +1798,32 @@ export const AdminAndHomologationView: React.FC<
                   />
                 </div>
 
+                {/* Zona de Perigo: Exclusão de Conta */}
+                <div className="pt-2 border-t border-slate-100">
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-black text-rose-800">
+                        <Trash2 className="h-4 w-4 text-rose-600 shrink-0" />
+                        <span>Exclusão Permanente da Conta</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded-md">
+                        Ação Irreversível
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-rose-700 leading-relaxed">
+                      Exclui permanentemente a conta de <strong>{editingPlayer.displayName}</strong>, desvinculando todos os dados de {editForm.memberRole === 'coach' ? 'treinador' : 'atleta'}, credenciais e acessos do aplicativo.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleRequestDeletePlayerAccount}
+                      className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-[0.99] text-white py-2.5 text-xs font-black transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Excluir Conta do {editForm.memberRole === 'coach' ? 'Treinador' : 'Atleta'} (Exige Senha)</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Botões do Modal de Edição */}
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
                   <button
@@ -1854,6 +1935,115 @@ export const AdminAndHomologationView: React.FC<
                     className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 text-white py-2.5 text-xs font-bold shadow-md transition cursor-pointer"
                   >
                     Confirmar
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ======================================================================= */}
+      {/* MODAL 3: CONFIRMAÇÃO DE SENHA DO ADMINISTRADOR PARA EXCLUIR CONTA        */}
+      {/* ======================================================================= */}
+      {isDeleteAccountModalOpen &&
+        editingPlayer &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl border border-rose-200 space-y-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 shrink-0">
+                    <Trash2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">
+                      Excluir Conta Definitivamente
+                    </h3>
+                    <p className="text-[11px] text-rose-700 font-semibold">
+                      Autorização de Administrador
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isDeletingAccount}
+                  onClick={() => setIsDeleteAccountModalOpen(false)}
+                  className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 text-[11px] text-rose-900 leading-relaxed space-y-1">
+                <p>
+                  ⚠️ <strong>Atenção:</strong> Você está prestes a excluir permanentemente a conta de{' '}
+                  <strong>{editingPlayer.displayName}</strong> ({editForm.memberRole === 'coach' ? 'Treinador' : 'Atleta'}) da equipe{' '}
+                  <strong>{editingPlayer.teamName || 'Sem Time'}</strong>.
+                </p>
+                <p className="text-[10px] text-rose-700 font-semibold">
+                  Esta ação não pode ser desfeita. Para autorizar a exclusão, digite sua senha de administrador.
+                </p>
+              </div>
+
+              <form onSubmit={handleConfirmDeletePlayerAccountWithPassword} className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Senha de Administrador *
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Lock className="w-4 h-4" />
+                    </div>
+                    <input
+                      type={showDeleteAdminPassword ? 'text' : 'password'}
+                      autoFocus
+                      required
+                      disabled={isDeletingAccount}
+                      value={deleteAdminPassword}
+                      onChange={(e) => {
+                        setDeleteAdminPassword(e.target.value);
+                        if (deleteAdminPasswordError) setDeleteAdminPasswordError('');
+                      }}
+                      placeholder="Digite a senha..."
+                      className="w-full rounded-xl border border-rose-200 bg-rose-50/20 pl-9 pr-10 py-2.5 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-rose-600 focus:bg-white focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={isDeletingAccount}
+                      onClick={() => setShowDeleteAdminPassword(!showDeleteAdminPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showDeleteAdminPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                  {deleteAdminPasswordError && (
+                    <p className="mt-1 text-[11px] font-bold text-rose-600">
+                      {deleteAdminPasswordError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isDeletingAccount}
+                    onClick={() => setIsDeleteAccountModalOpen(false)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-100 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeletingAccount}
+                    className="w-full rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-[0.99] text-white py-2.5 text-xs font-bold shadow-md transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isDeletingAccount ? 'Excluindo...' : 'Confirmar Exclusão'}</span>
                   </button>
                 </div>
               </form>
