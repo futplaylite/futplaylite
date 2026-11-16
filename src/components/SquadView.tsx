@@ -579,8 +579,9 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                           e.targetPlayerId === player.id
                       );
                       const stars = getPlayerDisplayStars(player);
+                      const votesCount = player.skills?.totalVotes || 0;
 
-                      // Se já classificou ou é o próprio atleta: exibe somente as estrelas (média geral)
+                      // Se já classificou ou é o próprio atleta: exibe as estrelas e a quantidade de avaliações que formam a média geral
                       if (hasEvaluated || isSelf) {
                         return (
                           <div
@@ -588,39 +589,61 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                               e.stopPropagation();
                               setRatingModalPlayer(player);
                             }}
-                            className="font-mono text-[11px] font-black text-amber-500 flex items-center justify-end gap-1 hover:opacity-80 active:scale-95 transition cursor-pointer"
+                            className="flex flex-col items-end hover:opacity-80 active:scale-95 transition cursor-pointer"
                             title={
                               isSelf
-                                ? 'Minhas estrelas atuais'
-                                : 'Você já avaliou este atleta. Clique para ver ou editar.'
+                                ? 'Sua média geral de estrelas atribuída pelos companheiros'
+                                : 'Você já classificou este atleta. Clique para ver a média geral e sua nota.'
                             }
                           >
-                            <span>{stars > 0 ? stars.toFixed(1) : '0.0'}</span>
-                            <Star
-                              className={`h-3.5 w-3.5 ${
-                                stars > 0
-                                  ? 'fill-amber-400 text-amber-500'
-                                  : 'text-slate-300'
-                              }`}
-                            />
+                            <div className="font-mono text-[11px] font-black text-amber-500 flex items-center justify-end gap-1">
+                              <span>{stars > 0 ? stars.toFixed(1) : '0.0'}</span>
+                              <Star
+                                className={`h-3.5 w-3.5 ${
+                                  stars > 0
+                                    ? 'fill-amber-400 text-amber-500'
+                                    : 'text-slate-300'
+                                }`}
+                              />
+                            </div>
+                            <span className="text-[8.5px] font-medium text-slate-400">
+                              {votesCount === 0
+                                ? 'Sem avaliações'
+                                : votesCount === 1
+                                ? '1 avaliação'
+                                : `${votesCount} avaliações`}
+                            </span>
                           </div>
                         );
                       }
 
-                      // Se ainda não classificou este jogador: exibe o botão dourado Classificar
+                      // Se ainda não classificou este jogador: exibe a média existente (se houver) e o botão Classificar
                       return (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRatingModalPlayer(player);
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-blue-950 px-2.5 py-1 text-[10px] font-black shadow-2xs hover:shadow-xs active:scale-95 transition cursor-pointer"
-                          title="Classificar os 5 quesitos deste atleta"
-                        >
-                          <Star className="h-3 w-3 text-blue-950 fill-blue-950" />
-                          <span>Classificar</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          {stars > 0 && votesCount > 0 && (
+                            <div className="text-right hidden min-[360px]:block">
+                              <div className="font-mono text-[10px] font-extrabold text-amber-600 flex items-center justify-end gap-0.5">
+                                <span>{stars.toFixed(1)}</span>
+                                <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-500" />
+                              </div>
+                              <span className="text-[8px] text-slate-400 block leading-none">
+                                {votesCount} {votesCount === 1 ? 'avaliação' : 'avaliações'}
+                              </span>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRatingModalPlayer(player);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-blue-950 px-2.5 py-1 text-[10px] font-black shadow-2xs hover:shadow-xs active:scale-95 transition cursor-pointer"
+                            title="Classificar os 5 quesitos deste atleta"
+                          >
+                            <Star className="h-3 w-3 text-blue-950 fill-blue-950" />
+                            <span>Classificar</span>
+                          </button>
+                        </div>
                       );
                     })()}
 

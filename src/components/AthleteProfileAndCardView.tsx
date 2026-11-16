@@ -808,12 +808,12 @@ export const AthleteProfileAndCardView: React.FC<
               </div>
 
               {/* Avaliação em Estrelas (0 a 5 ⭐) */}
-              <div className="mt-2 flex items-center justify-center">
+              <div className="mt-2 flex flex-col items-center justify-center gap-0.5">
                 <button
                   type="button"
                   onClick={() => setShowRatingModal(true)}
                   className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/20 hover:bg-amber-400/30 border border-amber-300/40 px-3 py-1 text-[11px] font-bold text-amber-200 transition active:scale-95 cursor-pointer"
-                  title="Clique para ver ou avaliar habilidades"
+                  title="Clique para ver ou classificar habilidades"
                 >
                   <div className="flex items-center gap-0.5">
                     {[1, 2, 3, 4, 5].map((s) => {
@@ -831,14 +831,24 @@ export const AthleteProfileAndCardView: React.FC<
                     })}
                   </div>
                   <span className="font-mono text-xs font-black text-amber-300">
-                    {overallStars.toFixed(1)} ⭐
+                    {overallStars > 0 ? overallStars.toFixed(1) : '0.0'} ⭐
                   </span>
+                  {targetProfile.skills?.totalVotes ? (
+                    <span className="text-[9.5px] font-semibold text-amber-200/90">
+                      ({targetProfile.skills.totalVotes} {targetProfile.skills.totalVotes === 1 ? 'voto' : 'votos'})
+                    </span>
+                  ) : null}
                   {overallStars > 0 && (
                     <span className="inline-flex items-center gap-0.5 font-bold text-emerald-300 bg-emerald-950/70 border border-emerald-400/40 rounded px-1 py-0.2 text-[9px]">
                       <Check className="h-2.5 w-2.5 stroke-[3]" />
                     </span>
                   )}
                 </button>
+                <span className="text-[8.5px] text-blue-200/70 font-medium">
+                  {targetProfile.skills?.totalVotes
+                    ? `Média geral de ${targetProfile.skills.totalVotes} jogador(es)`
+                    : 'Ainda sem classificações'}
+                </span>
               </div>
 
               {/* Quesitos de Habilidade (Se já avaliado) */}

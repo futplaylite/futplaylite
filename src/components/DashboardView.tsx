@@ -1445,8 +1445,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 })}
               </div>
               <span className="font-mono text-xs font-black text-amber-300">
-                {overallStars.toFixed(1)} ⭐
+                {overallStars > 0 ? overallStars.toFixed(1) : '0.0'} ⭐
               </span>
+              {activeProfile.skills?.totalVotes ? (
+                <span className="text-[9.5px] font-semibold text-amber-200/90">
+                  ({activeProfile.skills.totalVotes} {activeProfile.skills.totalVotes === 1 ? 'voto' : 'votos'})
+                </span>
+              ) : null}
               {overallStars > 0 && (
                 <span className="inline-flex items-center gap-0.5 font-bold text-emerald-300 bg-emerald-950/70 border border-emerald-400/40 rounded px-1 py-0.2 text-[9px]">
                   <Check className="h-2.5 w-2.5 stroke-[3]" />

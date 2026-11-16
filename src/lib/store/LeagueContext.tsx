@@ -394,6 +394,60 @@ export function ensureAthleteAuditLogs(
   return combined;
 }
 
+/**
+ * Calcula com precisão a média geral e por quesito de todos os jogadores que avaliaram o atleta.
+ * Garante que avaliações individuais ativas sejam unificadas e persistidas sem distorção.
+ */
+export function computeProfilesWithPeerEvaluations(
+  profiles: PlayerProfile[],
+  evaluations: PeerEvaluation[]
+): PlayerProfile[] {
+  if (!evaluations || evaluations.length === 0) return profiles;
+
+  return profiles.map((prof) => {
+    const targetEvals = evaluations.filter(
+      (e) =>
+        e.targetPlayerId === prof.id &&
+        (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
+    );
+    if (targetEvals.length === 0) return prof;
+
+    const totalVotes = targetEvals.length;
+    const avgFin = Number(
+      (targetEvals.reduce((acc, cur) => acc + (cur.finalizacao || 0), 0) / totalVotes).toFixed(1)
+    );
+    const avgMar = Number(
+      (targetEvals.reduce((acc, cur) => acc + (cur.marcacao || 0), 0) / totalVotes).toFixed(1)
+    );
+    const avgPas = Number(
+      (targetEvals.reduce((acc, cur) => acc + (cur.passe || 0), 0) / totalVotes).toFixed(1)
+    );
+    const avgRac = Number(
+      (targetEvals.reduce((acc, cur) => acc + (cur.raca || 0), 0) / totalVotes).toFixed(1)
+    );
+    const avgDri = Number(
+      (targetEvals.reduce((acc, cur) => acc + (cur.drible || 0), 0) / totalVotes).toFixed(1)
+    );
+    const overallStars = Number(
+      ((avgFin + avgMar + avgPas + avgRac + avgDri) / 5).toFixed(1)
+    );
+
+    return {
+      ...prof,
+      skills: {
+        finalizacao: avgFin,
+        marcacao: avgMar,
+        passe: avgPas,
+        raca: avgRac,
+        drible: avgDri,
+        totalVotes,
+        lastRatedAt: targetEvals[targetEvals.length - 1]?.updatedAt || prof.skills?.lastRatedAt,
+      },
+      overallStars,
+    };
+  });
+}
+
 function getInitialState(): LeagueState {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -408,7 +462,7 @@ function getInitialState(): LeagueState {
         if (rawC) cachedCrests = JSON.parse(rawC);
       } catch {}
 
-      const cleanProfiles = rawProfiles
+      let cleanProfiles: PlayerProfile[] = rawProfiles
         .filter(
           (p) =>
             p.displayName.trim().toUpperCase() !== 'ADMIN' &&
@@ -445,13 +499,30 @@ function getInitialState(): LeagueState {
           if (rawPay) payments = JSON.parse(rawPay);
         } catch (e) {}
       }
+
+      let peerEvals: PeerEvaluation[] = parsed.peerEvaluations || [];
+      try {
+        const rawEvals = localStorage.getItem('futplay_peer_evaluations_v1');
+        if (rawEvals) {
+          const parsedRaw: PeerEvaluation[] = JSON.parse(rawEvals);
+          if (Array.isArray(parsedRaw)) {
+            const map = new Map<string, PeerEvaluation>();
+            peerEvals.forEach((e) => map.set(`${e.evaluatorId}_${e.targetPlayerId}`, e));
+            parsedRaw.forEach((e) => map.set(`${e.evaluatorId}_${e.targetPlayerId}`, e));
+            peerEvals = Array.from(map.values());
+          }
+        }
+      } catch {}
+
+      cleanProfiles = computeProfilesWithPeerEvaluations(cleanProfiles, peerEvals);
       const initialLogs = ensureAthleteAuditLogs(cleanProfiles, parsed.auditLogs || []);
+
       return {
         ...parsed,
         users: cleanUsers,
         profiles: cleanProfiles,
         matches: parsed.matches || [],
-        peerEvaluations: parsed.peerEvaluations || [],
+        peerEvaluations: peerEvals,
         monthlyPayments: payments,
         monthlyConfig: parsed.monthlyConfig || DEFAULT_MONTHLY_CONFIG,
         teamTransactions: transactions,
@@ -465,6 +536,7 @@ function getInitialState(): LeagueState {
   let initialTx: TeamTransaction[] = [];
   let initialPay: MonthlyPaymentRecord[] = [];
   let initialAdjustments: PlayerAdminAdjustment[] = [];
+  let initialEvals: PeerEvaluation[] = [];
   try {
     const rawTx = localStorage.getItem('futplay_team_financial_transactions_v1');
     if (rawTx) initialTx = JSON.parse(rawTx);
@@ -472,13 +544,18 @@ function getInitialState(): LeagueState {
     if (rawPay) initialPay = JSON.parse(rawPay);
     const rawAdj = localStorage.getItem('futplay_player_adjustments_v1');
     if (rawAdj) initialAdjustments = JSON.parse(rawAdj);
+    const rawEvals = localStorage.getItem('futplay_peer_evaluations_v1');
+    if (rawEvals) initialEvals = JSON.parse(rawEvals);
   } catch (e) {}
+
+  const initialProfiles = computeProfilesWithPeerEvaluations(INITIAL_PROFILES, initialEvals);
+
   return {
     users: INITIAL_USERS,
     cities: INITIAL_CITIES,
     divisions: INITIAL_DIVISIONS,
     seasons: INITIAL_SEASONS,
-    profiles: INITIAL_PROFILES,
+    profiles: initialProfiles,
     seasonEntries: INITIAL_SEASON_ENTRIES,
     matches: INITIAL_MATCHES,
     matchPlayers: INITIAL_MATCH_PLAYERS,
@@ -489,8 +566,8 @@ function getInitialState(): LeagueState {
     evidenceFiles: INITIAL_EVIDENCE_FILES,
     pointTransactions: INITIAL_POINT_TRANSACTIONS,
     ratingLogs: INITIAL_RATING_LOGS,
-    auditLogs: ensureAthleteAuditLogs(INITIAL_PROFILES, INITIAL_AUDIT_LOGS),
-    peerEvaluations: [],
+    auditLogs: ensureAthleteAuditLogs(initialProfiles, INITIAL_AUDIT_LOGS),
+    peerEvaluations: initialEvals,
     monthlyPayments: initialPay,
     monthlyConfig: DEFAULT_MONTHLY_CONFIG,
     teamTransactions: initialTx,
@@ -741,6 +818,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               teamModality: rp.teamModality || loc?.teamModality,
               teamInviteCode: rp.teamInviteCode || loc?.teamInviteCode,
               isTeamOwner: rp.isTeamOwner !== undefined ? rp.isTeamOwner : loc?.isTeamOwner,
+              skills: loc?.skills,
+              overallStars: loc?.overallStars,
             };
           });
 
@@ -756,7 +835,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               };
             });
 
-          mergedProfiles = [...remoteMerged, ...unmatchedLocal];
+          mergedProfiles = computeProfilesWithPeerEvaluations(
+            [...remoteMerged, ...unmatchedLocal],
+            prev.peerEvaluations || []
+          );
         }
 
         // Salva catálogo de escudos atualizado
@@ -2029,31 +2111,35 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           ? currentEvals.map((e, idx) => (idx === existingIdx ? evaluationRecord : e))
           : [...currentEvals, evaluationRecord];
 
-      // Filtra todas as avaliações feitas para este jogador específico
-      const targetEvals = updatedEvals.filter((e) => e.targetPlayerId === playerId);
+      // Filtra todas as avaliações feitas para este jogador específico (apenas avaliações ativas)
+      const targetEvals = updatedEvals.filter(
+        (e) =>
+          e.targetPlayerId === playerId &&
+          (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
+      );
       const totalVotes = targetEvals.length;
 
       // Calcula a média exata de cada quesito entre todos os avaliadores
-      const avgFin = Number(
-        (targetEvals.reduce((acc, cur) => acc + cur.finalizacao, 0) / totalVotes).toFixed(1)
-      );
-      const avgMar = Number(
-        (targetEvals.reduce((acc, cur) => acc + cur.marcacao, 0) / totalVotes).toFixed(1)
-      );
-      const avgPas = Number(
-        (targetEvals.reduce((acc, cur) => acc + cur.passe, 0) / totalVotes).toFixed(1)
-      );
-      const avgRac = Number(
-        (targetEvals.reduce((acc, cur) => acc + cur.raca, 0) / totalVotes).toFixed(1)
-      );
-      const avgDri = Number(
-        (targetEvals.reduce((acc, cur) => acc + cur.drible, 0) / totalVotes).toFixed(1)
-      );
+      const avgFin = totalVotes > 0
+        ? Number((targetEvals.reduce((acc, cur) => acc + (cur.finalizacao || 0), 0) / totalVotes).toFixed(1))
+        : 0;
+      const avgMar = totalVotes > 0
+        ? Number((targetEvals.reduce((acc, cur) => acc + (cur.marcacao || 0), 0) / totalVotes).toFixed(1))
+        : 0;
+      const avgPas = totalVotes > 0
+        ? Number((targetEvals.reduce((acc, cur) => acc + (cur.passe || 0), 0) / totalVotes).toFixed(1))
+        : 0;
+      const avgRac = totalVotes > 0
+        ? Number((targetEvals.reduce((acc, cur) => acc + (cur.raca || 0), 0) / totalVotes).toFixed(1))
+        : 0;
+      const avgDri = totalVotes > 0
+        ? Number((targetEvals.reduce((acc, cur) => acc + (cur.drible || 0), 0) / totalVotes).toFixed(1))
+        : 0;
 
       // A média das 5 notas médias resulta na nota geral em estrelas
-      const overallStars = Number(
-        ((avgFin + avgMar + avgPas + avgRac + avgDri) / 5).toFixed(1)
-      );
+      const overallStars = totalVotes > 0
+        ? Number(((avgFin + avgMar + avgPas + avgRac + avgDri) / 5).toFixed(1))
+        : 0;
 
       const skillLog: AuditLog = {
         id: `audit-skill-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -2063,9 +2149,18 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         actionType: 'SCOUT_AVALIACAO',
         entityType: 'peer_evaluations',
         entityId: playerId,
-        reason: `Avaliação de atributos (Scout) computada para ${p.displayName}. Média: ${overallStars} ⭐.`,
+        reason: `Avaliação de atributos (Scout) gravada para ${p.displayName}. Média geral de ${totalVotes} avaliador(es): ${overallStars} ⭐.`,
+        afterData: evaluationRecord as any,
         createdAt: now,
       };
+
+      try {
+        localStorage.setItem('futplay_peer_evaluations_v1', JSON.stringify(updatedEvals));
+      } catch {}
+
+      if (isSupabaseConfigured()) {
+        supabaseService.recordAuditLogInSupabase(skillLog).catch(() => {});
+      }
 
       return {
         ...prev,
@@ -2094,8 +2189,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     notify(
       'success',
-      'Classificação computada!',
-      `Sua avaliação para ${p.displayName} foi registrada e integrada à média geral do atleta.`
+      'Classificação gravada com sucesso!',
+      `Sua classificação para ${p.displayName} foi gravada. A média geral do atleta foi recalculada com as avaliações de todos os jogadores.`
     );
 
     return true;

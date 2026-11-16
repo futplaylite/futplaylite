@@ -9,8 +9,10 @@ import {
   Compass,
   Zap,
   Wand2,
+  Users,
 } from 'lucide-react';
 import { PlayerProfile, PlayerSkillRatings } from '../types/league';
+import { useLeague } from '../lib/store/LeagueContext';
 
 interface PlayerRatingModalProps {
   player: PlayerProfile;
@@ -40,12 +42,43 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
   initialSkills,
   onSave,
 }) => {
-  const currentSkills: PlayerSkillRatings = initialSkills || player.skills || {
-    finalizacao: 0,
-    marcacao: 0,
-    passe: 0,
-    raca: 0,
-    drible: 0,
+  const { peerEvaluations, currentUser, currentPlayerProfile, profiles } = useLeague();
+
+  // Garante que usamos a versão mais recente do perfil com as notas recalculadas
+  const freshPlayer = profiles.find((p) => p.id === player.id) || player;
+
+  // Busca a classificação que o usuário atual já fez para este atleta (se existir)
+  const myExistingEval = (peerEvaluations || []).find(
+    (e) =>
+      (e.evaluatorId === currentUser?.id ||
+        e.evaluatorId === currentPlayerProfile?.id) &&
+      e.targetPlayerId === player.id
+  );
+
+  // Inicializa notas individuais do avaliador:
+  // Se readOnly (próprio jogador), reflete a média geral.
+  // Se for avaliador externo, parte do que ele mesmo já salvou (ou zero se primeira vez).
+  const getStartingSkills = () => {
+    if (initialSkills) return initialSkills;
+    if (myExistingEval) {
+      return {
+        finalizacao: myExistingEval.finalizacao ?? 0,
+        marcacao: myExistingEval.marcacao ?? 0,
+        passe: myExistingEval.passe ?? 0,
+        raca: myExistingEval.raca ?? 0,
+        drible: myExistingEval.drible ?? 0,
+      };
+    }
+    if (readOnly && freshPlayer.skills) {
+      return freshPlayer.skills;
+    }
+    return {
+      finalizacao: 0,
+      marcacao: 0,
+      passe: 0,
+      raca: 0,
+      drible: 0,
+    };
   };
 
   const [ratings, setRatings] = useState<{
@@ -54,36 +87,59 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
     passe: number;
     raca: number;
     drible: number;
-  }>({
-    finalizacao: currentSkills.finalizacao ?? 0,
-    marcacao: currentSkills.marcacao ?? 0,
-    passe: currentSkills.passe ?? 0,
-    raca: currentSkills.raca ?? 0,
-    drible: currentSkills.drible ?? 0,
-  });
+  }>(getStartingSkills);
 
   useEffect(() => {
-    const s = initialSkills || player.skills || {
-      finalizacao: 0,
-      marcacao: 0,
-      passe: 0,
-      raca: 0,
-      drible: 0,
-    };
-    setRatings({
-      finalizacao: s.finalizacao ?? 0,
-      marcacao: s.marcacao ?? 0,
-      passe: s.passe ?? 0,
-      raca: s.raca ?? 0,
-      drible: s.drible ?? 0,
-    });
-  }, [player.id, initialSkills]);
+    setRatings(getStartingSkills());
+  }, [player.id, initialSkills, myExistingEval?.updatedAt, readOnly]);
 
   const [savedFeedback, setSavedFeedback] = useState(false);
 
   if (!isOpen) return null;
 
-  const currentOverall = Number(
+  // Todas as avaliações ativas de outros atletas para este jogador
+  const allTargetEvals = (peerEvaluations || []).filter(
+    (e) =>
+      e.targetPlayerId === player.id &&
+      (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
+  );
+
+  const totalVoters = freshPlayer.skills?.totalVotes ?? allTargetEvals.length;
+
+  const collectiveOverall =
+    freshPlayer.overallStars ??
+    (allTargetEvals.length > 0
+      ? Number(
+          (
+            allTargetEvals.reduce(
+              (acc, cur) =>
+                acc + (cur.finalizacao + cur.marcacao + cur.passe + cur.raca + cur.drible) / 5,
+              0
+            ) / allTargetEvals.length
+          ).toFixed(1)
+        )
+      : 0);
+
+  const collectiveSkills = freshPlayer.skills || {
+    finalizacao: allTargetEvals.length
+      ? Number((allTargetEvals.reduce((a, b) => a + (b.finalizacao || 0), 0) / allTargetEvals.length).toFixed(1))
+      : 0,
+    marcacao: allTargetEvals.length
+      ? Number((allTargetEvals.reduce((a, b) => a + (b.marcacao || 0), 0) / allTargetEvals.length).toFixed(1))
+      : 0,
+    passe: allTargetEvals.length
+      ? Number((allTargetEvals.reduce((a, b) => a + (b.passe || 0), 0) / allTargetEvals.length).toFixed(1))
+      : 0,
+    raca: allTargetEvals.length
+      ? Number((allTargetEvals.reduce((a, b) => a + (b.raca || 0), 0) / allTargetEvals.length).toFixed(1))
+      : 0,
+    drible: allTargetEvals.length
+      ? Number((allTargetEvals.reduce((a, b) => a + (b.drible || 0), 0) / allTargetEvals.length).toFixed(1))
+      : 0,
+  };
+
+  // Média individual do avaliador
+  const myIndividualAvg = Number(
     (
       (ratings.finalizacao +
         ratings.marcacao +
@@ -92,6 +148,15 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
         ratings.drible) /
       5
     ).toFixed(1)
+  );
+
+  const hasMyEvaluation = Boolean(
+    myExistingEval ||
+      ratings.finalizacao > 0 ||
+      ratings.marcacao > 0 ||
+      ratings.passe > 0 ||
+      ratings.raca > 0 ||
+      ratings.drible > 0
   );
 
   const criteriaList = [
@@ -143,7 +208,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
   ) => {
     if (readOnly) return;
 
-    // Se clicar na mesma estrela que já está selecionada, zera para 0 estrelas
+    // Se clicar na mesma estrela já marcada, desmarca para 0
     const newValue = ratings[key] === value ? 0 : value;
     const nextRatings = {
       ...ratings,
@@ -151,11 +216,11 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
     };
     setRatings(nextRatings);
 
-    // Salva imediatamente
+    // Salva e grava imediatamente no sistema
     onSave(player.id, nextRatings);
 
     setSavedFeedback(true);
-    setTimeout(() => setSavedFeedback(false), 1200);
+    setTimeout(() => setSavedFeedback(false), 1400);
   };
 
   return (
@@ -186,62 +251,89 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
             <div className="min-w-0">
               <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300 flex items-center gap-1">
                 <Sparkles className="h-3 w-3 text-amber-400" />
-                Avaliação de Habilidades
+                Classificação de Habilidades
               </span>
               <h2 className="text-base font-bold text-white truncate">
                 {player.displayName}
               </h2>
               <p className="text-xs text-blue-200 capitalize">
-                {player.position} · {player.neighborhood}
+                {player.position} · {player.neighborhood || 'Atleta'}
               </p>
             </div>
           </div>
 
-          {/* Banner de Média Atual */}
-          <div className="mt-3.5 flex items-center justify-between rounded-2xl bg-white/10 backdrop-blur-md p-3 border border-white/15">
-            <div>
-              <div className="text-[10px] font-bold text-blue-200 uppercase tracking-wider">
-                Média Geral de Estrelas
+          {/* Banner de Média Geral Coletiva (Todos os jogadores que o classificaram) */}
+          <div className="mt-3.5 rounded-2xl bg-white/10 backdrop-blur-md p-3 border border-white/15 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-bold text-blue-200 uppercase tracking-wider flex items-center gap-1">
+                  <Users className="h-3 w-3 text-blue-300" />
+                  <span>Média Geral dos Jogadores</span>
+                </div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  {[1, 2, 3, 4, 5].map((starIdx) => {
+                    const isFilled = collectiveOverall > 0 && starIdx <= Math.round(collectiveOverall);
+                    return (
+                      <Star
+                        key={starIdx}
+                        className={`h-4 w-4 ${
+                          isFilled
+                            ? 'fill-amber-400 text-amber-400'
+                            : 'fill-white/10 text-white/30'
+                        }`}
+                      />
+                    );
+                  })}
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                {[1, 2, 3, 4, 5].map((starIdx) => {
-                  const isFilled = starIdx <= Math.round(currentOverall);
-                  return (
-                    <Star
-                      key={starIdx}
-                      className={`h-4 w-4 ${
-                        isFilled
-                          ? 'fill-amber-400 text-amber-400'
-                          : 'fill-white/10 text-white/30'
-                      }`}
-                    />
-                  );
-                })}
+
+              <div className="text-right">
+                <div className="text-2xl font-black font-mono text-amber-400 leading-none">
+                  {collectiveOverall > 0 ? collectiveOverall.toFixed(1) : '0.0'}
+                </div>
+                <div className="text-[10px] font-medium text-white/80 mt-0.5">
+                  {totalVoters === 0
+                    ? 'Ainda sem avaliações'
+                    : totalVoters === 1
+                    ? '1 jogador avaliou'
+                    : `${totalVoters} jogadores avaliaram`}
+                </div>
               </div>
             </div>
 
-            <div className="text-right">
-              <div className="text-2xl font-black font-mono text-amber-400 leading-none">
-                {currentOverall > 0 ? currentOverall.toFixed(1) : '0.0'}
+            {/* Quesitos da Média Geral Coletiva */}
+            <div className="grid grid-cols-5 gap-1 pt-1.5 border-t border-white/10 text-center text-[9px] font-bold">
+              <div className="bg-white/5 rounded-lg py-1">
+                <span className="block text-[8px] text-blue-300 uppercase">Fin</span>
+                <span className="font-mono text-amber-300 font-extrabold">
+                  {collectiveSkills.finalizacao > 0 ? collectiveSkills.finalizacao.toFixed(1) : '0.0'}★
+                </span>
               </div>
-              <div className="text-[10px] font-medium text-white/80 mt-0.5">
-                {currentOverall >= 4.5
-                  ? '🏆 Craque Nato'
-                  : currentOverall >= 3.8
-                  ? '🌟 Destaque'
-                  : currentOverall >= 3.0
-                  ? '🟢 Regular'
-                  : currentOverall > 0
-                  ? '⚪ Composição'
-                  : 'Ainda não avaliado'}
+              <div className="bg-white/5 rounded-lg py-1">
+                <span className="block text-[8px] text-blue-300 uppercase">Mar</span>
+                <span className="font-mono text-amber-300 font-extrabold">
+                  {collectiveSkills.marcacao > 0 ? collectiveSkills.marcacao.toFixed(1) : '0.0'}★
+                </span>
+              </div>
+              <div className="bg-white/5 rounded-lg py-1">
+                <span className="block text-[8px] text-blue-300 uppercase">Pas</span>
+                <span className="font-mono text-amber-300 font-extrabold">
+                  {collectiveSkills.passe > 0 ? collectiveSkills.passe.toFixed(1) : '0.0'}★
+                </span>
+              </div>
+              <div className="bg-white/5 rounded-lg py-1">
+                <span className="block text-[8px] text-blue-300 uppercase">Raç</span>
+                <span className="font-mono text-amber-300 font-extrabold">
+                  {collectiveSkills.raca > 0 ? collectiveSkills.raca.toFixed(1) : '0.0'}★
+                </span>
+              </div>
+              <div className="bg-white/5 rounded-lg py-1">
+                <span className="block text-[8px] text-blue-300 uppercase">Dri</span>
+                <span className="font-mono text-amber-300 font-extrabold">
+                  {collectiveSkills.drible > 0 ? collectiveSkills.drible.toFixed(1) : '0.0'}★
+                </span>
               </div>
             </div>
-          </div>
-
-          {/* Indicativo de Média Coletiva */}
-          <div className="mt-2 flex items-center justify-between text-[10px] text-blue-200/90 px-1">
-            <span>👥 {player.skills?.totalVotes ? `${player.skills.totalVotes} avaliação(ões) computadas` : 'Primeira avaliação deste atleta'}</span>
-            <span className="text-amber-300 font-bold bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-300/30">Média Coletiva</span>
           </div>
         </div>
 
@@ -251,7 +343,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
             <span className="text-base">🔒</span>
             <span>
               {readOnlyMessage ||
-                'Um jogador não pode classificar a si mesmo. Suas estrelas são avaliadas pelos companheiros e comissão.'}
+                'Você não pode classificar a si mesmo. Sua média geral é calculada a partir das avaliações que seus companheiros atribuem a você.'}
             </span>
           </div>
         )}
@@ -260,7 +352,27 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
         {!readOnly && savedFeedback && (
           <div className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-4 py-1.5 flex items-center justify-center gap-1.5 border-b border-emerald-100 transition animate-in fade-in">
             <Check className="h-3.5 w-3.5 text-emerald-600" />
-            Salvo automaticamente!
+            Classificação gravada! Média geral recalculada.
+          </div>
+        )}
+
+        {/* Cabeçalho da Seção de Avaliação do Usuário */}
+        {!readOnly && (
+          <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex items-center justify-between text-xs font-bold">
+            <div className="flex items-center gap-1 text-slate-700">
+              <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
+              <span>Sua Classificação Individual</span>
+            </div>
+            {hasMyEvaluation ? (
+              <span className="text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full text-[10px] font-extrabold flex items-center gap-1">
+                <Check className="h-3 w-3 stroke-[3]" />
+                Gravada ({myIndividualAvg.toFixed(1)} ⭐)
+              </span>
+            ) : (
+              <span className="text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
+                Pendente
+              </span>
+            )}
           </div>
         )}
 
@@ -302,13 +414,14 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
                       <button
                         key={starNum}
                         type="button"
+                        disabled={readOnly}
                         onClick={() => handleSetRating(crit.key, starNum)}
                         className={`flex-1 py-1.5 flex items-center justify-center rounded-lg transition active:scale-95 ${
                           active
                             ? 'text-amber-500 hover:bg-amber-50/60'
                             : 'text-slate-300 hover:text-slate-400 hover:bg-white'
-                        }`}
-                        title={`${starNum} estrelas`}
+                        } ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                        title={readOnly ? `${starNum} estrelas` : `Classificar com ${starNum} estrelas`}
                       >
                         <Star
                           className={`h-5 w-5 ${
@@ -329,7 +442,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white py-2.5 text-xs font-bold shadow-md shadow-blue-500/20 active:scale-[0.99] transition"
+            className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white py-2.5 text-xs font-bold shadow-md shadow-blue-500/20 active:scale-[0.99] transition cursor-pointer"
           >
             <Check className="h-4 w-4" />
             Concluído

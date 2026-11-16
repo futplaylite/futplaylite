@@ -175,15 +175,24 @@ export const SearchView: React.FC<SearchViewProps> = ({
                     <div className="text-right">
                       {(() => {
                         const stars = getPlayerDisplayStars(player);
-                        return stars > 0 ? (
-                          <div className="font-mono text-[11px] font-black text-amber-500 flex items-center justify-end gap-1">
-                            <span>{stars.toFixed(1)}</span>
-                            <Star className="h-3 w-3 fill-amber-400 text-amber-500" />
-                          </div>
-                        ) : (
-                          <div className="font-mono text-[11px] font-medium text-slate-300 flex items-center justify-end gap-1" title="Ainda não avaliado">
-                            <span>0.0</span>
-                            <Star className="h-3 w-3 text-slate-300" />
+                        const votesCount = player.skills?.totalVotes || 0;
+                        return (
+                          <div className="flex flex-col items-end">
+                            <div className="font-mono text-[11px] font-black text-amber-500 flex items-center justify-end gap-1">
+                              <span>{stars > 0 ? stars.toFixed(1) : '0.0'}</span>
+                              <Star
+                                className={`h-3 w-3 ${
+                                  stars > 0 ? 'fill-amber-400 text-amber-500' : 'text-slate-300'
+                                }`}
+                              />
+                            </div>
+                            <span className="text-[8.5px] font-medium text-slate-400">
+                              {votesCount === 0
+                                ? 'Sem avaliações'
+                                : votesCount === 1
+                                ? '1 avaliação'
+                                : `${votesCount} avaliações`}
+                            </span>
                           </div>
                         );
                       })()}
