@@ -72,6 +72,8 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
       if (rawCrests) {
         const parsed = JSON.parse(rawCrests);
         if (parsed[clean]) return parsed[clean];
+        const foundKey = Object.keys(parsed).find((k) => k.trim().toLowerCase() === clean);
+        if (foundKey && parsed[foundKey]) return parsed[foundKey];
       }
       const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
       if (rawTeams) {
@@ -85,10 +87,55 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     return undefined;
   };
 
+  // 1. Resolução segura do time registrado para o usuário (evita perder nome, código ou escudo no F5)
+  const registeredTeamForUser = useMemo(() => {
+    try {
+      const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+      if (!rawTeams) return null;
+      const list = JSON.parse(rawTeams);
+      if (!Array.isArray(list) || list.length === 0) return null;
+
+      // 1.1 Por ownerUserId ou id do usuário
+      if (currentUser?.id) {
+        const byOwner = list.find(
+          (t: any) =>
+            t.ownerUserId === currentUser.id ||
+            (t.ownerName && currentPlayerProfile?.displayName && t.ownerName.trim().toLowerCase() === currentPlayerProfile.displayName.trim().toLowerCase())
+        );
+        if (byOwner) return byOwner;
+      }
+
+      // 1.2 Por timeInviteCode
+      const userCode = (currentUser?.teamInviteCode || currentPlayerProfile?.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      if (userCode) {
+        const byCode = list.find(
+          (t: any) => (t.inviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === userCode
+        );
+        if (byCode) return byCode;
+      }
+
+      // 1.3 Por teamName
+      const currT = (currentUser?.teamName || currentPlayerProfile?.teamName || '').trim().toLowerCase();
+      if (currT && currT !== 'meu time' && currT !== 'sem time') {
+        const byName = list.find(
+          (t: any) => (t.name || '').trim().toLowerCase() === currT
+        );
+        if (byName) return byName;
+      }
+
+      // 1.4 Se o usuário é treinador ou dono e só há 1 time registrado
+      if ((currentUser?.role === 'coach' || currentUser?.isTeamOwner || currentPlayerProfile?.isTeamOwner) && list.length === 1) {
+        return list[0];
+      }
+    } catch {}
+    return null;
+  }, [currentUser, currentPlayerProfile]);
+
   // Nome do time ativo
   const userTeamName =
-    currentUser?.teamName ||
-    currentPlayerProfile?.teamName ||
+    (currentUser?.teamName && currentUser.teamName !== 'Meu Time' && currentUser.teamName !== 'Sem Time' ? currentUser.teamName : undefined) ||
+    (currentPlayerProfile?.teamName && currentPlayerProfile.teamName !== 'Meu Time' && currentPlayerProfile.teamName !== 'Sem Time' ? currentPlayerProfile.teamName : undefined) ||
+    registeredTeamForUser?.name ||
     'Meu Time';
 
   const isDemoTeamName =
@@ -98,6 +145,7 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
   const userTeamCrest =
     currentUser?.teamCrestUrl ||
     currentPlayerProfile?.teamCrestUrl ||
+    registeredTeamForUser?.crestUrl ||
     profiles.find(
       (p) =>
         p.teamName &&
@@ -129,11 +177,13 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
   const teamModality: TeamModality =
     currentUser?.teamModality ||
     currentPlayerProfile?.teamModality ||
+    registeredTeamForUser?.modality ||
     'society';
 
   const teamInviteCode =
     currentUser?.teamInviteCode ||
     currentPlayerProfile?.teamInviteCode ||
+    registeredTeamForUser?.inviteCode ||
     profiles.find(
       (p) =>
         p.teamName &&
@@ -200,11 +250,45 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
       return (pTeam && pTeam === target) || (targetCode && pCode && pCode === targetCode);
     });
 
+    // Se houver atletas no elenco do time registrado que não estejam na lista, adiciona-os
+    if (registeredTeamForUser?.roster && Array.isArray(registeredTeamForUser.roster)) {
+      const existingIds = new Set(matches.map((m) => m.id));
+      registeredTeamForUser.roster.forEach((r: any) => {
+        if (r && r.id && !existingIds.has(r.id)) {
+          matches.push({
+            id: r.id,
+            userId: r.userId || r.id,
+            displayName: r.displayName || r.name || 'Atleta',
+            avatarUrl: r.avatarUrl,
+            avatarColor: '#126B46',
+            cityId: '11111111-1111-4111-8111-111111111101',
+            neighborhood: r.neighborhood || 'Centro',
+            position: r.position || 'atacante',
+            dominantFoot: r.dominantFoot || 'direito',
+            profileVisibility: 'publico',
+            teamName: userTeamName,
+            teamCrestUrl: userTeamCrest,
+            teamInviteCode: teamInviteCode,
+            currentRating: r.currentRating || 1000,
+            ratingUncertainty: 100,
+            isProvisional: true,
+            currentDivisionId: 'div-geral',
+            totalValidatedMatches: 0,
+            experimentalPositionScore: null,
+            badges: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as PlayerProfile);
+          existingIds.add(r.id);
+        }
+      });
+    }
+
     if (matches.length === 0 && currentPlayerProfile) {
       return [currentPlayerProfile];
     }
     return matches.sort((a, b) => a.displayName.localeCompare(b.displayName, 'pt-BR'));
-  }, [profiles, userTeamName, teamInviteCode, currentPlayerProfile]);
+  }, [profiles, userTeamName, teamInviteCode, currentPlayerProfile, registeredTeamForUser, userTeamCrest]);
 
   const counts = useMemo(() => {
     return {

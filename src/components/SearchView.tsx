@@ -39,14 +39,18 @@ export const SearchView: React.FC<SearchViewProps> = ({
       if (rawCrests) {
         const parsed = JSON.parse(rawCrests);
         if (parsed[clean]) return parsed[clean];
+        const foundKey = Object.keys(parsed).find((k) => k.trim().toLowerCase() === clean);
+        if (foundKey && parsed[foundKey]) return parsed[foundKey];
       }
       const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
       if (rawTeams) {
         const teamsList = JSON.parse(rawTeams);
-        const tMatch = teamsList.find(
-          (t: any) => (t.name || '').trim().toLowerCase() === clean && t.crestUrl
-        );
-        if (tMatch?.crestUrl) return tMatch.crestUrl;
+        if (Array.isArray(teamsList)) {
+          const tMatch = teamsList.find(
+            (t: any) => (t.name || '').trim().toLowerCase() === clean && t.crestUrl
+          );
+          if (tMatch?.crestUrl) return tMatch.crestUrl;
+        }
       }
     } catch {}
 

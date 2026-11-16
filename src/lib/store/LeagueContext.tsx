@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AuditLog,
   City,
@@ -461,8 +461,78 @@ function getInitialState(): LeagueState {
         const rawC = localStorage.getItem('futplay_team_crests_v1');
         if (rawC) cachedCrests = JSON.parse(rawC);
       } catch {}
+      try {
+        const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+        if (rawTeams) {
+          const parsedTeams = JSON.parse(rawTeams);
+          if (Array.isArray(parsedTeams)) {
+            parsedTeams.forEach((t: any) => {
+              if (t.name && t.crestUrl) {
+                const k = t.name.trim().toLowerCase();
+                if (!cachedCrests[k]) cachedCrests[k] = t.crestUrl;
+              }
+            });
+          }
+        }
+      } catch {}
 
-      let cleanProfiles: PlayerProfile[] = rawProfiles
+      // Mescla com atletas base (INITIAL_PROFILES) caso algum tenha sido omitido no salvamento
+      const existingProfileIds = new Set(rawProfiles.map((p) => p.id));
+      const existingProfileNames = new Set(
+        rawProfiles.map((p) => (p.displayName || '').trim().toUpperCase())
+      );
+      const missingInitialProfiles = INITIAL_PROFILES.filter(
+        (ip) =>
+          !existingProfileIds.has(ip.id) &&
+          !existingProfileNames.has((ip.displayName || '').trim().toUpperCase())
+      );
+
+      const allProfilesSource = [...rawProfiles, ...missingInitialProfiles];
+
+      // Mescla atletas de elenco dos times registrados em localStorage
+      try {
+        const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+        if (rawTeams) {
+          const parsedTeams = JSON.parse(rawTeams);
+          if (Array.isArray(parsedTeams)) {
+            parsedTeams.forEach((t: any) => {
+              if (t.roster && Array.isArray(t.roster)) {
+                t.roster.forEach((rm: any) => {
+                  if (rm && rm.id && !existingProfileIds.has(rm.id)) {
+                    allProfilesSource.push({
+                      id: rm.id,
+                      userId: rm.userId || rm.id,
+                      displayName: rm.displayName || rm.name || 'Atleta',
+                      avatarUrl: rm.avatarUrl,
+                      avatarColor: '#126B46',
+                      cityId: '11111111-1111-4111-8111-111111111101',
+                      neighborhood: rm.neighborhood || 'Centro',
+                      position: rm.position || 'atacante',
+                      dominantFoot: rm.dominantFoot || 'direito',
+                      profileVisibility: 'publico',
+                      teamName: t.name,
+                      teamCrestUrl: t.crestUrl,
+                      teamInviteCode: t.inviteCode,
+                      currentRating: rm.currentRating || 1000,
+                      ratingUncertainty: 100,
+                      isProvisional: true,
+                      currentDivisionId: 'div-geral',
+                      totalValidatedMatches: 0,
+                      experimentalPositionScore: null,
+                      badges: [],
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    } as PlayerProfile);
+                    existingProfileIds.add(rm.id);
+                  }
+                });
+              }
+            });
+          }
+        }
+      } catch {}
+
+      let cleanProfiles: PlayerProfile[] = allProfilesSource
         .filter(
           (p) =>
             p.displayName.trim().toUpperCase() !== 'ADMIN' &&
@@ -664,9 +734,15 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [currentUserId]);
 
+  // Trava para evitar execuções concorrentes simultâneas de refreshLeagueData
+  const isRefreshingRef = useRef<boolean>(false);
+
   // Sincronização centralizada e segura de dados com o Supabase (garante que atletas e escudos nunca sumam)
   const refreshLeagueData: LeagueContextValue['refreshLeagueData'] = async () => {
     if (!isSupabaseConfigured()) return;
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
+
     try {
       const [remoteUsers, remoteProfiles] = await Promise.all([
         supabaseService.getUsers(),
@@ -681,7 +757,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           if (cachedCrests) {
             const parsed = JSON.parse(cachedCrests);
             Object.entries(parsed).forEach(([tName, cUrl]) => {
-              if (typeof cUrl === 'string' && cUrl) crestCatalog.set(tName.toLowerCase(), cUrl);
+              if (typeof cUrl === 'string' && cUrl) crestCatalog.set(tName.trim().toLowerCase(), cUrl);
             });
           }
           const regTeams = localStorage.getItem('futplay_registered_teams_v1');
@@ -695,6 +771,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           }
         } catch {}
 
+        INITIAL_PROFILES.forEach((p) => {
+          if (p.teamName && p.teamCrestUrl) crestCatalog.set(p.teamName.trim().toLowerCase(), p.teamCrestUrl);
+        });
         prev.users.forEach((u) => {
           if (u.teamName && u.teamCrestUrl) crestCatalog.set(u.teamName.trim().toLowerCase(), u.teamCrestUrl);
         });
@@ -723,13 +802,27 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
             if (loc) matchedUserIds.add(loc.id);
 
-            const team = (ru.teamName || loc?.teamName || '').trim();
+            const team =
+              (loc?.teamName && loc.teamName !== 'Meu Time' && loc.teamName !== 'Sem Time' ? loc.teamName : undefined) ||
+              (ru.teamName && ru.teamName !== 'Meu Time' && ru.teamName !== 'Sem Time' ? ru.teamName : undefined) ||
+              loc?.teamName ||
+              ru.teamName ||
+              '';
+
             const crest =
-              ru.teamCrestUrl ||
               loc?.teamCrestUrl ||
+              ru.teamCrestUrl ||
               (team ? crestCatalog.get(team.toLowerCase()) : undefined);
 
             if (team && crest) crestCatalog.set(team.toLowerCase(), crest);
+
+            const isOwner = loc?.isTeamOwner === true || ru.isTeamOwner === true;
+            const role =
+              loc?.role === 'admin' || ru.role === 'admin'
+                ? 'admin'
+                : loc?.role === 'coach' || ru.role === 'coach' || isOwner
+                ? 'coach'
+                : loc?.role || ru.role || 'player';
 
             return {
               ...loc,
@@ -737,10 +830,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               id: loc?.id || ru.id,
               teamName: team || loc?.teamName || ru.teamName,
               teamCrestUrl: crest || loc?.teamCrestUrl || ru.teamCrestUrl,
-              teamCity: ru.teamCity || loc?.teamCity,
-              teamModality: ru.teamModality || loc?.teamModality,
-              teamInviteCode: ru.teamInviteCode || loc?.teamInviteCode,
-              isTeamOwner: ru.isTeamOwner !== undefined ? ru.isTeamOwner : loc?.isTeamOwner,
+              teamCity: loc?.teamCity || ru.teamCity,
+              teamModality: loc?.teamModality || ru.teamModality,
+              teamInviteCode: loc?.teamInviteCode || ru.teamInviteCode,
+              isTeamOwner: isOwner,
+              role: role as UserRole,
             };
           });
 
@@ -791,7 +885,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
           const matchedLocalIds = new Set<string>();
 
-          const remoteMerged = filteredRemote.map((rp) => {
+          const remoteMerged: PlayerProfile[] = filteredRemote.map((rp) => {
             const loc =
               localById.get(rp.id) ||
               (rp.userId ? localByUserId.get(rp.userId) : undefined) ||
@@ -799,32 +893,43 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
             if (loc) matchedLocalIds.add(loc.id);
 
-            const team = (rp.teamName || loc?.teamName || '').trim();
+            const team =
+              (loc?.teamName && loc.teamName !== 'Meu Time' && loc.teamName !== 'Sem Time' ? loc.teamName : undefined) ||
+              (rp.teamName && rp.teamName !== 'Meu Time' && rp.teamName !== 'Sem Time' ? rp.teamName : undefined) ||
+              loc?.teamName ||
+              rp.teamName ||
+              '';
+
             const crest =
-              rp.teamCrestUrl ||
               loc?.teamCrestUrl ||
+              rp.teamCrestUrl ||
               (team ? crestCatalog.get(team.toLowerCase()) : undefined);
 
             if (team && crest) crestCatalog.set(team.toLowerCase(), crest);
+
+            const isOwner = loc?.isTeamOwner === true || rp.isTeamOwner === true;
 
             return {
               ...loc,
               ...rp,
               id: loc?.id || rp.id,
               userId: loc?.userId || rp.userId,
+              displayName: loc?.displayName || rp.displayName,
               teamName: team || loc?.teamName || rp.teamName,
               teamCrestUrl: crest || loc?.teamCrestUrl || rp.teamCrestUrl,
-              teamCity: rp.teamCity || loc?.teamCity,
-              teamModality: rp.teamModality || loc?.teamModality,
-              teamInviteCode: rp.teamInviteCode || loc?.teamInviteCode,
-              isTeamOwner: rp.isTeamOwner !== undefined ? rp.isTeamOwner : loc?.isTeamOwner,
-              skills: loc?.skills,
-              overallStars: loc?.overallStars,
-            };
+              teamCity: loc?.teamCity || rp.teamCity,
+              teamModality: loc?.teamModality || rp.teamModality,
+              teamInviteCode: loc?.teamInviteCode || rp.teamInviteCode,
+              isTeamOwner: isOwner,
+              skills: loc?.skills || rp.skills,
+              overallStars: loc?.overallStars || rp.overallStars,
+              createdAt: loc?.createdAt || rp.createdAt || new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            } as PlayerProfile;
           });
 
           // PRESERVA TODOS OS ATLETAS LOCAIS QUE NÃO VIERAM DO SUPABASE!
-          const unmatchedLocal = prev.profiles
+          const unmatchedLocal: PlayerProfile[] = prev.profiles
             .filter((lp) => !matchedLocalIds.has(lp.id) && !adminIds.has(lp.userId))
             .map((lp) => {
               const team = (lp.teamName || '').trim();
@@ -835,19 +940,76 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               };
             });
 
+          const mergedPool: PlayerProfile[] = [...remoteMerged, ...unmatchedLocal];
+          const poolIds = new Set(mergedPool.map((p) => p.id));
+          const poolNames = new Set(mergedPool.map((p) => (p.displayName || '').trim().toUpperCase()));
+
+          // Garante atletas base de INITIAL_PROFILES caso não estejam no pool
+          INITIAL_PROFILES.forEach((ip) => {
+            if (!poolIds.has(ip.id) && !poolNames.has((ip.displayName || '').trim().toUpperCase())) {
+              mergedPool.push(ip);
+              poolIds.add(ip.id);
+            }
+          });
+
+          // Garante atletas do elenco de times registrados (futplay_registered_teams_v1)
+          try {
+            const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+            if (rawTeams) {
+              const parsedTeams = JSON.parse(rawTeams);
+              if (Array.isArray(parsedTeams)) {
+                parsedTeams.forEach((t: any) => {
+                  if (t.roster && Array.isArray(t.roster)) {
+                    t.roster.forEach((rm: any) => {
+                      if (rm && rm.id && !poolIds.has(rm.id)) {
+                        mergedPool.push({
+                          id: rm.id,
+                          userId: rm.userId || rm.id,
+                          displayName: rm.displayName || rm.name || 'Atleta',
+                          avatarUrl: rm.avatarUrl,
+                          avatarColor: '#126B46',
+                          cityId: '11111111-1111-4111-8111-111111111101',
+                          neighborhood: rm.neighborhood || 'Centro',
+                          position: rm.position || 'atacante',
+                          dominantFoot: rm.dominantFoot || 'direito',
+                          profileVisibility: 'publico',
+                          teamName: t.name,
+                          teamCrestUrl: t.crestUrl,
+                          teamInviteCode: t.inviteCode,
+                          currentRating: rm.currentRating || 1000,
+                          ratingUncertainty: 100,
+                          isProvisional: true,
+                          currentDivisionId: 'div-geral',
+                          totalValidatedMatches: 0,
+                          experimentalPositionScore: null,
+                          badges: [],
+                          createdAt: new Date().toISOString(),
+                          updatedAt: new Date().toISOString(),
+                        } as PlayerProfile);
+                        poolIds.add(rm.id);
+                      }
+                    });
+                  }
+                });
+              }
+            }
+          } catch {}
+
           mergedProfiles = computeProfilesWithPeerEvaluations(
-            [...remoteMerged, ...unmatchedLocal],
+            mergedPool,
             prev.peerEvaluations || []
           );
         }
 
-        // Salva catálogo de escudos atualizado
+        // Salva catálogo de escudos atualizado sem sobrescrever o existente
         try {
-          const crestObj: Record<string, string> = {};
+          const rawExisting = localStorage.getItem('futplay_team_crests_v1');
+          const existingObj: Record<string, string> = rawExisting ? JSON.parse(rawExisting) : {};
+          const mergedCrests: Record<string, string> = { ...existingObj };
           crestCatalog.forEach((url, name) => {
-            crestObj[name] = url;
+            if (url && name) mergedCrests[name] = url;
           });
-          localStorage.setItem('futplay_team_crests_v1', JSON.stringify(crestObj));
+          localStorage.setItem('futplay_team_crests_v1', JSON.stringify(mergedCrests));
         } catch {}
 
         const enrichedAuditLogs = ensureAthleteAuditLogs(mergedProfiles, prev.auditLogs || []);
@@ -866,6 +1028,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       });
     } catch (err) {
       console.warn('Erro ao atualizar dados da liga com o Supabase:', err);
+    } finally {
+      isRefreshingRef.current = false;
     }
   };
 
@@ -4051,6 +4215,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           currentPlayerProfile?.displayName ||
           currentUser.email?.split('@')[0] ||
           'Dono do Time',
+        ownerUserId: currentUser.id,
         roster: [],
       };
       const filtered = (storedList || []).filter(
@@ -4059,6 +4224,15 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           generatedCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
       );
       localStorage.setItem(TEAMS_KEY, JSON.stringify([newEntry, ...filtered]));
+
+      if (teamCrestUrl) {
+        try {
+          const rawC = localStorage.getItem('futplay_team_crests_v1');
+          const parsedC = rawC ? JSON.parse(rawC) : {};
+          parsedC[trimmedTeam.toLowerCase()] = teamCrestUrl;
+          localStorage.setItem('futplay_team_crests_v1', JSON.stringify(parsedC));
+        } catch {}
+      }
     } catch (e) {
       console.warn('Erro ao salvar time na chave dedicada:', e);
     }
