@@ -80,21 +80,21 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     cities?.find((c) => c.id === selectedCityId) ||
     cities?.[0] || { name: 'Planalto', stateCode: 'BA' };
 
-  // Perfil do técnico da equipe
-  const coachProfile = profiles.find(
+  // Perfil dos técnicos da equipe (cada time pode ter mais de um treinador)
+  const teamCoaches = profiles.filter(
     (p) =>
-      (p.teamName &&
-        userTeamName !== 'Meu Time' &&
-        p.teamName.toLowerCase() === userTeamName.toLowerCase() &&
-        p.isTeamOwner) ||
-      (p.userId === currentUser.id && isCoach)
+      p.teamName &&
+      userTeamName !== 'Meu Time' &&
+      p.teamName.toLowerCase() === userTeamName.toLowerCase() &&
+      (p.role === 'coach' || p.isTeamOwner)
   );
 
   const coachName =
-    coachProfile?.displayName ||
-    (isCoach
+    teamCoaches.length > 0
+      ? teamCoaches.map((c) => c.displayName).join(', ')
+      : isCoach
       ? currentPlayerProfile?.displayName || currentUser?.email.split('@')[0]
-      : 'Comissão Técnica');
+      : 'Comissão Técnica';
 
   const teamModality: TeamModality =
     currentUser?.teamModality ||
@@ -355,7 +355,7 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                   </span>
                   <span>·</span>
                   <span className="text-white font-semibold">
-                    Técnico: {coachName}
+                    {teamCoaches.length > 1 ? 'Técnicos' : 'Técnico'}: {coachName}
                   </span>
                 </div>
               </div>
@@ -517,7 +517,7 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                         <span className="text-xs font-bold text-slate-900 truncate uppercase">
                           {player.displayName}
                         </span>
-                        {player.isTeamOwner && (
+                        {(player.isTeamOwner || player.role === 'coach') && (
                           <span className="rounded bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0.2 uppercase">
                             Técnico
                           </span>

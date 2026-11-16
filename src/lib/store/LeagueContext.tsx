@@ -3818,7 +3818,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     });
 
-    // Avalia campos de PlayerProfile (ex: position)
+    // Avalia campos de PlayerProfile (ex: position, role)
     if (profileUpdates) {
       if (profileUpdates.position !== undefined && profileUpdates.position !== targetProfile.position) {
         beforeData['position'] = targetProfile.position;
@@ -3828,6 +3828,18 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           label: 'Posição no Elenco',
           before: targetProfile.position,
           after: profileUpdates.position,
+        });
+      }
+
+      if (profileUpdates.role !== undefined && profileUpdates.role !== (targetProfile.role || (targetProfile.isTeamOwner ? 'coach' : 'player'))) {
+        const oldRole = targetProfile.role || (targetProfile.isTeamOwner ? 'coach' : 'player');
+        beforeData['role'] = oldRole;
+        afterData['role'] = profileUpdates.role;
+        diffs.push({
+          field: 'role',
+          label: 'Função no Time',
+          before: oldRole === 'coach' ? 'Treinador' : 'Atleta',
+          after: profileUpdates.role === 'coach' ? 'Treinador' : 'Atleta',
         });
       }
     }
@@ -3885,27 +3897,46 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       // 2. Atualiza Profile
       const updatedProfiles = prev.profiles.map((p) => {
         if (p.id !== targetProfile.id) return p;
-        const newPos = profileUpdates?.position ?? p.position;
+        const nextRole = profileUpdates?.role ?? p.role ?? (p.isTeamOwner ? 'coach' : 'player');
+        const isCoachNow = nextRole === 'coach';
         return {
           ...p,
-          position: newPos,
+          ...profileUpdates,
+          role: nextRole,
+          isCoach: isCoachNow,
+          isTeamOwner: isCoachNow ? true : (p.isTeamOwner && nextRole !== 'player' ? true : false),
           updatedAt: now,
         };
       });
 
-      // 3. Atualiza Ajustes
+      // 3. Atualiza Usuário correspondente
+      const updatedUsers = prev.users.map((u) => {
+        if (u.id === targetProfile.userId || u.id === targetProfile.id) {
+          const nextRole = profileUpdates?.role ?? u.role ?? (u.isTeamOwner ? 'coach' : 'player');
+          const isCoachNow = nextRole === 'coach';
+          return {
+            ...u,
+            role: nextRole,
+            isTeamOwner: isCoachNow ? true : (u.isTeamOwner && nextRole !== 'player' ? true : false),
+          };
+        }
+        return u;
+      });
+
+      // 4. Atualiza Ajustes
       const updatedAdjustments = [newAdjustment, ...(prev.playerAdjustments || [])];
       try {
         localStorage.setItem('futplay_player_adjustments_v1', JSON.stringify(updatedAdjustments));
       } catch {}
 
-      // 4. Atualiza AuditLogs
+      // 5. Atualiza AuditLogs
       const updatedLogs = [newAuditLog, ...(prev.auditLogs || [])];
 
-      const next = {
+      const next: LeagueState = {
         ...prev,
         seasonEntries: updatedSeasonEntries,
         profiles: updatedProfiles,
+        users: updatedUsers,
         playerAdjustments: updatedAdjustments,
         auditLogs: updatedLogs,
       };

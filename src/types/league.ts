@@ -105,6 +105,8 @@ export interface PlayerProfile {
   teamModality?: TeamModality;
   teamInviteCode?: string;
   isTeamOwner?: boolean;
+  role?: UserRole;
+  isCoach?: boolean;
   avatarColor: string;
   cityId: string;
   neighborhood: string;

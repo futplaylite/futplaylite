@@ -80,6 +80,7 @@ export const AdminAndHomologationView: React.FC<
     redCards: number;
     seasonPoints: number;
     position: PlayerPosition;
+    memberRole: 'player' | 'coach';
     reason: string;
   }>({
     matchesPlayed: 0,
@@ -95,6 +96,7 @@ export const AdminAndHomologationView: React.FC<
     redCards: 0,
     seasonPoints: 0,
     position: 'atacante',
+    memberRole: 'player',
     reason: 'Ajuste manual de dados da súmula pelo Administrador',
   });
 
@@ -199,6 +201,8 @@ export const AdminAndHomologationView: React.FC<
       seasonEntries.find((se) => se.playerId === player.id) ||
       ({} as Partial<SeasonEntry>);
 
+    const isPlayerCoach = player.role === 'coach' || player.isTeamOwner === true;
+
     setEditForm({
       matchesPlayed: Number(entry.matchesPlayed ?? 0),
       wins: Number(entry.wins ?? 0),
@@ -213,6 +217,7 @@ export const AdminAndHomologationView: React.FC<
       redCards: Number(entry.redCards ?? 0),
       seasonPoints: Number(entry.seasonPoints ?? 0),
       position: player.position || 'atacante',
+      memberRole: isPlayerCoach ? 'coach' : 'player',
       reason: 'Ajuste manual de dados pelo Administrador',
     });
     setEditingPlayer(player);
@@ -242,6 +247,9 @@ export const AdminAndHomologationView: React.FC<
       return;
     }
 
+    const roleName = editForm.memberRole === 'coach' ? 'Treinador' : 'Atleta';
+    const defaultReason = `Ajuste manual e promoção/definição de função (${roleName}) realizado pelo Administrador`;
+
     const ok = updatePlayerStatsManually({
       playerId: editingPlayer.id,
       statsUpdates: {
@@ -260,8 +268,9 @@ export const AdminAndHomologationView: React.FC<
       },
       profileUpdates: {
         position: editForm.position,
+        role: editForm.memberRole,
       },
-      reason: editForm.reason.trim() || 'Ajuste manual realizado pelo Administrador',
+      reason: editForm.reason.trim() || defaultReason,
       actorUserId: currentUser?.id || 'admin',
       actorName: currentPlayerProfile?.displayName || currentUser?.email || 'Administrador',
     });
@@ -269,7 +278,7 @@ export const AdminAndHomologationView: React.FC<
     if (ok) {
       setIsEditPasswordModalOpen(false);
       setEditSuccessAlert(
-        `Dados de ${editingPlayer.displayName} atualizados com sucesso e registrados no histórico privado do perfil!`
+        `Dados e função de ${editingPlayer.displayName} atualizados com sucesso (${roleName}) e registrados no histórico privado do perfil!`
       );
       setTimeout(() => setEditSuccessAlert(null), 6000);
       setEditingPlayer(null);
@@ -758,9 +767,13 @@ export const AdminAndHomologationView: React.FC<
                                 <span className="inline-block rounded bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.2 capitalize">
                                   {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
                                 </span>
-                                {player.isTeamOwner && (
-                                  <span className="rounded bg-blue-50 text-blue-700 border border-blue-200 px-1 py-0.2 text-[9px] font-black uppercase">
-                                    Capitão
+                                {player.role === 'coach' || player.isTeamOwner ? (
+                                  <span className="rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 text-[9px] font-black uppercase flex items-center gap-0.5">
+                                    📋 Treinador
+                                  </span>
+                                ) : (
+                                  <span className="rounded bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.2 text-[9px] font-bold uppercase">
+                                    Atleta
                                   </span>
                                 )}
                               </div>
@@ -849,9 +862,13 @@ export const AdminAndHomologationView: React.FC<
                             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-700 capitalize">
                               {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
                             </span>
-                            {player.isTeamOwner && (
-                              <span className="rounded bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 text-[9px] font-black uppercase">
-                                Dono / Capitão
+                            {player.role === 'coach' || player.isTeamOwner ? (
+                              <span className="rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-[9px] font-black uppercase flex items-center gap-0.5">
+                                📋 Treinador
+                              </span>
+                            ) : (
+                              <span className="rounded bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 text-[9px] font-bold uppercase">
+                                Atleta
                               </span>
                             )}
                           </div>
@@ -1457,7 +1474,7 @@ export const AdminAndHomologationView: React.FC<
                     Editar Dados: {editingPlayer.displayName}
                   </h3>
                   <p className="text-[11px] text-blue-700 font-semibold mt-0.5">
-                    {editingPlayer.teamName || 'Sem time'} · {editingPlayer.position}
+                    {editingPlayer.teamName || 'Sem time'} · {editingPlayer.position} · {editForm.memberRole === 'coach' ? '📋 Treinador' : '🏃 Atleta'}
                   </p>
                 </div>
                 <button
@@ -1646,6 +1663,52 @@ export const AdminAndHomologationView: React.FC<
                   </div>
                 </div>
 
+                {/* Função no Time (Cargo): Promover Atleta ou Treinador */}
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-black text-slate-900">
+                      Função no Time (Cargo) *
+                    </label>
+                    <span className="text-[10px] text-blue-700 font-extrabold bg-blue-100/60 border border-blue-200 rounded-md px-1.5 py-0.5">
+                      Multi-Treinadores Permitidos
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, memberRole: 'player' })}
+                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-black transition cursor-pointer ${
+                        editForm.memberRole === 'player'
+                          ? 'border-blue-600 bg-white text-blue-800 shadow-xs ring-2 ring-blue-500/20'
+                          : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span className="text-base">🏃</span>
+                      <span>Atleta</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, memberRole: 'coach' })}
+                      className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-xs font-black transition cursor-pointer ${
+                        editForm.memberRole === 'coach'
+                          ? 'border-amber-500 bg-white text-amber-900 shadow-xs ring-2 ring-amber-500/20'
+                          : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span className="text-base">📋</span>
+                      <span>Treinador</span>
+                    </button>
+                  </div>
+
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    {editForm.memberRole === 'coach'
+                      ? '✅ Membro promovido a Treinador. Terá acesso à comissão técnica, gestão de súmulas e controle de mensalidades do time. Cada time pode ter mais de um treinador.'
+                      : 'Membro registrado como atleta regular do elenco.'}
+                  </p>
+                </div>
+
                 {/* Posição no Elenco */}
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">
@@ -1735,7 +1798,7 @@ export const AdminAndHomologationView: React.FC<
               </div>
 
               <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-[11px] text-blue-900 leading-relaxed">
-                Você está alterando os dados oficiais de <strong>{editingPlayer.displayName}</strong>. Para confirmar e registrar no histórico privado do atleta, digite sua <strong>senha de administrador</strong>.
+                Você está alterando os dados e função de <strong>{editingPlayer.displayName}</strong> ({editForm.memberRole === 'coach' ? '📋 Treinador' : '🏃 Atleta'}). Para confirmar e registrar no histórico privado do atleta, digite sua <strong>senha de administrador</strong>.
               </div>
 
               <form onSubmit={handleConfirmSavePlayerStatsWithPassword} className="space-y-3">
