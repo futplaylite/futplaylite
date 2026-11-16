@@ -165,9 +165,14 @@ const MainMobileShell: React.FC = () => {
   }, [playerIdToOpen]);
 
   // Se uma conta não-admin restaurar 'admin', retorna com segurança para 'dashboard'
+  // Da mesma forma, se o admin tentar acessar 'squad' ou 'ranking', redireciona para 'dashboard'
   useEffect(() => {
-    if (currentUser.id && activeTab === 'admin' && currentUser.role !== 'admin') {
-      setActiveTab('dashboard');
+    if (currentUser.id) {
+      if (currentUser.role !== 'admin' && activeTab === 'admin') {
+        setActiveTab('dashboard');
+      } else if (currentUser.role === 'admin' && (activeTab === 'squad' || activeTab === 'ranking')) {
+        setActiveTab('dashboard');
+      }
     }
   }, [currentUser.id, currentUser.role, activeTab]);
 
@@ -696,36 +701,38 @@ const MainMobileShell: React.FC = () => {
 
         {/* Menu Inferior Fixo e Padrão (Sem transparência, sem mexer, sem contador) */}
         <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 z-50 w-full max-w-[430px] bg-white border-t border-slate-200 px-2 py-1.5 shadow-lg">
-          <div className="grid grid-cols-5 gap-1">
-            {(
-              [
-                {
-                  id: 'dashboard',
-                  label: 'Início',
-                  icon: LayoutDashboard,
-                },
-                {
-                  id: 'matches',
-                  label: 'Partidas',
-                  icon: Swords,
-                },
-                {
-                  id: 'search',
-                  label: 'Buscar',
-                  icon: Search,
-                },
-                {
-                  id: 'squad',
-                  label: 'Elenco',
-                  icon: Users,
-                },
-                {
-                  id: 'ranking',
-                  label: 'Ranking',
-                  icon: Trophy,
-                },
-              ] as const
-            ).map((item) => {
+          <div className={`grid ${isAdmin ? 'grid-cols-3' : 'grid-cols-5'} gap-1`}>
+            {[
+              {
+                id: 'dashboard' as const,
+                label: 'Início',
+                icon: LayoutDashboard,
+              },
+              {
+                id: 'matches' as const,
+                label: 'Partidas',
+                icon: Swords,
+              },
+              {
+                id: 'search' as const,
+                label: 'Buscar',
+                icon: Search,
+              },
+              ...(!isAdmin
+                ? [
+                    {
+                      id: 'squad' as const,
+                      label: 'Elenco',
+                      icon: Users,
+                    },
+                    {
+                      id: 'ranking' as const,
+                      label: 'Ranking',
+                      icon: Trophy,
+                    },
+                  ]
+                : []),
+            ].map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
