@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronRight, Search, Star, X } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { TeamCrestBadge } from './TeamCrestBadge';
@@ -12,14 +12,45 @@ interface SearchViewProps {
 export const SearchView: React.FC<SearchViewProps> = ({
   onSelectPlayer,
 }) => {
-  const { profiles, seasonEntries, selectedSeasonId } = useLeague();
+  const { profiles, seasonEntries, selectedSeasonId, refreshLeagueData } = useLeague();
   const [query, setQuery] = useState<string>('');
+
+  // Busca imediatamente a lista atualizada com a nuvem ao abrir a busca
+  useEffect(() => {
+    if (refreshLeagueData) {
+      refreshLeagueData();
+    }
+  }, []);
 
   const getTeamCrest = (teamName?: string, directCrest?: string) => {
     if (directCrest) return directCrest;
     if (!teamName) return undefined;
-    const match = profiles.find((prof) => prof.teamName === teamName && prof.teamCrestUrl);
-    return match?.teamCrestUrl;
+    const clean = teamName.trim().toLowerCase();
+
+    // 1. Procura em profiles
+    const match = profiles.find(
+      (prof) => (prof.teamName || '').trim().toLowerCase() === clean && prof.teamCrestUrl
+    );
+    if (match?.teamCrestUrl) return match.teamCrestUrl;
+
+    // 2. Procura no catálogo dedicado de escudos e times registrados
+    try {
+      const rawCrests = localStorage.getItem('futplay_team_crests_v1');
+      if (rawCrests) {
+        const parsed = JSON.parse(rawCrests);
+        if (parsed[clean]) return parsed[clean];
+      }
+      const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+      if (rawTeams) {
+        const teamsList = JSON.parse(rawTeams);
+        const tMatch = teamsList.find(
+          (t: any) => (t.name || '').trim().toLowerCase() === clean && t.crestUrl
+        );
+        if (tMatch?.crestUrl) return tMatch.crestUrl;
+      }
+    } catch {}
+
+    return undefined;
   };
 
   const getPlayerDisplayStars = (player: PlayerProfile): number => {

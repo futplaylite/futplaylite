@@ -47,6 +47,7 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     updateTeamInfo,
     peerEvaluations,
     monthlyPayments,
+    refreshLeagueData,
     notify,
   } = useLeague();
 
@@ -55,6 +56,34 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     currentUser?.isTeamOwner === true ||
     currentPlayerProfile?.isTeamOwner === true ||
     currentUser?.role === 'admin';
+
+  // Atualiza imediatamente os dados com a nuvem na montagem do elenco
+  useEffect(() => {
+    if (refreshLeagueData) {
+      refreshLeagueData();
+    }
+  }, []);
+
+  const getCachedTeamCrest = (teamName?: string): string | undefined => {
+    if (!teamName) return undefined;
+    const clean = teamName.trim().toLowerCase();
+    try {
+      const rawCrests = localStorage.getItem('futplay_team_crests_v1');
+      if (rawCrests) {
+        const parsed = JSON.parse(rawCrests);
+        if (parsed[clean]) return parsed[clean];
+      }
+      const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+      if (rawTeams) {
+        const teamsList = JSON.parse(rawTeams);
+        const match = teamsList.find(
+          (t: any) => (t.name || '').trim().toLowerCase() === clean && t.crestUrl
+        );
+        if (match?.crestUrl) return match.crestUrl;
+      }
+    } catch {}
+    return undefined;
+  };
 
   // Nome do time ativo
   const userTeamName =
@@ -65,7 +94,7 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
   const isDemoTeamName =
     userTeamName.trim().toLowerCase() === 'real planalto fc';
 
-  // Brasão do time
+  // Brasão do time (garante que nunca some ao atualizar)
   const userTeamCrest =
     currentUser?.teamCrestUrl ||
     currentPlayerProfile?.teamCrestUrl ||
@@ -74,7 +103,8 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
         p.teamName &&
         p.teamName.toLowerCase() === userTeamName.toLowerCase() &&
         p.teamCrestUrl
-    )?.teamCrestUrl;
+    )?.teamCrestUrl ||
+    getCachedTeamCrest(userTeamName);
 
   const activeCity =
     cities?.find((c) => c.id === selectedCityId) ||
@@ -162,14 +192,19 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
       return currentPlayerProfile ? [currentPlayerProfile] : [];
     }
     const target = userTeamName.trim().toLowerCase();
-    const matches = profiles.filter(
-      (p) => (p.teamName || '').trim().toLowerCase() === target
-    );
+    const targetCode = (teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+    const matches = profiles.filter((p) => {
+      const pTeam = (p.teamName || '').trim().toLowerCase();
+      const pCode = (p.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      return (pTeam && pTeam === target) || (targetCode && pCode && pCode === targetCode);
+    });
+
     if (matches.length === 0 && currentPlayerProfile) {
       return [currentPlayerProfile];
     }
     return matches.sort((a, b) => a.displayName.localeCompare(b.displayName, 'pt-BR'));
-  }, [profiles, userTeamName, currentPlayerProfile]);
+  }, [profiles, userTeamName, teamInviteCode, currentPlayerProfile]);
 
   const counts = useMemo(() => {
     return {

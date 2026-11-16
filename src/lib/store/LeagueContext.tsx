@@ -284,6 +284,7 @@ interface LeagueContextValue extends LeagueState {
   deleteTeamTransaction: (id: string) => boolean;
   refreshTeamTransactions: () => Promise<void>;
   refreshMonthlyData: () => Promise<void>;
+  refreshLeagueData: () => Promise<void>;
   recordAuditLog: (params: {
     actionType: string;
     entityType: string;
@@ -399,12 +400,37 @@ function getInitialState(): LeagueState {
     if (saved) {
       const parsed: LeagueState = JSON.parse(saved);
       const rawProfiles: PlayerProfile[] = parsed.profiles || [];
-      const cleanProfiles = rawProfiles.filter(
-        (p) =>
-          p.displayName.trim().toUpperCase() !== 'ADMIN' &&
-          p.id !== 'a0000000-0000-4000-8000-000000000002' &&
-          p.userId !== 'a0000000-0000-4000-8000-000000000001'
-      );
+
+      // Catálogo rápido de escudos salvos localmente
+      let cachedCrests: Record<string, string> = {};
+      try {
+        const rawC = localStorage.getItem('futplay_team_crests_v1');
+        if (rawC) cachedCrests = JSON.parse(rawC);
+      } catch {}
+
+      const cleanProfiles = rawProfiles
+        .filter(
+          (p) =>
+            p.displayName.trim().toUpperCase() !== 'ADMIN' &&
+            p.id !== 'a0000000-0000-4000-8000-000000000002' &&
+            p.userId !== 'a0000000-0000-4000-8000-000000000001'
+        )
+        .map((p) => {
+          const tKey = (p.teamName || '').trim().toLowerCase();
+          return {
+            ...p,
+            teamCrestUrl: p.teamCrestUrl || (tKey ? cachedCrests[tKey] : undefined),
+          };
+        });
+
+      const cleanUsers = (parsed.users || []).map((u) => {
+        const tKey = (u.teamName || '').trim().toLowerCase();
+        return {
+          ...u,
+          teamCrestUrl: u.teamCrestUrl || (tKey ? cachedCrests[tKey] : undefined),
+        };
+      });
+
       let transactions = parsed.teamTransactions || [];
       if (!transactions || transactions.length === 0) {
         try {
@@ -422,7 +448,7 @@ function getInitialState(): LeagueState {
       const initialLogs = ensureAthleteAuditLogs(cleanProfiles, parsed.auditLogs || []);
       return {
         ...parsed,
-        users: parsed.users || [],
+        users: cleanUsers,
         profiles: cleanProfiles,
         matches: parsed.matches || [],
         peerEvaluations: parsed.peerEvaluations || [],
@@ -561,63 +587,116 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [currentUserId]);
 
-  // Sincronização inicial com o Supabase quando configurado
-  useEffect(() => {
+  // Sincronização centralizada e segura de dados com o Supabase (garante que atletas e escudos nunca sumam)
+  const refreshLeagueData: LeagueContextValue['refreshLeagueData'] = async () => {
     if (!isSupabaseConfigured()) return;
+    try {
+      const [remoteUsers, remoteProfiles] = await Promise.all([
+        supabaseService.getUsers(),
+        supabaseService.getProfiles(),
+      ]);
 
-    // 1. Sincroniza usuários a partir do Supabase (fonte oficial da verdade)
-    supabaseService.getUsers().then((remoteUsers) => {
-      if (!remoteUsers) return;
       setState((prev) => {
-        const localMap = new Map(prev.users.map((u) => [u.id, u]));
-        const merged = remoteUsers.map((ru) => {
-          const loc = localMap.get(ru.id);
-          if (!loc) return ru;
-          return {
-            ...loc,
-            ...ru,
-            teamName: ru.teamName || loc.teamName,
-            teamCrestUrl: ru.teamCrestUrl || loc.teamCrestUrl,
-            teamCity: ru.teamCity || loc.teamCity,
-            teamModality: ru.teamModality || loc.teamModality,
-            teamInviteCode: ru.teamInviteCode || loc.teamInviteCode,
-            isTeamOwner: ru.isTeamOwner !== undefined ? ru.isTeamOwner : loc.isTeamOwner,
-          };
-        });
-        const next = { ...prev, users: merged };
+        // 1. Catálogo unificado de escudos por nome de time (minúsculas)
+        const crestCatalog = new Map<string, string>();
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {
-          // Ignore
+          const cachedCrests = localStorage.getItem('futplay_team_crests_v1');
+          if (cachedCrests) {
+            const parsed = JSON.parse(cachedCrests);
+            Object.entries(parsed).forEach(([tName, cUrl]) => {
+              if (typeof cUrl === 'string' && cUrl) crestCatalog.set(tName.toLowerCase(), cUrl);
+            });
+          }
+          const regTeams = localStorage.getItem('futplay_registered_teams_v1');
+          if (regTeams) {
+            const parsedTeams = JSON.parse(regTeams);
+            if (Array.isArray(parsedTeams)) {
+              parsedTeams.forEach((t: any) => {
+                if (t.name && t.crestUrl) crestCatalog.set(t.name.trim().toLowerCase(), t.crestUrl);
+              });
+            }
+          }
+        } catch {}
+
+        prev.users.forEach((u) => {
+          if (u.teamName && u.teamCrestUrl) crestCatalog.set(u.teamName.trim().toLowerCase(), u.teamCrestUrl);
+        });
+        prev.profiles.forEach((p) => {
+          if (p.teamName && p.teamCrestUrl) crestCatalog.set(p.teamName.trim().toLowerCase(), p.teamCrestUrl);
+        });
+        if (remoteProfiles) {
+          remoteProfiles.forEach((rp) => {
+            if (rp.teamName && rp.teamCrestUrl) crestCatalog.set(rp.teamName.trim().toLowerCase(), rp.teamCrestUrl);
+          });
         }
-        return next;
-      });
-    });
 
-    // 2. Sincroniza perfis esportivos do Supabase (excluindo qualquer conta de administrador)
-    supabaseService.getProfiles().then((remoteProfiles) => {
-      if (!remoteProfiles) return;
-      setState((prev) => {
-        const adminIds = new Set(
-          prev.users
-            .filter(
-              (u) =>
-                u.role === 'admin' ||
-                (u.email && u.email.toLowerCase() === 'futplaylite@gmail.com') ||
-                u.id === 'a0000000-0000-4000-8000-000000000001'
-            )
-            .map((u) => u.id)
-        );
+        // 2. Mescla USERS com integridade (preserva contas locais se não vierem da nuvem)
+        let mergedUsers = prev.users;
+        if (remoteUsers) {
+          const localUserById = new Map(prev.users.map((u) => [u.id, u]));
+          const localUserByEmail = new Map(
+            prev.users.filter((u) => u.email).map((u) => [u.email.toLowerCase(), u])
+          );
+          const matchedUserIds = new Set<string>();
 
-        const filteredRemote = remoteProfiles.filter(
-          (rp) =>
-            !adminIds.has(rp.userId) &&
-            rp.displayName.trim().toUpperCase() !== 'ADMIN' &&
-            rp.id !== 'a0000000-0000-4000-8000-000000000002' &&
-            rp.userId !== 'a0000000-0000-4000-8000-000000000001'
-        );
+          const remoteMerged = remoteUsers.map((ru) => {
+            const loc =
+              localUserById.get(ru.id) ||
+              (ru.email ? localUserByEmail.get(ru.email.toLowerCase()) : undefined);
 
-        const localMap = new Map(
+            if (loc) matchedUserIds.add(loc.id);
+
+            const team = (ru.teamName || loc?.teamName || '').trim();
+            const crest =
+              ru.teamCrestUrl ||
+              loc?.teamCrestUrl ||
+              (team ? crestCatalog.get(team.toLowerCase()) : undefined);
+
+            if (team && crest) crestCatalog.set(team.toLowerCase(), crest);
+
+            return {
+              ...loc,
+              ...ru,
+              id: loc?.id || ru.id,
+              teamName: team || loc?.teamName || ru.teamName,
+              teamCrestUrl: crest || loc?.teamCrestUrl || ru.teamCrestUrl,
+              teamCity: ru.teamCity || loc?.teamCity,
+              teamModality: ru.teamModality || loc?.teamModality,
+              teamInviteCode: ru.teamInviteCode || loc?.teamInviteCode,
+              isTeamOwner: ru.isTeamOwner !== undefined ? ru.isTeamOwner : loc?.isTeamOwner,
+            };
+          });
+
+          const unmatchedUsers = prev.users.filter((u) => !matchedUserIds.has(u.id));
+          mergedUsers = [...remoteMerged, ...unmatchedUsers];
+        }
+
+        // 3. Mescla PROFILES com integridade (garante que atletas locais NUNCA sejam apagados)
+        let mergedProfiles = prev.profiles;
+        if (remoteProfiles) {
+          const adminIds = new Set(
+            mergedUsers
+              .filter(
+                (u) =>
+                  u.role === 'admin' ||
+                  (u.email && u.email.toLowerCase() === 'futplaylite@gmail.com') ||
+                  u.id === 'a0000000-0000-4000-8000-000000000001'
+              )
+              .map((u) => u.id)
+          );
+
+          const filteredRemote = remoteProfiles.filter(
+            (rp) =>
+              !adminIds.has(rp.userId) &&
+              rp.displayName.trim().toUpperCase() !== 'ADMIN' &&
+              rp.id !== 'a0000000-0000-4000-8000-000000000002' &&
+              rp.userId !== 'a0000000-0000-4000-8000-000000000001'
+          );
+
+          const localById = new Map<string, PlayerProfile>();
+          const localByUserId = new Map<string, PlayerProfile>();
+          const localByName = new Map<string, PlayerProfile>();
+
           prev.profiles
             .filter(
               (p) =>
@@ -626,34 +705,109 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
                 p.id !== 'a0000000-0000-4000-8000-000000000002' &&
                 p.userId !== 'a0000000-0000-4000-8000-000000000001'
             )
-            .map((p) => [p.id, p])
-        );
+            .forEach((p) => {
+              if (p.id) localById.set(p.id, p);
+              if (p.userId) localByUserId.set(p.userId, p);
+              const n = p.displayName.trim().toUpperCase();
+              if (n) localByName.set(n, p);
+            });
 
-        const merged = filteredRemote.map((rp) => {
-          const loc = localMap.get(rp.id);
-          if (!loc) return rp;
-          return {
-            ...loc,
-            ...rp,
-            teamName: rp.teamName || loc.teamName,
-            teamCrestUrl: rp.teamCrestUrl || loc.teamCrestUrl,
-            teamCity: rp.teamCity || loc.teamCity,
-            teamModality: rp.teamModality || loc.teamModality,
-            teamInviteCode: rp.teamInviteCode || loc.teamInviteCode,
-            isTeamOwner: rp.isTeamOwner !== undefined ? rp.isTeamOwner : loc.isTeamOwner,
-          };
-        });
+          const matchedLocalIds = new Set<string>();
 
-        const enrichedAuditLogs = ensureAthleteAuditLogs(merged, prev.auditLogs || []);
-        const next = { ...prev, profiles: merged, auditLogs: enrichedAuditLogs };
+          const remoteMerged = filteredRemote.map((rp) => {
+            const loc =
+              localById.get(rp.id) ||
+              (rp.userId ? localByUserId.get(rp.userId) : undefined) ||
+              localByName.get(rp.displayName.trim().toUpperCase());
+
+            if (loc) matchedLocalIds.add(loc.id);
+
+            const team = (rp.teamName || loc?.teamName || '').trim();
+            const crest =
+              rp.teamCrestUrl ||
+              loc?.teamCrestUrl ||
+              (team ? crestCatalog.get(team.toLowerCase()) : undefined);
+
+            if (team && crest) crestCatalog.set(team.toLowerCase(), crest);
+
+            return {
+              ...loc,
+              ...rp,
+              id: loc?.id || rp.id,
+              userId: loc?.userId || rp.userId,
+              teamName: team || loc?.teamName || rp.teamName,
+              teamCrestUrl: crest || loc?.teamCrestUrl || rp.teamCrestUrl,
+              teamCity: rp.teamCity || loc?.teamCity,
+              teamModality: rp.teamModality || loc?.teamModality,
+              teamInviteCode: rp.teamInviteCode || loc?.teamInviteCode,
+              isTeamOwner: rp.isTeamOwner !== undefined ? rp.isTeamOwner : loc?.isTeamOwner,
+            };
+          });
+
+          // PRESERVA TODOS OS ATLETAS LOCAIS QUE NÃO VIERAM DO SUPABASE!
+          const unmatchedLocal = prev.profiles
+            .filter((lp) => !matchedLocalIds.has(lp.id) && !adminIds.has(lp.userId))
+            .map((lp) => {
+              const team = (lp.teamName || '').trim();
+              const crest = lp.teamCrestUrl || (team ? crestCatalog.get(team.toLowerCase()) : undefined);
+              return {
+                ...lp,
+                teamCrestUrl: crest || lp.teamCrestUrl,
+              };
+            });
+
+          mergedProfiles = [...remoteMerged, ...unmatchedLocal];
+        }
+
+        // Salva catálogo de escudos atualizado
+        try {
+          const crestObj: Record<string, string> = {};
+          crestCatalog.forEach((url, name) => {
+            crestObj[name] = url;
+          });
+          localStorage.setItem('futplay_team_crests_v1', JSON.stringify(crestObj));
+        } catch {}
+
+        const enrichedAuditLogs = ensureAthleteAuditLogs(mergedProfiles, prev.auditLogs || []);
+        const next = {
+          ...prev,
+          users: mergedUsers,
+          profiles: mergedProfiles,
+          auditLogs: enrichedAuditLogs,
+        };
+
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {
-          // Ignore
-        }
+        } catch {}
+
         return next;
       });
-    });
+    } catch (err) {
+      console.warn('Erro ao atualizar dados da liga com o Supabase:', err);
+    }
+  };
+
+  // Dispara a sincronização imediatamente na montagem e ao voltar à aba
+  useEffect(() => {
+    refreshLeagueData();
+
+    const handleFocusOrVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshLeagueData();
+      }
+    };
+
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
+
+    return () => {
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
 
     // 2.5. Sincroniza logs de auditoria da nuvem (Supabase)
     supabaseService.getAuditLogs().then((remoteLogs) => {
@@ -1669,6 +1823,33 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         auditLogs: [teamLog, ...(prev.auditLogs || [])],
       };
     });
+
+    if (params.teamCrestUrl) {
+      try {
+        const rawCrests = localStorage.getItem('futplay_team_crests_v1');
+        const crestMap = rawCrests ? JSON.parse(rawCrests) : {};
+        crestMap[trimmedTeam.toLowerCase()] = params.teamCrestUrl;
+        if (oldTeamName) crestMap[oldTeamName.toLowerCase()] = params.teamCrestUrl;
+        localStorage.setItem('futplay_team_crests_v1', JSON.stringify(crestMap));
+
+        const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+        if (rawTeams) {
+          const teamsList = JSON.parse(rawTeams);
+          if (Array.isArray(teamsList)) {
+            const updated = teamsList.map((t: any) => {
+              if (
+                (t.name && t.name.toLowerCase() === trimmedTeam.toLowerCase()) ||
+                (oldTeamName && t.name && t.name.toLowerCase() === oldTeamName.toLowerCase())
+              ) {
+                return { ...t, name: trimmedTeam, crestUrl: params.teamCrestUrl };
+              }
+              return t;
+            });
+            localStorage.setItem('futplay_registered_teams_v1', JSON.stringify(updated));
+          }
+        }
+      } catch {}
+    }
 
     if (isSupabaseConfigured() && currentUser?.id) {
       supabaseService.updateProfile(currentUser.id, {
@@ -4115,6 +4296,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         deleteTeamTransaction,
         refreshTeamTransactions,
         refreshMonthlyData,
+        refreshLeagueData,
         recordAuditLog,
         updatePlayerStatsManually,
         playerAdjustments: state.playerAdjustments || [],
