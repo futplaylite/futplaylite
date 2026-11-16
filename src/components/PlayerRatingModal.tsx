@@ -47,6 +47,51 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
   // Garante que usamos a versão mais recente do perfil com as notas recalculadas
   const freshPlayer = profiles.find((p) => p.id === player.id) || player;
 
+  const isSelf =
+    freshPlayer.id === currentPlayerProfile?.id ||
+    freshPlayer.userId === currentUser?.id;
+
+  // Resolução do time do usuário logado
+  let myTeam = (currentUser?.teamName || currentPlayerProfile?.teamName || '').trim().toLowerCase();
+  let myCode = (currentUser?.teamInviteCode || currentPlayerProfile?.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+  try {
+    const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+    if (rawTeams) {
+      const list = JSON.parse(rawTeams);
+      if (Array.isArray(list)) {
+        const t = list.find((item: any) =>
+          item.ownerUserId === currentUser?.id ||
+          (item.ownerName && currentPlayerProfile?.displayName && item.ownerName.trim().toLowerCase() === currentPlayerProfile.displayName.trim().toLowerCase())
+        );
+        if (t) {
+          if (!myTeam || myTeam === 'meu time' || myTeam === 'sem time') myTeam = (t.name || '').trim().toLowerCase();
+          if (!myCode) myCode = (t.inviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        }
+      }
+    }
+  } catch {}
+
+  const playerTeam = (freshPlayer?.teamName || '').trim().toLowerCase();
+  const playerCode = (freshPlayer?.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+  const isSameTeam =
+    Boolean(playerTeam) &&
+    playerTeam !== 'sem time' &&
+    playerTeam !== 'meu time' &&
+    (playerTeam === myTeam || (Boolean(playerCode) && playerCode === myCode));
+
+  const isDifferentTeam = !isSelf && !isSameTeam && currentUser?.role !== 'admin';
+
+  const effectiveReadOnly = readOnly || isDifferentTeam || (isSelf && currentUser?.role === 'player');
+  const effectiveReadOnlyMessage =
+    readOnlyMessage ||
+    (isDifferentTeam
+      ? 'Jogadores de times diferentes não podem avaliar jogadores de outros times, apenas do seu mesmo time.'
+      : isSelf
+      ? 'Você não pode classificar a si mesmo. Suas estrelas são avaliadas pelos companheiros do seu time.'
+      : undefined);
+
   // Busca a classificação que o usuário atual já fez para este atleta (se existir)
   const myExistingEval = (peerEvaluations || []).find(
     (e) =>
@@ -56,8 +101,8 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
   );
 
   // Inicializa notas individuais do avaliador:
-  // Se readOnly (próprio jogador), reflete a média geral.
-  // Se for avaliador externo, parte do que ele mesmo já salvou (ou zero se primeira vez).
+  // Se readOnly (próprio jogador ou time diferente), reflete a média geral.
+  // Se for avaliador do mesmo time, parte do que ele mesmo já salvou (ou zero se primeira vez).
   const getStartingSkills = () => {
     if (initialSkills) return initialSkills;
     if (myExistingEval) {
@@ -69,7 +114,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
         drible: myExistingEval.drible ?? 0,
       };
     }
-    if (readOnly && freshPlayer.skills) {
+    if (effectiveReadOnly && freshPlayer.skills) {
       return freshPlayer.skills;
     }
     return {
@@ -91,7 +136,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
 
   useEffect(() => {
     setRatings(getStartingSkills());
-  }, [player.id, initialSkills, myExistingEval?.updatedAt, readOnly]);
+  }, [player.id, initialSkills, myExistingEval?.updatedAt, effectiveReadOnly]);
 
   const [savedFeedback, setSavedFeedback] = useState(false);
 
@@ -206,7 +251,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
     key: 'finalizacao' | 'marcacao' | 'passe' | 'raca' | 'drible',
     value: number
   ) => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
 
     // Se clicar na mesma estrela já marcada, desmarca para 0
     const newValue = ratings[key] === value ? 0 : value;
@@ -337,19 +382,19 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
           </div>
         </div>
 
-        {/* Alerta de Modo Somente Leitura (ex: jogador visualizando suas próprias estrelas) */}
-        {readOnly && (
-          <div className="bg-amber-50 text-amber-800 text-xs font-semibold px-4 py-2.5 flex items-center gap-2 border-b border-amber-200">
+        {/* Alerta de Modo Somente Leitura (ex: jogador visualizando suas próprias estrelas ou jogador de outro time) */}
+        {effectiveReadOnly && (
+          <div className="bg-amber-50 text-amber-900 text-xs font-semibold px-4 py-2.5 flex items-center gap-2 border-b border-amber-200">
             <span className="text-base">🔒</span>
             <span>
-              {readOnlyMessage ||
+              {effectiveReadOnlyMessage ||
                 'Você não pode classificar a si mesmo. Sua média geral é calculada a partir das avaliações que seus companheiros atribuem a você.'}
             </span>
           </div>
         )}
 
         {/* Feedback visual de auto-salvo */}
-        {!readOnly && savedFeedback && (
+        {!effectiveReadOnly && savedFeedback && (
           <div className="bg-emerald-50 text-emerald-700 text-[11px] font-bold px-4 py-1.5 flex items-center justify-center gap-1.5 border-b border-emerald-100 transition animate-in fade-in">
             <Check className="h-3.5 w-3.5 text-emerald-600" />
             Classificação gravada! Média geral recalculada.
@@ -357,7 +402,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
         )}
 
         {/* Cabeçalho da Seção de Avaliação do Usuário */}
-        {!readOnly && (
+        {!effectiveReadOnly && (
           <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex items-center justify-between text-xs font-bold">
             <div className="flex items-center gap-1 text-slate-700">
               <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
@@ -414,14 +459,14 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
                       <button
                         key={starNum}
                         type="button"
-                        disabled={readOnly}
+                        disabled={effectiveReadOnly}
                         onClick={() => handleSetRating(crit.key, starNum)}
                         className={`flex-1 py-1.5 flex items-center justify-center rounded-lg transition active:scale-95 ${
                           active
                             ? 'text-amber-500 hover:bg-amber-50/60'
                             : 'text-slate-300 hover:text-slate-400 hover:bg-white'
-                        } ${readOnly ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
-                        title={readOnly ? `${starNum} estrelas` : `Classificar com ${starNum} estrelas`}
+                        } ${effectiveReadOnly ? 'cursor-default opacity-80' : 'cursor-pointer'}`}
+                        title={effectiveReadOnly ? `${starNum} estrelas` : `Classificar com ${starNum} estrelas`}
                       >
                         <Star
                           className={`h-5 w-5 ${

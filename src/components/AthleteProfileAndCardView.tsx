@@ -1086,17 +1086,38 @@ export const AthleteProfileAndCardView: React.FC<
 
       {/* Modal de Avaliação dos 5 Quesitos */}
       {showRatingModal && (() => {
-        const isSelfReadOnly = isOwnProfile && currentUser.role === 'player';
+        const isSelf = isOwnProfile;
+        const isSelfReadOnly = isSelf && currentUser.role === 'player';
+
+        const myTeam = (currentUser?.teamName || currentPlayerProfile?.teamName || '').trim().toLowerCase();
+        const myCode = (currentUser?.teamInviteCode || currentPlayerProfile?.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        const playerTeam = (targetProfile?.teamName || '').trim().toLowerCase();
+        const playerCode = (targetProfile?.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+        const isSameTeam =
+          Boolean(playerTeam) &&
+          playerTeam !== 'sem time' &&
+          playerTeam !== 'meu time' &&
+          (playerTeam === myTeam || (Boolean(playerCode) && playerCode === myCode));
+
+        const isDifferentTeam = !isSelf && !isSameTeam && currentUser.role !== 'admin';
+
+        const readOnly = isSelfReadOnly || isDifferentTeam;
+        const readOnlyMessage = isSelfReadOnly
+          ? 'Você não pode classificar a si mesmo. Suas estrelas são avaliadas pelos companheiros do seu time.'
+          : isDifferentTeam
+          ? 'Jogadores de times diferentes não podem avaliar jogadores de outros times, apenas do seu mesmo time.'
+          : undefined;
 
         return (
           <PlayerRatingModal
             player={targetProfile}
             isOpen={true}
-            readOnly={isSelfReadOnly}
-            readOnlyMessage="Você não pode classificar a si mesmo. Suas estrelas são avaliadas pelos companheiros e comissão técnica."
+            readOnly={readOnly}
+            readOnlyMessage={readOnlyMessage}
             onClose={() => setShowRatingModal(false)}
             onSave={(playerId, skills) => {
-              if (isSelfReadOnly) return;
+              if (readOnly) return;
               updatePlayerSkills(playerId, skills);
             }}
           />

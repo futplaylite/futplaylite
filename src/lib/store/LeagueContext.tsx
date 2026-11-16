@@ -2238,6 +2238,62 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return false;
     }
 
+    const evaluatorUser =
+      (evaluatorId ? state.users.find((u) => u.id === evaluatorId) : undefined) ||
+      currentUser;
+    const evaluatorProfile =
+      (evaluatorId ? state.profiles.find((prof) => prof.id === evaluatorId || prof.userId === evaluatorId) : undefined) ||
+      currentPlayerProfile;
+
+    const isSelf = p.id === evaluatorProfile?.id || p.userId === evaluatorUser?.id;
+    if (isSelf && evaluatorUser?.role === 'player') {
+      notify(
+        'error',
+        'Autoavaliação bloqueada',
+        'Você não pode classificar a si mesmo. Suas estrelas são avaliadas pelos companheiros do seu time.'
+      );
+      return false;
+    }
+
+    // Regra de Negócio: Jogadores de times diferentes não podem avaliar jogadores de outros times, apenas do seu mesmo time
+    let myTeam = (evaluatorUser?.teamName || evaluatorProfile?.teamName || '').trim().toLowerCase();
+    let myCode = (evaluatorUser?.teamInviteCode || evaluatorProfile?.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+    try {
+      const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+      if (rawTeams) {
+        const list = JSON.parse(rawTeams);
+        if (Array.isArray(list)) {
+          const t = list.find((item: any) =>
+            item.ownerUserId === evaluatorUser?.id ||
+            (item.ownerName && evaluatorProfile?.displayName && item.ownerName.trim().toLowerCase() === evaluatorProfile.displayName.trim().toLowerCase())
+          );
+          if (t) {
+            if (!myTeam || myTeam === 'meu time' || myTeam === 'sem time') myTeam = (t.name || '').trim().toLowerCase();
+            if (!myCode) myCode = (t.inviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+          }
+        }
+      }
+    } catch {}
+
+    const playerTeam = (p.teamName || '').trim().toLowerCase();
+    const playerCode = (p.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+    const isSameTeam =
+      Boolean(playerTeam) &&
+      playerTeam !== 'sem time' &&
+      playerTeam !== 'meu time' &&
+      (playerTeam === myTeam || (Boolean(playerCode) && playerCode === myCode));
+
+    if (!isSelf && !isSameTeam && evaluatorUser?.role !== 'admin') {
+      notify(
+        'error',
+        'Avaliação restrita',
+        'Jogadores de times diferentes não podem avaliar jogadores de outros times, apenas do seu mesmo time.'
+      );
+      return false;
+    }
+
     const fin = Math.max(0, Math.min(5, skills.finalizacao ?? 0));
     const mar = Math.max(0, Math.min(5, skills.marcacao ?? 0));
     const pas = Math.max(0, Math.min(5, skills.passe ?? 0));
