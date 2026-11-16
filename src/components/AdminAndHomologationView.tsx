@@ -554,54 +554,54 @@ export const AdminAndHomologationView: React.FC<
   return (
     <div className="space-y-4">
       {/* 1. Barra de Abas Principal */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-1 sm:p-1.5 shadow-sm">
         <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
           <button
             onClick={() => {
               setSubView('teams');
               setSelectedTeamName(null);
             }}
-            className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
+            className={`flex items-center justify-center gap-0.5 sm:gap-1 rounded-lg py-2 px-1 text-[9px] min-[380px]:text-[10px] sm:text-[11px] font-bold transition text-center min-h-[36px] sm:min-h-[38px] ${
               subView === 'teams'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Shield className="h-3.5 w-3.5" />
-            <span className="truncate">Times & Atletas</span>
+            <Shield className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+            <span className="leading-tight">Times & Atletas</span>
           </button>
           <button
             onClick={() => setSubView('moderation')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
+            className={`flex items-center justify-center gap-0.5 sm:gap-1 rounded-lg py-2 px-1 text-[9px] min-[380px]:text-[10px] sm:text-[11px] font-bold transition text-center min-h-[36px] sm:min-h-[38px] ${
               subView === 'moderation'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <FileWarning className="h-3.5 w-3.5" />
-            <span className="truncate">Disputas</span>
+            <FileWarning className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+            <span className="leading-tight">Disputas</span>
           </button>
           <button
             onClick={() => setSubView('audit')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
+            className={`flex items-center justify-center gap-0.5 sm:gap-1 rounded-lg py-2 px-1 text-[9px] min-[380px]:text-[10px] sm:text-[11px] font-bold transition text-center min-h-[36px] sm:min-h-[38px] ${
               subView === 'audit'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <History className="h-3.5 w-3.5" />
-            <span className="truncate">Logs ({auditLogs.length})</span>
+            <History className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+            <span className="leading-tight">Logs ({auditLogs.length})</span>
           </button>
           <button
             onClick={() => setSubView('homolog')}
-            className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
+            className={`flex items-center justify-center gap-0.5 sm:gap-1 rounded-lg py-2 px-1 text-[9px] min-[380px]:text-[10px] sm:text-[11px] font-bold transition text-center min-h-[36px] sm:min-h-[38px] ${
               subView === 'homolog'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <ClipboardCheck className="h-3.5 w-3.5" />
-            <span className="truncate">Testes ({passedCount}/10)</span>
+            <ClipboardCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+            <span className="leading-tight">Testes</span>
           </button>
         </div>
       </div>
