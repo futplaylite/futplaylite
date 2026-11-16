@@ -621,7 +621,7 @@ export const AdminAndHomologationView: React.FC<
                         setSelectedTeamName(team.name);
                         setPlayerSearch('');
                       }}
-                      className="group p-4 rounded-2xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md active:scale-[0.98] transition text-center cursor-pointer flex flex-col items-center justify-between gap-2.5"
+                      className="group p-5 sm:p-6 rounded-3xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-lg active:scale-[0.98] transition-all text-center cursor-pointer flex flex-col items-center justify-between gap-3 min-h-[180px] sm:min-h-[210px]"
                     >
                       {/* Brasão em cima */}
                       <div className="flex items-center justify-center w-full py-1">
@@ -629,10 +629,10 @@ export const AdminAndHomologationView: React.FC<
                           <img
                             src={team.crestUrl}
                             alt={team.name}
-                            className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-contain drop-shadow-md group-hover:scale-105 transition-transform"
+                            className="h-24 w-24 sm:h-28 sm:w-28 rounded-2xl object-contain drop-shadow-md group-hover:scale-105 transition-transform"
                           />
                         ) : (
-                          <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-2xl sm:text-3xl shadow-xs group-hover:scale-105 transition-transform">
+                          <div className="flex h-24 w-24 sm:h-28 sm:w-28 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-3xl sm:text-4xl shadow-xs group-hover:scale-105 transition-transform">
                             {team.name.slice(0, 2).toUpperCase()}
                           </div>
                         )}
@@ -643,7 +643,7 @@ export const AdminAndHomologationView: React.FC<
                         <h3 className="text-[10px] sm:text-[11px] font-black text-slate-800 uppercase leading-tight tracking-tight group-hover:text-blue-700 transition break-words">
                           {team.name}
                         </h3>
-                        <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 mt-0.5 flex items-center justify-center gap-1">
+                        <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 mt-1 flex items-center justify-center gap-1">
                           <Users className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-blue-600 shrink-0" />
                           <span>
                             {team.players.length} {team.players.length === 1 ? 'atleta' : 'atletas'}
