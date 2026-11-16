@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ArrowLeft,
   CheckCircle2,
   ClipboardCheck,
   Download,
@@ -635,53 +634,59 @@ export const AdminAndHomologationView: React.FC<
             /* 2. TABELA COMPLETA DE ATLETAS DO TIME SELECIONADO                  */
             /* =================================================================== */
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
-              {/* Topo: Voltar e Identificação do Time */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedTeamName(null);
-                      setPlayerSearch('');
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer"
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                    <span>Voltar para Times</span>
-                  </button>
+              {/* Topo: Identificação do Time no mesmo layout da lista de times */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                {/* Espaço para balancear o botão da direita */}
+                <div className="w-10 sm:w-28 shrink-0" />
 
-                  <div className="flex items-center gap-2">
+                {/* Mesmo layout da lista de times: Brasão em cima, Nome embaixo */}
+                <div
+                  onClick={() => {
+                    setSelectedTeamName(null);
+                    setPlayerSearch('');
+                  }}
+                  className="flex flex-col items-center justify-center text-center cursor-pointer group"
+                  title="Clique para voltar à lista de times"
+                >
+                  {/* Brasão em cima */}
+                  <div className="flex items-center justify-center py-1">
                     {activeSelectedTeam?.crestUrl ? (
                       <img
                         src={activeSelectedTeam.crestUrl}
                         alt={activeSelectedTeam.name}
-                        className="h-8 w-8 object-contain rounded-lg shrink-0"
+                        className="h-20 w-20 min-[390px]:h-24 min-[390px]:w-24 sm:h-28 sm:w-28 rounded-xl sm:rounded-2xl object-contain drop-shadow-md group-hover:scale-105 transition-transform"
                       />
                     ) : (
-                      <Shield className="h-6 w-6 text-blue-600" />
+                      <div className="flex h-20 w-20 min-[390px]:h-24 min-[390px]:w-24 sm:h-28 sm:w-28 items-center justify-center rounded-xl sm:rounded-2xl bg-blue-600 text-white font-black text-2xl min-[390px]:text-3xl sm:text-4xl shadow-xs group-hover:scale-105 transition-transform">
+                        {activeSelectedTeam ? activeSelectedTeam.name.slice(0, 2).toUpperCase() : '??'}
+                      </div>
                     )}
-                    <div>
-                      <h2 className="text-sm font-black text-slate-900 uppercase">
-                        {activeSelectedTeam?.name}
-                      </h2>
-                      <p className="text-[10px] text-slate-500">
-                        {activeSelectedTeam?.city} · {activeSelectedTeam?.players.length} atletas registrados
-                      </p>
-                    </div>
+                  </div>
+
+                  {/* Nome do Time embaixo e Quantidade de Atletas */}
+                  <div className="flex flex-col items-center justify-center">
+                    <h2 className="text-[11px] sm:text-xs font-black text-slate-800 uppercase leading-tight tracking-tight group-hover:text-blue-700 transition break-words">
+                      {activeSelectedTeam?.name}
+                    </h2>
+                    <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 mt-1 flex items-center justify-center gap-1">
+                      <Users className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-blue-600 shrink-0" />
+                      <span>
+                        {activeSelectedTeam?.players.length} {activeSelectedTeam?.players.length === 1 ? 'atleta' : 'atletas'}
+                      </span>
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  <span className="text-[10px] font-extrabold uppercase rounded-full bg-blue-100 text-blue-800 px-2.5 py-1">
-                    Modo Edição Admin Ativo
-                  </span>
+                {/* Botão Restaurar Dados */}
+                <div className="w-10 sm:w-28 flex justify-end shrink-0">
                   <button
                     type="button"
                     onClick={handleOpenResetModal}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 py-1.5 px-3 text-xs font-semibold text-slate-700 transition cursor-pointer shadow-xs hover:border-slate-300"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 py-1.5 px-2.5 sm:px-3 text-xs font-semibold text-slate-700 transition cursor-pointer shadow-xs hover:border-slate-300"
+                    title="Restaurar dados padrão do time"
                   >
                     <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
-                    Restaurar Dados
+                    <span className="hidden sm:inline">Restaurar Dados</span>
                   </button>
                 </div>
               </div>
