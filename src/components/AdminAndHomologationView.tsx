@@ -629,10 +629,10 @@ export const AdminAndHomologationView: React.FC<
                           <img
                             src={team.crestUrl}
                             alt={team.name}
-                            className="h-16 w-16 sm:h-20 sm:w-20 rounded-2xl object-contain drop-shadow-sm group-hover:scale-105 transition-transform"
+                            className="h-20 w-20 sm:h-24 sm:w-24 rounded-2xl object-contain drop-shadow-md group-hover:scale-105 transition-transform"
                           />
                         ) : (
-                          <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-xl shadow-xs group-hover:scale-105 transition-transform">
+                          <div className="flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center rounded-2xl bg-blue-600 text-white font-black text-2xl sm:text-3xl shadow-xs group-hover:scale-105 transition-transform">
                             {team.name.slice(0, 2).toUpperCase()}
                           </div>
                         )}
@@ -640,11 +640,11 @@ export const AdminAndHomologationView: React.FC<
 
                       {/* Nome do Time embaixo e Quantidade de Atletas */}
                       <div className="w-full flex-1 flex flex-col items-center justify-center">
-                        <h3 className="text-xs sm:text-sm font-black text-slate-900 uppercase leading-snug group-hover:text-blue-700 transition break-words">
+                        <h3 className="text-[11px] sm:text-xs font-black text-slate-900 uppercase leading-snug tracking-tight group-hover:text-blue-700 transition break-words">
                           {team.name}
                         </h3>
-                        <p className="text-[11px] font-bold text-slate-500 mt-1 flex items-center justify-center gap-1.5">
-                          <Users className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                        <p className="text-[10px] sm:text-[11px] font-bold text-slate-500 mt-0.5 flex items-center justify-center gap-1">
+                          <Users className="h-3 w-3 text-blue-600 shrink-0" />
                           <span>
                             {team.players.length} {team.players.length === 1 ? 'atleta' : 'atletas'}
                           </span>
