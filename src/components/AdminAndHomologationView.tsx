@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   CheckCircle2,
-  ChevronRight,
   ClipboardCheck,
   Download,
   Eye,
@@ -495,7 +494,10 @@ export const AdminAndHomologationView: React.FC<
       <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
         <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1">
           <button
-            onClick={() => setSubView('teams')}
+            onClick={() => {
+              setSubView('teams');
+              setSelectedTeamName(null);
+            }}
             className={`flex items-center justify-center gap-1 rounded-lg py-2 text-[11px] font-bold transition ${
               subView === 'teams'
                 ? 'bg-blue-600 text-white shadow-sm'
@@ -619,52 +621,32 @@ export const AdminAndHomologationView: React.FC<
                         setSelectedTeamName(team.name);
                         setPlayerSearch('');
                       }}
-                      className="group p-3.5 rounded-2xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md active:scale-[0.99] transition text-left cursor-pointer flex flex-col justify-between gap-3 relative overflow-hidden"
+                      className="group p-3.5 rounded-2xl border border-slate-200 bg-white hover:border-blue-400 hover:shadow-md active:scale-[0.99] transition text-left cursor-pointer flex items-center gap-3.5"
                     >
-                      <div className="flex items-start justify-between gap-2.5">
-                        <div className="flex items-center gap-3 min-w-0">
-                          {team.crestUrl ? (
-                            <img
-                              src={team.crestUrl}
-                              alt={team.name}
-                              className="h-11 w-11 rounded-xl object-contain shrink-0 drop-shadow-xs"
-                            />
-                          ) : (
-                            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white font-extrabold text-sm shrink-0 shadow-xs">
-                              {team.name.slice(0, 2).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <h3 className="text-xs font-black text-slate-900 uppercase truncate group-hover:text-blue-700 transition">
-                              {team.name}
-                            </h3>
-                            <p className="text-[10px] text-slate-500 truncate mt-0.5">
-                              {team.city}
-                              {team.modality ? ` · ${team.modality.toUpperCase()}` : ''}
-                            </p>
-                          </div>
+                      {/* Brasão do Time */}
+                      {team.crestUrl ? (
+                        <img
+                          src={team.crestUrl}
+                          alt={team.name}
+                          className="h-12 w-12 rounded-xl object-contain shrink-0 drop-shadow-xs"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-white font-extrabold text-base shrink-0 shadow-xs">
+                          {team.name.slice(0, 2).toUpperCase()}
                         </div>
+                      )}
 
-                        <div className="flex items-center gap-1 shrink-0 text-slate-400 group-hover:text-blue-600 transition">
-                          <span className="text-[10px] font-bold">Ver Elenco</span>
-                          <ChevronRight className="h-4 w-4" />
-                        </div>
-                      </div>
-
-                      {/* Badges de Resumo do Time */}
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100 text-[10px]">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 text-blue-700 px-2 py-0.5 font-bold">
-                          <Users className="h-3 w-3" />
-                          {team.players.length} {team.players.length === 1 ? 'atleta' : 'atletas'}
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-800 px-2 py-0.5 font-bold">
-                          ⚽ {team.totalGoals} gols
-                        </span>
-                        {team.inviteCode && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-700 px-1.5 py-0.5 font-mono font-bold">
-                            #{team.inviteCode}
+                      {/* Nome do Time Completo e Quantidade de Atletas */}
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-xs sm:text-sm font-black text-slate-900 uppercase leading-snug group-hover:text-blue-700 transition break-words">
+                          {team.name}
+                        </h3>
+                        <p className="text-[11px] font-bold text-slate-500 mt-1 flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5 text-blue-600 shrink-0" />
+                          <span>
+                            {team.players.length} {team.players.length === 1 ? 'atleta' : 'atletas'}
                           </span>
-                        )}
+                        </p>
                       </div>
                     </button>
                   ))}
