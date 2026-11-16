@@ -569,32 +569,7 @@ export const AdminAndHomologationView: React.FC<
             /* =================================================================== */
             /* 1. LISTA DE TIMES CADASTRADOS NA LIGA                              */
             /* =================================================================== */
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3">
-                <div>
-                  <h2 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
-                    <Shield className="h-4 w-4 text-blue-600" />
-                    Times & Elencos da Liga
-                  </h2>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Selecione um time para abrir a tabela de atletas, auditar estatísticas e editar qualquer dado com senha.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  <span className="text-[11px] font-extrabold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-xl">
-                    {teamItems.length} {teamItems.length === 1 ? 'time cadastrado' : 'times cadastrados'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleOpenResetModal}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 py-1.5 px-3 text-xs font-semibold text-slate-700 transition cursor-pointer shadow-xs hover:border-slate-300"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5 text-blue-600" />
-                    Restaurar Dados
-                  </button>
-                </div>
-              </div>
-
+            <div className="space-y-3">
               {/* Barra de Busca de Times */}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -603,12 +578,12 @@ export const AdminAndHomologationView: React.FC<
                   value={teamSearch}
                   onChange={(e) => setTeamSearch(e.target.value)}
                   placeholder="Pesquisar time pelo nome, cidade ou código..."
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2 text-xs font-semibold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3.5 py-2.5 text-xs font-semibold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:border-blue-600 focus:outline-none shadow-xs"
                 />
               </div>
 
               {filteredTeams.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500">
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-center text-xs text-slate-500 shadow-xs">
                   Nenhum time encontrado para a busca "{teamSearch}".
                 </div>
               ) : (
