@@ -676,6 +676,141 @@ export const supabaseService = {
   },
 
   /**
+   * Busca um time pelo código de convite diretamente no Supabase em tempo real.
+   * Varre player_profiles, users e audit_logs para garantir que o time seja reconhecido.
+   */
+  async findTeamByInviteCode(inviteCode: string): Promise<{
+    id: string;
+    inviteCode: string;
+    name: string;
+    city: string;
+    neighborhood: string;
+    foundedYear: string;
+    crestUrl?: string;
+    crestColor: string;
+    modality: TeamModality;
+    modalityLabel: string;
+    ownerName: string;
+    roster: Array<{
+      id: string;
+      name: string;
+      position: PlayerPosition;
+      avatarUrl?: string;
+      isCaptain?: boolean;
+    }>;
+  } | null> {
+    if (!isSupabaseConfigured() || !supabase || !inviteCode) return null;
+    try {
+      const clean = inviteCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      if (!clean) return null;
+
+      const modalityMap: Record<string, string> = {
+        society: 'Society',
+        futsal: 'Futsal',
+        futebol_areia: 'Futebol de Areia',
+        futebol_campo: 'Futebol de Campo',
+      };
+
+      // 1. Procura em player_profiles
+      const { data: pData } = await supabase.from('player_profiles').select('*');
+      if (pData && pData.length > 0) {
+        const matching = pData.filter((p: any) => {
+          const c = (p.team_invite_code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+          return c === clean && p.team_name;
+        });
+
+        if (matching.length > 0) {
+          const owner = matching.find((p: any) => p.is_team_owner) || matching[0];
+          const mod = (owner.team_modality || 'society') as TeamModality;
+          return {
+            id: `remote-${owner.id}`,
+            inviteCode: owner.team_invite_code || inviteCode.toUpperCase(),
+            name: owner.team_name,
+            city: owner.team_city || 'Planalto - BA',
+            neighborhood: 'Centro',
+            foundedYear: '2026',
+            crestUrl: owner.team_crest_url || undefined,
+            crestColor: '#1D4ED8',
+            modality: mod,
+            modalityLabel: modalityMap[mod] || 'Society',
+            ownerName: owner.display_name || 'Dono do Time',
+            roster: matching.map((p: any) => ({
+              id: p.id,
+              name: p.display_name,
+              position: p.position || 'atacante',
+              avatarUrl: p.avatar_path || undefined,
+              isCaptain: Boolean(p.is_team_owner),
+            })),
+          };
+        }
+      }
+
+      // 2. Procura em users
+      const { data: uData } = await supabase.from('users').select('*');
+      if (uData && uData.length > 0) {
+        const matchingUser = uData.find((u: any) => {
+          const c = (u.team_invite_code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+          return c === clean && u.team_name;
+        });
+
+        if (matchingUser) {
+          const mod = (matchingUser.team_modality || 'society') as TeamModality;
+          return {
+            id: `remote-user-${matchingUser.id}`,
+            inviteCode: matchingUser.team_invite_code || inviteCode.toUpperCase(),
+            name: matchingUser.team_name,
+            city: matchingUser.team_city || 'Planalto - BA',
+            neighborhood: 'Centro',
+            foundedYear: '2026',
+            crestUrl: matchingUser.team_crest_url || undefined,
+            crestColor: '#1D4ED8',
+            modality: mod,
+            modalityLabel: modalityMap[mod] || 'Society',
+            ownerName: matchingUser.email?.split('@')[0] || 'Dono do Time',
+            roster: [],
+          };
+        }
+      }
+
+      // 3. Procura em audit_logs
+      const { data: aData } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('action_type', 'TIME_CRIADO');
+
+      if (aData && aData.length > 0) {
+        const matchingLog = aData.find((l: any) => {
+          const c = (l.entity_id || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+          return c === clean;
+        });
+
+        if (matchingLog) {
+          const match = (matchingLog.reason || '').match(/Criou a equipe "([^"]+)"/);
+          const tName = match ? match[1] : 'Time da Liga';
+          return {
+            id: `remote-log-${matchingLog.id}`,
+            inviteCode: matchingLog.entity_id || inviteCode.toUpperCase(),
+            name: tName,
+            city: 'Planalto - BA',
+            neighborhood: 'Centro',
+            foundedYear: '2026',
+            crestColor: '#1D4ED8',
+            modality: 'society',
+            modalityLabel: 'Society',
+            ownerName: matchingLog.actor_name || 'Dono do Time',
+            roster: [],
+          };
+        }
+      }
+
+      return null;
+    } catch (err) {
+      console.warn('Erro ao buscar time por código no Supabase:', err);
+      return null;
+    }
+  },
+
+  /**
    * Busca os registros mensais de mensalidades (tabela oficial + fallback em pelada_sumulas)
    */
   async getMonthlyPayments(): Promise<MonthlyPaymentRecord[] | null> {

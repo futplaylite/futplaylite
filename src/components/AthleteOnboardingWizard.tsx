@@ -27,6 +27,7 @@ import {
 import { useLeague } from '../lib/store/LeagueContext';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PlayerPosition, TeamModality } from '../types/league';
+import { supabaseService } from '../lib/supabase/supabaseService';
 
 interface AthleteOnboardingWizardProps {
   onCompleteWizard: () => void;
@@ -223,6 +224,8 @@ export const AthleteOnboardingWizard: React.FC<
 > = ({ onCompleteWizard }) => {
   const {
     profiles,
+    users,
+    auditLogs,
     currentUser,
     currentPlayerProfile,
     saveOnboardingStep1,
@@ -349,61 +352,227 @@ export const AthleteOnboardingWizard: React.FC<
     };
   }, []);
 
-  // Lista unificada de times (times criados por usuários + times oficiais de Planalto - BA)
-  const allAvailableTeams = useMemo<RegisteredTeamInfo[]>(() => {
-    const customTeams: RegisteredTeamInfo[] = [];
-    profiles.forEach((p) => {
-      if (p.teamName && p.teamInviteCode && p.isTeamOwner) {
-        const mod = p.teamModality || 'society';
-        // Busca todos os perfis que já estão vinculados a esse código de time
-        const teamMembers: RosterMemberPreview[] = profiles
-          .filter(
-            (member) =>
-              member.teamInviteCode?.toUpperCase() ===
-              p.teamInviteCode?.toUpperCase()
-          )
-          .map((member) => ({
-            id: member.id,
-            name: member.displayName,
-            position: member.position,
-            avatarUrl: member.avatarUrl,
-            isCaptain: member.id === p.id,
-          }));
+  // Helper para normalizar códigos de convite (remove hashtags, hífens e espaços)
+  const normalizeCode = (code?: string) =>
+    (code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 
-        customTeams.push({
-          id: `custom-${p.id}`,
-          inviteCode: p.teamInviteCode.toUpperCase(),
-          name: p.teamName,
+  const [asyncRemoteTeam, setAsyncRemoteTeam] =
+    useState<RegisteredTeamInfo | null>(null);
+  const [isSearchingRemoteTeam, setIsSearchingRemoteTeam] =
+    useState<boolean>(false);
+
+  // Lista unificada e completa de times (profiles, users, auditLogs e cache dedicado)
+  const allAvailableTeams = useMemo<RegisteredTeamInfo[]>(() => {
+    const teamsMap = new Map<string, RegisteredTeamInfo>();
+
+    // 1. Carrega times da chave dedicada do localStorage (futplay_registered_teams_v1)
+    try {
+      const storedRaw = localStorage.getItem('futplay_registered_teams_v1');
+      if (storedRaw) {
+        const storedList = JSON.parse(storedRaw);
+        if (Array.isArray(storedList)) {
+          storedList.forEach((t: any) => {
+            if (t && t.inviteCode && t.name) {
+              const key = normalizeCode(t.inviteCode);
+              const mod = ((t.modality as TeamModality) || 'society') as TeamModality;
+              teamsMap.set(key, {
+                id: t.id || `custom-${t.inviteCode}`,
+                inviteCode: t.inviteCode.toUpperCase(),
+                name: t.name,
+                city: t.city || 'Planalto - BA',
+                neighborhood: t.neighborhood || 'Centro',
+                foundedYear: t.foundedYear || '2026',
+                crestUrl: t.crestUrl,
+                crestColor: t.crestColor || '#1D4ED8',
+                modality: mod,
+                modalityLabel: t.modalityLabel || MODALITY_LABELS[mod] || 'Society',
+                ownerName: t.ownerName || 'Dono do Time',
+                roster: Array.isArray(t.roster) ? t.roster : [],
+              });
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // 2. Extrai times de profiles (reconhece o time de qualquer atleta cadastrado)
+    profiles.forEach((p) => {
+      const rawCode = (p.teamInviteCode || '').trim();
+      const rawName = (p.teamName || '').trim();
+      if (!rawName) return;
+
+      const codeKey = rawCode
+        ? normalizeCode(rawCode)
+        : rawName.toLowerCase().replace(/[^a-zA-Z0-9]/g, '');
+
+      let team = teamsMap.get(codeKey);
+      const mod = p.teamModality || 'society';
+
+      if (!team) {
+        team = {
+          id: `custom-profile-${p.id}`,
+          inviteCode: rawCode.toUpperCase() || 'SEM-CODIGO',
+          name: rawName,
           city: p.teamCity || 'Planalto - BA',
           neighborhood: p.neighborhood || 'Centro',
           foundedYear: '2026',
           crestUrl: p.teamCrestUrl,
           crestColor: '#1D4ED8',
           modality: mod,
-          modalityLabel: MODALITY_LABELS[mod],
-          ownerName: p.displayName,
-          roster: teamMembers,
+          modalityLabel: MODALITY_LABELS[mod] || 'Society',
+          ownerName: p.displayName || 'Dono do Time',
+          roster: [],
+        };
+        teamsMap.set(codeKey, team);
+      }
+
+      if (p.isTeamOwner) {
+        team.ownerName = p.displayName;
+      }
+      if (p.teamCrestUrl && !team.crestUrl) {
+        team.crestUrl = p.teamCrestUrl;
+      }
+      if (rawCode && (!team.inviteCode || team.inviteCode === 'SEM-CODIGO')) {
+        team.inviteCode = rawCode.toUpperCase();
+      }
+
+      if (!team.roster.some((m) => m.id === p.id)) {
+        team.roster.push({
+          id: p.id,
+          name: p.displayName,
+          position: p.position || 'atacante',
+          avatarUrl: p.avatarUrl,
+          isCaptain: Boolean(p.isTeamOwner),
         });
       }
     });
-    return [...customTeams, ...DEFAULT_TEAMS_PLANALTO];
-  }, [profiles]);
 
-  // Verifica se o código digitado encontra um time válido
-  const matchedTeamByCode = useMemo<RegisteredTeamInfo | undefined>(() => {
-    const cleaned = joinInviteCode.trim().toUpperCase();
-    if (!cleaned) return undefined;
-    return allAvailableTeams.find(
-      (t) =>
-        t.inviteCode.toUpperCase() === cleaned ||
-        t.inviteCode.replace('-', '').toUpperCase() ===
-          cleaned.replace('-', '')
+    // 3. Extrai times de users
+    users.forEach((u) => {
+      const rawCode = (u.teamInviteCode || '').trim();
+      const rawName = (u.teamName || '').trim();
+      if (!rawName || !rawCode) return;
+
+      const codeKey = normalizeCode(rawCode);
+      let team = teamsMap.get(codeKey);
+      const mod = u.teamModality || 'society';
+
+      if (!team) {
+        team = {
+          id: `custom-user-${u.id}`,
+          inviteCode: rawCode.toUpperCase(),
+          name: rawName,
+          city: u.teamCity || 'Planalto - BA',
+          neighborhood: 'Centro',
+          foundedYear: '2026',
+          crestUrl: u.teamCrestUrl,
+          crestColor: '#1D4ED8',
+          modality: mod,
+          modalityLabel: MODALITY_LABELS[mod] || 'Society',
+          ownerName: u.email?.split('@')[0] || 'Dono do Time',
+          roster: [],
+        };
+        teamsMap.set(codeKey, team);
+      } else {
+        if (!team.crestUrl && u.teamCrestUrl) team.crestUrl = u.teamCrestUrl;
+      }
+    });
+
+    // 4. Extrai times de auditLogs
+    auditLogs.forEach((l) => {
+      if (l.actionType === 'TIME_CRIADO' && l.entityId) {
+        const rawCode = l.entityId.trim();
+        const codeKey = normalizeCode(rawCode);
+        if (!teamsMap.has(codeKey)) {
+          const match = (l.reason || '').match(/Criou a equipe "([^"]+)"/);
+          const tName = match ? match[1] : 'Equipe da Liga';
+          teamsMap.set(codeKey, {
+            id: `custom-log-${l.id}`,
+            inviteCode: rawCode.toUpperCase(),
+            name: tName,
+            city: 'Planalto - BA',
+            neighborhood: 'Centro',
+            foundedYear: '2026',
+            crestColor: '#1D4ED8',
+            modality: 'society',
+            modalityLabel: 'Society',
+            ownerName: l.actorName || 'Dono do Time',
+            roster: [],
+          });
+        }
+      }
+    });
+
+    return Array.from(teamsMap.values());
+  }, [profiles, users, auditLogs]);
+
+  // Busca assíncrona no Supabase se o código não estiver em memória
+  useEffect(() => {
+    const raw = joinInviteCode.trim();
+    if (!raw || raw.length < 3) {
+      setAsyncRemoteTeam(null);
+      setIsSearchingRemoteTeam(false);
+      return;
+    }
+
+    const cleanNorm = normalizeCode(raw);
+    const alreadyFoundLocally = allAvailableTeams.some(
+      (t) => normalizeCode(t.inviteCode) === cleanNorm
     );
+    if (alreadyFoundLocally) {
+      setIsSearchingRemoteTeam(false);
+      return;
+    }
+
+    let active = true;
+    setIsSearchingRemoteTeam(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        const remote = await supabaseService.findTeamByInviteCode(raw);
+        if (active && remote) {
+          setAsyncRemoteTeam(remote);
+        }
+      } catch {
+        // Ignora falha de rede
+      } finally {
+        if (active) setIsSearchingRemoteTeam(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
   }, [joinInviteCode, allAvailableTeams]);
+
+  // Verifica se o código digitado encontra um time válido (local ou remoto)
+  const matchedTeamByCode = useMemo<RegisteredTeamInfo | undefined>(() => {
+    const raw = joinInviteCode.trim();
+    if (!raw) return undefined;
+    const cleanNorm = normalizeCode(raw);
+    if (!cleanNorm) return undefined;
+
+    const foundLocal = allAvailableTeams.find((t) => {
+      const tNorm = normalizeCode(t.inviteCode);
+      return tNorm === cleanNorm || t.inviteCode.toUpperCase() === raw.toUpperCase();
+    });
+    if (foundLocal) return foundLocal;
+
+    if (
+      asyncRemoteTeam &&
+      (normalizeCode(asyncRemoteTeam.inviteCode) === cleanNorm ||
+        asyncRemoteTeam.inviteCode.toUpperCase() === raw.toUpperCase())
+    ) {
+      return asyncRemoteTeam;
+    }
+
+    return undefined;
+  }, [joinInviteCode, allAvailableTeams, asyncRemoteTeam]);
 
   const isJoinCodeEntered = joinInviteCode.trim().length > 0;
   const isJoinCodeRecognized = Boolean(matchedTeamByCode);
-  const isJoinCodeWrong = isJoinCodeEntered && !isJoinCodeRecognized;
+  const isJoinCodeWrong = isJoinCodeEntered && !isJoinCodeRecognized && !isSearchingRemoteTeam;
 
   // Upload de Foto de Perfil (Passo 1)
   const handleAvatarSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -473,7 +642,7 @@ export const AthleteOnboardingWizard: React.FC<
   // Salvar Passo 2 ->
   // - Se "create": salva o novo time e vai para o Passo 3 (Convidar Jogadores)
   // - Se "join": valida o código e vai para a Página de Confirmação do Time (Passo 3) mostrando Brasão, Informações e Elenco!
-  const handleSubmitStep2 = (e: React.FormEvent) => {
+  const handleSubmitStep2 = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -515,7 +684,18 @@ export const AthleteOnboardingWizard: React.FC<
       return;
     }
 
-    if (!matchedTeamByCode) {
+    let targetTeam = matchedTeamByCode;
+    if (!targetTeam) {
+      try {
+        const remote = await supabaseService.findTeamByInviteCode(joinInviteCode);
+        if (remote) {
+          targetTeam = remote;
+          setAsyncRemoteTeam(remote);
+        }
+      } catch {}
+    }
+
+    if (!targetTeam) {
       setError(
         `Nenhum time encontrado com o código "${joinInviteCode.toUpperCase()}". Solicite o código correto ao dono do time.`
       );
@@ -525,11 +705,11 @@ export const AthleteOnboardingWizard: React.FC<
     // Salva a entrada oficial no time e conclui o primeiro acesso sem precisar ir para outra página
     const ok = saveOnboardingStep2({
       mode: 'join',
-      teamName: matchedTeamByCode.name,
-      teamCity: matchedTeamByCode.city,
-      teamCrestUrl: matchedTeamByCode.crestUrl,
-      teamModality: matchedTeamByCode.modality,
-      teamInviteCode: matchedTeamByCode.inviteCode,
+      teamName: targetTeam.name,
+      teamCity: targetTeam.city,
+      teamCrestUrl: targetTeam.crestUrl,
+      teamModality: targetTeam.modality,
+      teamInviteCode: targetTeam.inviteCode,
       position: selectedPosition,
     });
 
@@ -1194,11 +1374,19 @@ export const AthleteOnboardingWizard: React.FC<
                     )}
                   </div>
 
+                  {/* Indicador de busca assíncrona na nuvem */}
+                  {isSearchingRemoteTeam && !isJoinCodeRecognized && (
+                    <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-blue-600 animate-fadeIn">
+                      <Sparkles className="h-3.5 w-3.5 shrink-0 text-blue-500 animate-spin" />
+                      <span>Localizando time na liga...</span>
+                    </div>
+                  )}
+
                   {/* Mensagem abaixo da caixa se o código estiver errado */}
                   {isJoinCodeWrong && (
                     <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-rose-600 animate-fadeIn">
                       <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-500" />
-                      <span>Código de time não encontrado. Verifique e tente novamente.</span>
+                      <span>Código de time não encontrado. Verifique se digitou corretamente.</span>
                     </div>
                   )}
 

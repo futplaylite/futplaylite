@@ -3658,43 +3658,134 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       createdAt: now,
     };
 
-    setState((prev) => ({
-      ...prev,
-      users: prev.users.map((u) =>
-        u.id === currentUser.id
-          ? {
-              ...u,
-              teamName: trimmedTeam,
-              teamCity: trimmedCity,
-              teamCrestUrl: teamCrestUrl ?? u.teamCrestUrl,
-              teamModality,
-              teamInviteCode: generatedCode,
-              isTeamOwner: mode === 'create',
-              role: mode === 'create' ? ('coach' as const) : ('player' as const),
-              onboardingStep:
-                mode === 'join' ? 4 : Math.max(u.onboardingStep || 2, 3),
-              onboardingCompleted:
-                mode === 'join' ? true : u.onboardingCompleted,
-            }
-          : u
-      ),
-      profiles: prev.profiles.map((p) =>
-        p.userId === currentUser.id
-          ? {
-              ...p,
-              teamName: trimmedTeam,
-              teamCity: trimmedCity,
-              teamCrestUrl: teamCrestUrl ?? p.teamCrestUrl,
-              teamModality,
-              teamInviteCode: generatedCode,
-              isTeamOwner: mode === 'create',
-              position: position ?? p.position,
-              updatedAt: now,
-            }
-          : p
-      ),
-      auditLogs: [onbLog, ...(prev.auditLogs || [])],
-    }));
+    setState((prev) => {
+      // 1. Atualiza ou adiciona o usuário
+      let userUpdated = false;
+      const updatedUsers = prev.users.map((u) => {
+        if (u.id === currentUser.id) {
+          userUpdated = true;
+          return {
+            ...u,
+            teamName: trimmedTeam,
+            teamCity: trimmedCity,
+            teamCrestUrl: teamCrestUrl ?? u.teamCrestUrl,
+            teamModality,
+            teamInviteCode: generatedCode,
+            isTeamOwner: mode === 'create',
+            role: mode === 'create' ? ('coach' as const) : ('player' as const),
+            onboardingStep:
+              mode === 'join' ? 4 : Math.max(u.onboardingStep || 2, 3),
+            onboardingCompleted:
+              mode === 'join' ? true : u.onboardingCompleted,
+          };
+        }
+        return u;
+      });
+
+      if (!userUpdated && currentUser.id) {
+        updatedUsers.push({
+          ...currentUser,
+          teamName: trimmedTeam,
+          teamCity: trimmedCity,
+          teamCrestUrl,
+          teamModality,
+          teamInviteCode: generatedCode,
+          isTeamOwner: mode === 'create',
+          role: mode === 'create' ? 'coach' : 'player',
+          onboardingStep: mode === 'join' ? 4 : 3,
+          onboardingCompleted: mode === 'join',
+        });
+      }
+
+      // 2. Atualiza ou adiciona o perfil do atleta garantindo persistência do código e dono
+      let profileUpdated = false;
+      const updatedProfiles = prev.profiles.map((p) => {
+        if (p.userId === currentUser.id || p.id === currentUser.id) {
+          profileUpdated = true;
+          return {
+            ...p,
+            teamName: trimmedTeam,
+            teamCity: trimmedCity,
+            teamCrestUrl: teamCrestUrl ?? p.teamCrestUrl,
+            teamModality,
+            teamInviteCode: generatedCode,
+            isTeamOwner: mode === 'create',
+            position: position ?? p.position,
+            updatedAt: now,
+          };
+        }
+        return p;
+      });
+
+      if (!profileUpdated && currentUser.id) {
+        updatedProfiles.push({
+          id: `profile-${currentUser.id}`,
+          userId: currentUser.id,
+          displayName: currentPlayerProfile?.displayName || currentUser.email?.split('@')[0] || 'Atleta',
+          avatarUrl: currentUser.avatarUrl,
+          avatarColor: '#126B46',
+          cityId: '11111111-1111-4111-8111-111111111101',
+          neighborhood: 'Centro',
+          position: position || 'atacante',
+          dominantFoot: 'direito',
+          profileVisibility: 'publico',
+          teamName: trimmedTeam,
+          teamCity: trimmedCity,
+          teamCrestUrl,
+          teamModality,
+          teamInviteCode: generatedCode,
+          isTeamOwner: mode === 'create',
+          currentRating: 1000,
+          ratingUncertainty: 100,
+          isProvisional: true,
+          currentDivisionId: 'div-geral',
+          totalValidatedMatches: 0,
+          experimentalPositionScore: null,
+          badges: [],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      return {
+        ...prev,
+        users: updatedUsers,
+        profiles: updatedProfiles,
+        auditLogs: [onbLog, ...(prev.auditLogs || [])],
+      };
+    });
+
+    // 3. Persistência imediata e dedicada do time em localStorage para reconhecimento instantâneo
+    try {
+      const TEAMS_KEY = 'futplay_registered_teams_v1';
+      const storedRaw = localStorage.getItem(TEAMS_KEY);
+      const storedList = storedRaw ? JSON.parse(storedRaw) : [];
+      const newEntry = {
+        id: `custom-${generatedCode}`,
+        inviteCode: generatedCode.toUpperCase(),
+        name: trimmedTeam,
+        city: trimmedCity,
+        neighborhood: 'Centro',
+        foundedYear: '2026',
+        crestUrl: teamCrestUrl,
+        crestColor: '#1D4ED8',
+        modality: teamModality,
+        modalityLabel: modalityLabel[teamModality],
+        ownerName:
+          currentPlayerProfile?.displayName ||
+          currentUser.email?.split('@')[0] ||
+          'Dono do Time',
+        roster: [],
+      };
+      const filtered = (storedList || []).filter(
+        (t: any) =>
+          (t.inviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() !==
+          generatedCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+      );
+      localStorage.setItem(TEAMS_KEY, JSON.stringify([newEntry, ...filtered]));
+    } catch (e) {
+      console.warn('Erro ao salvar time na chave dedicada:', e);
+    }
 
     if (isSupabaseConfigured()) {
       supabaseService.recordAuditLogInSupabase(onbLog).catch(() => {});
