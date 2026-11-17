@@ -5,7 +5,6 @@ import {
   Award,
   Camera,
   Check,
-  Clock,
   Edit2,
   Eye,
   EyeOff,
@@ -14,10 +13,8 @@ import {
   ShieldCheck,
   Star,
   Trash2,
-  UserCheck,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
-import { RosaliaCrest } from './RosaliaCrest';
 import { PlayerRatingModal } from './PlayerRatingModal';
 import { ShareCardModal } from './ShareCardModal';
 import { TeamCrestBadge } from './TeamCrestBadge';

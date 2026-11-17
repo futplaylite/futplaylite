@@ -8,7 +8,6 @@ import {
   Handshake,
   MapPin,
   Share2,
-  Sparkles,
   Trophy,
 } from 'lucide-react';
 

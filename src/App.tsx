@@ -1,8 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle,
-  CheckCircle2,
-  CreditCard,
   LayoutDashboard,
   LogOut,
   Pause,
@@ -15,7 +12,6 @@ import {
   UserCircle2,
   Users,
   Wallet,
-  X,
 } from 'lucide-react';
 import { LeagueProvider, useLeague, NotificationBanner } from './lib/store/LeagueContext';
 import { TeamCrestBadge } from './components/TeamCrestBadge';

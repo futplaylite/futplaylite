@@ -4,19 +4,13 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
-  Pause,
-  Play,
   Plus,
-  RotateCcw,
-  Save,
   Share2,
   Trash2,
   AlertTriangle,
   UserCheck,
   Lock,
-  Unlock,
   ChevronDown,
-  Check,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { ShareSumulaReceiptModal } from './ShareSumulaReceiptModal';

@@ -1,9 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Award,
-  BarChart3,
   CalendarCheck,
-  Percent,
   Shield,
   Sparkles,
   Trophy,

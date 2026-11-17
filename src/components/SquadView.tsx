@@ -1,14 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Award,
   Check,
   ChevronRight,
   Copy,
   Edit3,
   ImagePlus,
-  MapPin,
   MessageCircle,
-  Share2,
   Shield,
   Sparkles,
   Star,

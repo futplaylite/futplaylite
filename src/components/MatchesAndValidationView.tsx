@@ -1,19 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   AlertTriangle,
-  Clock,
-  FileCheck2,
   Lock,
   Trophy,
   ClipboardList,
   PlusCircle,
-  Shield,
-  Calendar,
-  Users,
-  Award,
   Trash2,
   X,
-  Swords,
   CheckCircle2,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';

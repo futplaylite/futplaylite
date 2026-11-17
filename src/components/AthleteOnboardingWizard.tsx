@@ -10,7 +10,6 @@ import {
   ImagePlus,
   KeyRound,
   Link2,
-  Lock,
   MapPin,
   MessageCircle,
   PlusCircle,
@@ -25,7 +24,6 @@ import {
   Users,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
-import { RosaliaCrest } from './RosaliaCrest';
 import { PlayerPosition, TeamModality } from '../types/league';
 import { supabaseService } from '../lib/supabase/supabaseService';
 

@@ -26,7 +26,7 @@ import { useLeague } from '../lib/store/LeagueContext';
 import { supabase, supabaseService, isSupabaseConfigured } from '../lib/supabase';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PWAInstallBanner } from './PWAInstallBanner';
-import { DominantFoot, PlayerPosition, ProfileVisibility, User, PlayerProfile, TeamModality, UserRole } from '../types/league';
+import { DominantFoot, PlayerPosition, User, PlayerProfile, TeamModality, UserRole } from '../types/league';
 
 interface AuthLoginViewProps {
   onAuthenticated: () => void;

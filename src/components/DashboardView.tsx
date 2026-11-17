@@ -1,31 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowRight,
   Award,
   Calendar,
-  CalendarCheck,
-  Camera,
   Check,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Clock,
-  CreditCard,
-  Crown,
-  Edit3,
-  FilePlus2,
   Flame,
   MapPin,
   Share2,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Star,
   Swords,
   Trophy,
   Users,
-  Wallet,
   X,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
@@ -38,9 +27,7 @@ import { SuperCapasCard } from './SuperCapasCard';
 import {
   getStoredSumulas,
   saveSumulaToList,
-  syncFixedGoalkeepers,
   SumulaData,
-  DEFAULT_INITIAL_SUMULA,
 } from './SumulaPeladaView';
 import { isSupabaseConfigured, supabaseService } from '../lib/supabase';
 import { PeladaScheduleConfig } from '../types/league';

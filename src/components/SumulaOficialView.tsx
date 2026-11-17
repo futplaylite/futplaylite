@@ -1,28 +1,20 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   ArrowLeft,
-  Calendar,
   Check,
   CheckCircle2,
   Clock,
-  Flame,
   Handshake,
   MapPin,
   Minus,
   Play,
-  Plus,
-  RotateCcw,
-  Shield,
-  Star,
-  Swords,
   Trophy,
-  UserCheck,
   Users,
   X,
   AlertTriangle,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
-import { Match, MatchFormat, DisputeReasonCode } from '../types/league';
+import { DisputeReasonCode } from '../types/league';
 import { TeamCrestBadge } from './TeamCrestBadge';
 import { getMatchStatusBadge } from './DashboardView';
 
