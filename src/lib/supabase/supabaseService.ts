@@ -26,6 +26,21 @@ export function generateUUID(): string {
   });
 }
 
+/**
+ * Colunas LEVES: nunca incluem imagens em base64 (avatar_path / team_crest_url),
+ * que chegam a ~300 KB por linha. Imagens são baixadas separadamente:
+ *  - escudo: 1 vez por time (qualquer team_name, inclusive times futuros)
+ *  - foto de perfil: em segundo plano, apenas para quem mudou ou ainda não foi baixado
+ */
+const PROFILE_LIGHT_COLUMNS =
+  'id, user_id, display_name, city_id, position, dominant_foot, profile_visibility, current_rating, rating_uncertainty, is_provisional, current_division_id, total_validated_matches, created_at, updated_at, team_name, team_city, team_modality, team_invite_code, is_team_owner';
+const USER_LIGHT_COLUMNS =
+  'id, email, whatsapp_number, role, status, created_at, updated_at, team_name, team_city, team_modality, team_invite_code, is_team_owner';
+
+// Cache em memória dos escudos por time (evita baixar o mesmo escudo a cada sincronização)
+const TEAM_CREST_TTL_MS = 10 * 60 * 1000;
+const teamCrestCache = new Map<string, { url: string | undefined; fetchedAt: number }>();
+
 let monthlyLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
 let auditLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
 let peerEvaluationsWriteQueue: Promise<boolean> = Promise.resolve(true);
@@ -70,7 +85,8 @@ export const supabaseService = {
   async getUsers(): Promise<User[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
-      const { data, error } = await supabase.from('users').select('*');
+      // Colunas leves (sem team_crest_url em base64): o escudo vem 1x por time via getProfiles
+      const { data, error } = await supabase.from('users').select(USER_LIGHT_COLUMNS);
       if (error || !data) {
         console.warn('Erro ao buscar usuários do Supabase:', error);
         return null;
@@ -96,7 +112,6 @@ export const supabaseService = {
           email: u.email,
           whatsappNumber: u.whatsapp_number || undefined,
           teamName: u.team_name || undefined,
-          teamCrestUrl: u.team_crest_url || undefined,
           teamCity: u.team_city || undefined,
           teamModality: u.team_modality || undefined,
           teamInviteCode: u.team_invite_code || undefined,
@@ -614,6 +629,10 @@ export const supabaseService = {
       }
       if (updates.teamName !== undefined) payload.team_name = updates.teamName;
       if (updates.teamCrestUrl !== undefined) payload.team_crest_url = updates.teamCrestUrl;
+      if (updates.teamCrestUrl !== undefined || updates.teamName !== undefined) {
+        // Escudo/nome do time mudou: descarta cache para todos baixarem o escudo novo
+        teamCrestCache.clear();
+      }
       if (updates.teamCity !== undefined) payload.team_city = updates.teamCity;
       if (updates.teamModality !== undefined) payload.team_modality = updates.teamModality;
       if (updates.teamInviteCode !== undefined) payload.team_invite_code = updates.teamInviteCode;
@@ -749,13 +768,68 @@ export const supabaseService = {
   },
 
   /**
-   * Busca perfis esportivos cadastrados no Supabase
+   * Baixa o escudo de UM time (1 única linha, independente de quantos jogadores o time tem).
+   * Funciona para qualquer team_name, inclusive times criados no futuro. Usa cache em memória.
+   */
+  async getTeamCrest(teamName: string): Promise<string | undefined> {
+    if (!isSupabaseConfigured() || !supabase || !teamName) return undefined;
+    const key = teamName.trim().toLowerCase();
+    const cached = teamCrestCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt < TEAM_CREST_TTL_MS) return cached.url;
+
+    try {
+      const { data } = await supabase
+        .from('player_profiles')
+        .select('team_crest_url')
+        .eq('team_name', teamName)
+        .not('team_crest_url', 'is', null)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const url = (data?.team_crest_url as string | undefined) || undefined;
+      teamCrestCache.set(key, { url, fetchedAt: Date.now() });
+      return url;
+    } catch {
+      return cached?.url;
+    }
+  },
+
+  /**
+   * Baixa as fotos de perfil (pesadas) em lotes pequenos, apenas dos perfis pedidos.
+   * Deve rodar em segundo plano, sem bloquear a exibição da lista de atletas.
+   */
+  async getProfileAvatars(profileIds: string[]): Promise<Record<string, string>> {
+    const result: Record<string, string> = {};
+    if (!isSupabaseConfigured() || !supabase || profileIds.length === 0) return result;
+
+    const CHUNK = 4;
+    for (let i = 0; i < profileIds.length; i += CHUNK) {
+      const chunk = profileIds.slice(i, i + CHUNK);
+      try {
+        const { data } = await supabase
+          .from('player_profiles')
+          .select('id, avatar_path')
+          .in('id', chunk);
+        (data || []).forEach((row: { id: string; avatar_path: string | null }) => {
+          if (row.avatar_path) result[row.id] = row.avatar_path;
+        });
+      } catch {
+        // Ignora falha do lote; será tentado novamente na próxima sincronização
+      }
+    }
+    return result;
+  },
+
+  /**
+   * Busca perfis esportivos cadastrados no Supabase.
+   * Consulta LEVE (sem fotos/escudos em base64): o escudo é baixado 1x por time
+   * e as fotos de perfil chegam depois, em segundo plano (getProfileAvatars).
    */
   async getProfiles(): Promise<PlayerProfile[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     const { data, error } = await supabase
       .from('player_profiles')
-      .select('*')
+      .select(PROFILE_LIGHT_COLUMNS)
       .order('current_rating', { ascending: false });
 
     if (error || !data) {
@@ -783,34 +857,50 @@ export const supabaseService = {
       return true;
     });
 
-    return athleteRows.map((p) => ({
-      id: p.id,
-      userId: p.user_id,
-      displayName: p.display_name,
-      avatarUrl: p.avatar_path || undefined,
-      teamName: p.team_name || undefined,
-      teamCrestUrl: p.team_crest_url || undefined,
-      teamCity: p.team_city || undefined,
-      teamModality: p.team_modality || undefined,
-      teamInviteCode: p.team_invite_code || undefined,
-      isTeamOwner: Boolean(p.is_team_owner),
-      avatarColor: '#1D4ED8',
-      cityId: p.city_id,
-      neighborhood: 'Centro',
-      position: p.position,
-      dominantFoot: p.dominant_foot,
-      profileVisibility: p.profile_visibility,
-      currentRating: p.current_rating,
-      ratingUncertainty: Number(p.rating_uncertainty),
-      isProvisional: p.is_provisional,
-      currentDivisionId:
-        p.current_division_id || '22222222-2222-4222-8222-222222222201',
-      totalValidatedMatches: p.total_validated_matches,
-      experimentalPositionScore: null,
-      badges: [],
-      createdAt: p.created_at,
-      updatedAt: p.updated_at || new Date().toISOString(),
-    }));
+    // Escudo: 1 download por time distinto (dinâmico, vale para qualquer time atual ou futuro)
+    const distinctTeamsRaw = new Map<string, string>();
+    athleteRows.forEach((p) => {
+      const raw = (p.team_name || '') as string;
+      const key = raw.trim().toLowerCase();
+      if (key && !distinctTeamsRaw.has(key)) distinctTeamsRaw.set(key, raw);
+    });
+    const crestEntries = await Promise.all(
+      Array.from(distinctTeamsRaw.entries()).map(
+        async ([key, raw]) => [key, await this.getTeamCrest(raw)] as const
+      )
+    );
+    const crestByTeam = new Map<string, string | undefined>(crestEntries);
+
+    return athleteRows.map((p) => {
+      const teamKey = (p.team_name || '').trim().toLowerCase();
+      return {
+        id: p.id,
+        userId: p.user_id,
+        displayName: p.display_name,
+        teamName: p.team_name || undefined,
+        teamCrestUrl: (teamKey ? crestByTeam.get(teamKey) : undefined) || undefined,
+        teamCity: p.team_city || undefined,
+        teamModality: p.team_modality || undefined,
+        teamInviteCode: p.team_invite_code || undefined,
+        isTeamOwner: Boolean(p.is_team_owner),
+        avatarColor: '#1D4ED8',
+        cityId: p.city_id,
+        neighborhood: 'Centro',
+        position: p.position,
+        dominantFoot: p.dominant_foot,
+        profileVisibility: p.profile_visibility,
+        currentRating: p.current_rating,
+        ratingUncertainty: Number(p.rating_uncertainty),
+        isProvisional: p.is_provisional,
+        currentDivisionId:
+          p.current_division_id || '22222222-2222-4222-8222-222222222201',
+        totalValidatedMatches: p.total_validated_matches,
+        experimentalPositionScore: null,
+        badges: [],
+        createdAt: p.created_at,
+        updatedAt: p.updated_at || new Date().toISOString(),
+      } as PlayerProfile;
+    });
   },
 
   /**
@@ -849,8 +939,11 @@ export const supabaseService = {
         futebol_campo: 'Futebol de Campo',
       };
 
-      // 1. Procura em player_profiles
-      const { data: pData } = await supabase.from('player_profiles').select('*');
+      // 1. Procura em player_profiles (consulta LEVE: sem fotos/escudos; escudo vem 1x do time)
+      const { data: pData } = await supabase
+        .from('player_profiles')
+        .select(PROFILE_LIGHT_COLUMNS)
+        .not('team_name', 'is', null);
       if (pData && pData.length > 0) {
         const matching = pData.filter((p: any) => {
           if (!p.team_name) return false;
@@ -862,6 +955,7 @@ export const supabaseService = {
         if (matching.length > 0) {
           const owner = matching.find((p: any) => p.is_team_owner) || matching[0];
           const mod = (owner.team_modality || 'society') as TeamModality;
+          const crestUrl = await this.getTeamCrest(owner.team_name);
           return {
             id: `remote-${owner.id}`,
             inviteCode: owner.team_invite_code || inviteCode.toUpperCase(),
@@ -869,7 +963,7 @@ export const supabaseService = {
             city: owner.team_city || 'Planalto - BA',
             neighborhood: 'Centro',
             foundedYear: '2026',
-            crestUrl: owner.team_crest_url || undefined,
+            crestUrl,
             crestColor: '#1D4ED8',
             modality: mod,
             modalityLabel: modalityMap[mod] || 'Society',
@@ -878,15 +972,15 @@ export const supabaseService = {
               id: p.id,
               name: p.display_name,
               position: p.position || 'atacante',
-              avatarUrl: p.avatar_path || undefined,
+              avatarUrl: undefined,
               isCaptain: Boolean(p.is_team_owner),
             })),
           };
         }
       }
 
-      // 2. Procura em users
-      const { data: uData } = await supabase.from('users').select('*');
+      // 2. Procura em users (consulta LEVE)
+      const { data: uData } = await supabase.from('users').select(USER_LIGHT_COLUMNS);
       if (uData && uData.length > 0) {
         const matchingUser = uData.find((u: any) => {
           if (!u.team_name) return false;
@@ -897,6 +991,7 @@ export const supabaseService = {
 
         if (matchingUser) {
           const mod = (matchingUser.team_modality || 'society') as TeamModality;
+          const crestUrl = await this.getTeamCrest(matchingUser.team_name);
           return {
             id: `remote-user-${matchingUser.id}`,
             inviteCode: matchingUser.team_invite_code || inviteCode.toUpperCase(),
@@ -904,7 +999,7 @@ export const supabaseService = {
             city: matchingUser.team_city || 'Planalto - BA',
             neighborhood: 'Centro',
             foundedYear: '2026',
-            crestUrl: matchingUser.team_crest_url || undefined,
+            crestUrl,
             crestColor: '#1D4ED8',
             modality: mod,
             modalityLabel: modalityMap[mod] || 'Society',

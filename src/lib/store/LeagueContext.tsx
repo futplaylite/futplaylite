@@ -794,6 +794,55 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // Fotos de perfil são pesadas (~300 KB cada): baixadas em segundo plano, DEPOIS que a lista de
+  // atletas já apareceu, e só para quem ainda não foi baixado ou teve a foto alterada.
+  const AVATAR_SYNC_KEY = 'futplay_avatar_sync_v1';
+  const loadAvatarsInBackground = async (remoteProfiles: PlayerProfile[]) => {
+    try {
+      let tracked: Record<string, string> = {};
+      try {
+        tracked = JSON.parse(localStorage.getItem(AVATAR_SYNC_KEY) || '{}') || {};
+      } catch {}
+
+      const localById = new Map(state.profiles.map((p) => [p.id, p]));
+      const pending = remoteProfiles.filter((rp) => {
+        const mark = tracked[rp.id];
+        if (!mark) return true;
+        const [markedAt, hadAvatar] = mark.split('|');
+        if (markedAt !== (rp.updatedAt || '')) return true;
+        if (hadAvatar === '1' && !localById.get(rp.id)?.avatarUrl) return true;
+        return false;
+      });
+      if (pending.length === 0) return;
+
+      // O próprio usuário logado primeiro
+      pending.sort((a, b) => Number(b.userId === currentUserId) - Number(a.userId === currentUserId));
+
+      const avatars = await supabaseService.getProfileAvatars(pending.map((p) => p.id));
+
+      pending.forEach((rp) => {
+        tracked[rp.id] = `${rp.updatedAt || ''}|${avatars[rp.id] ? '1' : '0'}`;
+      });
+      try {
+        localStorage.setItem(AVATAR_SYNC_KEY, JSON.stringify(tracked));
+      } catch {}
+
+      if (Object.keys(avatars).length === 0) return;
+      setState((prev) => {
+        const next = {
+          ...prev,
+          profiles: prev.profiles.map((p) => (avatars[p.id] ? { ...p, avatarUrl: avatars[p.id] } : p)),
+        };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    } catch (err) {
+      console.warn('Aviso ao carregar fotos de perfil em segundo plano:', err);
+    }
+  };
+
   // Sincronização centralizada e completa de dados com o Supabase
   const refreshLeagueData: LeagueContextValue['refreshLeagueData'] = async () => {
     if (!isSupabaseConfigured()) {
@@ -1344,6 +1393,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
         return next;
       });
+
+      // Lista de atletas já está na tela: agora baixa as fotos em segundo plano
+      if (remoteProfiles && remoteProfiles.length > 0) {
+        loadAvatarsInBackground(remoteProfiles);
+      }
     } catch (err) {
       console.warn('Erro ao atualizar dados da liga com o Supabase:', err);
     } finally {
