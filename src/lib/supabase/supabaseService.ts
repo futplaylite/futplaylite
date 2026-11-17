@@ -1032,11 +1032,34 @@ export const supabaseService = {
   },
 
   /**
-   * Busca as configurações da pelada (valor e chave PIX)
+   * Busca as configurações da pelada (valor e chave PIX), isoladas por time quando informado.
    */
-  async getMonthlyConfig(): Promise<PeladaMonthlyConfig | null> {
+  async getMonthlyConfig(teamName?: string): Promise<PeladaMonthlyConfig | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
+      const slug = (teamName || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+      // 1. Se informou o time, busca a config específica deste time no livro-caixa em pelada_sumulas
+      if (slug && slug !== 'meu_time' && slug !== 'sem_time') {
+        const teamLedgerId = `monthly_config_ledger_${slug}`;
+        const { data: teamRow } = await supabase
+          .from('pelada_sumulas')
+          .select('*')
+          .eq('id', teamLedgerId)
+          .maybeSingle();
+
+        const teamData = teamRow?.data as unknown as { config?: PeladaMonthlyConfig } | null;
+        if (teamData?.config) {
+          return teamData.config;
+        }
+      }
+
       let tableCfg: PeladaMonthlyConfig | null = null;
       let tableUpdated = 0;
 
@@ -1083,9 +1106,9 @@ export const supabaseService = {
   },
 
   /**
-   * Salva a configuração financeira da pelada (PIX e valor mensal)
+   * Salva a configuração financeira da pelada (PIX e valor mensal), isolando por time.
    */
-  async saveMonthlyConfig(config: PeladaMonthlyConfig): Promise<boolean> {
+  async saveMonthlyConfig(config: PeladaMonthlyConfig, teamName?: string): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
       const normalizedKeyType =
@@ -1098,7 +1121,18 @@ export const supabaseService = {
           : 'aleatoria';
 
       const nowIso = new Date().toISOString();
+      const slug = (teamName || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const ledgerId = slug && slug !== 'meu_time' && slug !== 'sem_time'
+        ? `monthly_config_ledger_${slug}`
+        : 'monthly_config_ledger_v1';
 
+      // 1. Tenta salvar na tabela pelada_monthly_configs
       const { error } = await supabase.from('pelada_monthly_configs').upsert(
         {
           id: '33333333-3333-4333-8333-333333333301',
@@ -1112,24 +1146,21 @@ export const supabaseService = {
         { onConflict: 'id' }
       );
 
-      if (!error) return true;
-
-      console.warn('Fallback online para config PIX (RLS/Schema):', error.message);
-
+      // 2. Salva sempre no ledger individualizado por time em pelada_sumulas
       const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
         {
-          id: 'monthly_config_ledger_v1',
-          team_name: 'Config PIX',
+          id: ledgerId,
+          team_name: teamName || 'Config PIX',
           status: 'financial_ledger',
           match_date: null,
           start_time: null,
-          data: { config } as unknown as Record<string, unknown>,
+          data: { config, teamName: teamName || '' } as unknown as Record<string, unknown>,
           last_updated: nowIso,
         },
         { onConflict: 'id' }
       );
 
-      return !fallbackErr;
+      return !fallbackErr || !error;
     } catch (err) {
       console.error('Erro ao salvar configuração de mensalidade no Supabase:', err);
       return false;

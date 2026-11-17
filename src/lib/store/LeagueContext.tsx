@@ -833,6 +833,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     isRefreshingRef.current = true;
 
     try {
+      const activeUser = state.users.find((u) => u.id === currentUserId);
+      const activeProfile = state.profiles.find((p) => p.userId === currentUserId || p.id === currentUserId);
+      const userTeam = activeUser?.teamName || activeProfile?.teamName;
+
       const [
         remoteUsers,
         remoteProfiles,
@@ -848,7 +852,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         supabaseService.getPeladaSumulas(),
         supabaseService.getMonthlyPayments(),
         supabaseService.getTeamTransactions(),
-        supabaseService.getMonthlyConfig(),
+        supabaseService.getMonthlyConfig(userTeam),
         supabaseService.getAuditLogs(),
         supabaseService.getPeerEvaluations(),
       ]);
@@ -1492,9 +1496,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const refreshMonthlyData: LeagueContextValue['refreshMonthlyData'] = async () => {
     if (!isSupabaseConfigured()) return;
+    const activeUser = state.users.find((u) => u.id === currentUserId);
+    const activeProfile = state.profiles.find((p) => p.userId === currentUserId || p.id === currentUserId);
+    const userTeam = activeUser?.teamName || activeProfile?.teamName;
+
     const [remotePayments, remoteCfg] = await Promise.all([
       supabaseService.getMonthlyPayments(),
-      supabaseService.getMonthlyConfig(),
+      supabaseService.getMonthlyConfig(userTeam),
       refreshTeamTransactions(),
     ]);
 
@@ -3813,7 +3821,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       auditLogs: [cfgLog, ...(prev.auditLogs || [])],
     }));
     if (isSupabaseConfigured()) {
-      supabaseService.saveMonthlyConfig(updatedConfig).catch((err) => {
+      const userTeam = currentUser?.teamName || currentPlayerProfile?.teamName || '';
+      supabaseService.saveMonthlyConfig(updatedConfig, userTeam).catch((err) => {
         console.warn('Falha assíncrona ao salvar config no Supabase:', err);
       });
     }
