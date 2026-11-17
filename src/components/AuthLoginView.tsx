@@ -691,10 +691,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     }
 
     setLoginError(
-      'Conta ainda não cadastrada com este e-mail ou telefone. Toque na aba "Criar Conta" acima para se cadastrar em segundos!'
+      'Conta ainda não cadastrada com este e-mail, telefone ou apelido. Toque em "Criar minha conta" abaixo para se cadastrar em segundos!'
     );
-    setRegIdentifier(trimmed);
-    setRegConfirmIdentifier('');
   };
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -1055,7 +1053,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
           {mode === 'login' ? (
             /* FORMULÁRIO DE LOGIN COM E-MAIL OU TELEFONE E SENHA */
-            <form onSubmit={handleLogin} className="space-y-3.5">
+            <form onSubmit={handleLogin} noValidate className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   E-mail, Celular ou Apelido
@@ -1071,7 +1069,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     required
                     value={loginIdentifier}
                     onChange={(e) => setLoginIdentifier(formatIdentifierInput(e.target.value))}
-                    placeholder="seuemail@exemplo.com, (77) 99999-8888 ou Kelvin"
+                    placeholder="E-mail, (77) 99999-8888 ou Apelido"
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>
@@ -1132,6 +1130,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                   onClick={() => {
                     setMode('register');
                     setLoginError('');
+                    setShowPassword(false);
+                    setShowConfirmPassword(false);
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
@@ -1142,7 +1142,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             </form>
           ) : (
             /* FORMULÁRIO DE CRIAÇÃO DE CONTA DE ATLETA */
-            <form onSubmit={handleCreateAccount} className="space-y-3.5">
+            <form onSubmit={handleCreateAccount} noValidate className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Nome ou Apelido Esportivo
@@ -1691,6 +1691,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                   onClick={() => {
                     setMode('login');
                     setLoginError('');
+                    setShowPassword(false);
+                    setShowConfirmPassword(false);
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                   className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"

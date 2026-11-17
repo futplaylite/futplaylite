@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { TeamCrestBadge } from './TeamCrestBadge';
+import { getStoredSumulas } from './SumulaPeladaView';
 
 interface LeagueRankingViewProps {
   onInspectPlayer: (playerId: string) => void;
@@ -432,35 +433,206 @@ export const LeagueRankingView: React.FC<LeagueRankingViewProps> = ({
 
   const activeCity =
     cities.find((c) => c.id === selectedCityId) || cities[0];
+  const teamCityDisplay =
+    currentUser?.teamCity ||
+    currentPlayerProfile?.teamCity ||
+    profiles.find((p) => p.teamName === userTeamName && p.teamCity)?.teamCity ||
+    `${activeCity.name}-${activeCity.stateCode}`;
   const activeTabInfo =
     CATEGORY_TABS.find((t) => t.id === category) || CATEGORY_TABS[0];
 
   const enrichedRows = useMemo(() => {
-    const entries = seasonEntries.filter(
-      (se) => se.seasonId === selectedSeasonId
-    );
+    const targetTeamNorm =
+      userTeamName && userTeamName !== 'Meu Time' && userTeamName !== 'Sem Time'
+        ? userTeamName.trim().toLowerCase()
+        : '';
+    const targetCodeNorm = (
+      currentUser?.teamInviteCode ||
+      currentPlayerProfile?.teamInviteCode ||
+      ''
+    )
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toUpperCase();
 
-    const joined = entries
-      .map((entry) => {
-        const profile = profiles.find((p) => p.id === entry.playerId);
-        if (!profile || profile.cityId !== selectedCityId) return null;
+    // Estatísticas consolidadas das súmulas finalizadas (funciona mesmo em sessões/aparelhos novos)
+    const sumulaStatsByName = new Map<
+      string,
+      {
+        presences: number;
+        goals: number;
+        superCapas: number;
+        yellowCards: number;
+        blueCards: number;
+        redCards: number;
+      }
+    >();
 
-        const goals = entry.goals || 0;
-        const presences = entry.matchesPlayed || 0;
-        const superCapas = entry.superCapas ?? entry.mvpCount ?? 0;
-        const goalkeeperCapas = entry.goalkeeperCapas ?? 0;
+    try {
+      const finalizedSumulas = getStoredSumulas().filter((s) => {
+        if (s.status !== 'finalizada') return false;
+        if (!targetTeamNorm) return true;
+        const sTeam = (s.teamName || '').trim().toLowerCase();
+        return !sTeam || sTeam === 'meu time' || sTeam === targetTeamNorm;
+      });
+
+      finalizedSumulas.forEach((s) => {
+        const ensure = (name: string) => {
+          const key = name.trim().toLowerCase();
+          let rec = sumulaStatsByName.get(key);
+          if (!rec) {
+            rec = {
+              presences: 0,
+              goals: 0,
+              superCapas: 0,
+              yellowCards: 0,
+              blueCards: 0,
+              redCards: 0,
+            };
+            sumulaStatsByName.set(key, rec);
+          }
+          return rec;
+        };
+
+        const participatedInThisSumula = new Set<string>();
+        (s.arrivalList || []).forEach((a) => {
+          if (a.confirmed && a.playerName) {
+            participatedInThisSumula.add(a.playerName.trim().toLowerCase());
+          }
+        });
+
+        Object.values(s.teamLineups || {}).forEach((lineup) => {
+          (lineup || []).forEach((item) => {
+            if (!item.player) return;
+            const k = item.player.trim().toLowerCase();
+            participatedInThisSumula.add(k);
+            const g = Number(item.goals) || 0;
+            if (g > 0) {
+              ensure(k).goals += g;
+            }
+          });
+        });
+
+        participatedInThisSumula.forEach((k) => {
+          ensure(k).presences += 1;
+        });
+
+        (s.yellowCards || []).forEach((n) => {
+          if (n) ensure(n).yellowCards += 1;
+        });
+        (s.blueCards || []).forEach((n) => {
+          if (n) ensure(n).blueCards += 1;
+        });
+        (s.redCards || []).forEach((n) => {
+          if (n) ensure(n).redCards += 1;
+        });
+
+        // Equipe campeã da súmula (Super Capas)
+        let champTeam = '';
+        let maxW = -1;
+        let maxD = -1;
+        let maxG = -1;
+        (s.teamsGrid || []).forEach((row) => {
+          const w = (row.matches || []).filter((m) => m === 'V').length;
+          const d = (row.matches || []).filter((m) => m === 'E').length;
+          const pts = w * 3 + d;
+          const bestPts = maxW * 3 + maxD;
+          const lineup = s.teamLineups?.[row.teamName] || [];
+          const tg = lineup.reduce((acc, p) => acc + (Number(p.goals) || 0), 0);
+          if ((w > 0 || d > 0) && (pts > bestPts || (pts === bestPts && tg > maxG))) {
+            maxW = w;
+            maxD = d;
+            maxG = tg;
+            champTeam = row.teamName;
+          }
+        });
+        if (champTeam) {
+          (s.teamLineups?.[champTeam] || []).forEach((p) => {
+            if (p.player) ensure(p.player).superCapas += 1;
+          });
+        }
+      });
+    } catch {}
+
+    const scopedProfiles = profiles.filter((p) => {
+      if (!targetTeamNorm && !targetCodeNorm) return true;
+      const pTeam = (p.teamName || '').trim().toLowerCase();
+      const pCode = (p.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      return (
+        (targetTeamNorm && pTeam === targetTeamNorm) ||
+        (targetCodeNorm && pCode && pCode === targetCodeNorm)
+      );
+    });
+
+    const candidateProfiles =
+      scopedProfiles.length > 0 ? scopedProfiles : profiles;
+
+    const joined = candidateProfiles
+      .map((profile) => {
+        const entry =
+          seasonEntries.find(
+            (se) => se.playerId === profile.id && se.seasonId === selectedSeasonId
+          ) || seasonEntries.find((se) => se.playerId === profile.id);
+
+        const sStat = sumulaStatsByName.get(profile.displayName.trim().toLowerCase());
+
+        const goals = Math.max(entry?.goals || 0, sStat?.goals || 0);
+        const presences = Math.max(entry?.matchesPlayed || 0, sStat?.presences || 0);
+        const superCapas = Math.max(
+          entry?.superCapas ?? entry?.mvpCount ?? 0,
+          sStat?.superCapas || 0
+        );
+        const goalkeeperCapas = Math.max(
+          entry?.goalkeeperCapas ?? 0,
+          profile.position === 'goleiro' ? sStat?.superCapas || 0 : 0
+        );
         const capaEfficiencyPct =
-          entry.capaEfficiencyPct ??
-          (presences > 0 ? Math.round((superCapas / presences) * 100) : 0);
-        const yellowCards = entry.yellowCards ?? 0;
-        const blueCards = entry.blueCards ?? 0;
-        const redCards = entry.redCards ?? 0;
+          presences > 0
+            ? Math.round((superCapas / presences) * 100)
+            : entry?.capaEfficiencyPct ?? 0;
+        const yellowCards = Math.max(entry?.yellowCards ?? 0, sStat?.yellowCards || 0);
+        const blueCards = Math.max(entry?.blueCards ?? 0, sStat?.blueCards || 0);
+        const redCards = Math.max(entry?.redCards ?? 0, sStat?.redCards || 0);
         const totalCards = yellowCards + blueCards + redCards;
         const goalsAverage =
           presences > 0 ? Number((goals / presences).toFixed(2)) : 0;
 
+        if (
+          !entry &&
+          !sStat &&
+          goals === 0 &&
+          presences === 0 &&
+          totalCards === 0 &&
+          superCapas === 0
+        ) {
+          return null;
+        }
+
         return {
-          entry,
+          entry: entry || {
+            id: `se-${profile.id}`,
+            seasonId: selectedSeasonId,
+            playerId: profile.id,
+            divisionId: profile.currentDivisionId,
+            seasonPoints: 0,
+            pendingPoints: 0,
+            matchesPlayed: presences,
+            wins: superCapas,
+            draws: 0,
+            losses: 0,
+            goals,
+            assists: 0,
+            mvpCount: superCapas,
+            superCapas,
+            goalkeeperCapas,
+            capaEfficiencyPct,
+            yellowCards,
+            blueCards,
+            redCards,
+            cleanSheets: 0,
+            defensiveActions: 0,
+            status: 'elegivel' as const,
+            updatedAt: profile.updatedAt,
+          },
           profile,
           goals,
           presences,
@@ -652,7 +824,7 @@ export const LeagueRankingView: React.FC<LeagueRankingViewProps> = ({
               <div className="min-w-0">
                 <div className="flex items-center gap-1 text-[10px] font-bold text-amber-300 uppercase tracking-wide">
                   <Sparkles className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{activeCity.name}-{activeCity.stateCode}</span>
+                  <span className="truncate">{teamCityDisplay}</span>
                 </div>
                 <h1 className="text-xs sm:text-sm font-black uppercase text-white font-display tracking-wide truncate">
                   Estatísticas Oficiais {userTeamName}

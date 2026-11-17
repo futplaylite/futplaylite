@@ -639,9 +639,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return '';
     }
   });
-  const [selectedCityId, setSelectedCityId] = useState<string>('city-rosalia');
-  const [selectedSeasonId, setSelectedSeasonId] =
-    useState<string>('season-2026-2');
+  const [selectedCityId, setSelectedCityId] = useState<string>(
+    INITIAL_CITIES[0]?.id || '11111111-1111-4111-8111-111111111101'
+  );
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string>(
+    INITIAL_SEASONS[0]?.id || '33333333-3333-4333-8333-333333333301'
+  );
   const [notification, setNotification] = useState<NotificationBanner | null>(
     null
   );
@@ -4316,7 +4319,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
             updatedEntries.push({
               id: `se-${profile.id}-${Date.now()}`,
-              seasonId: prev.seasons[0]?.id || 'season-2026-2',
+              seasonId: prev.seasons[0]?.id || '33333333-3333-4333-8333-333333333301',
               playerId: profile.id,
               divisionId: profile.currentDivisionId || 'div-geral',
               seasonPoints: isSuperCapa ? 3 : 1,

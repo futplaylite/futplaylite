@@ -1522,7 +1522,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
           {/* Seção 3: Escalação & Gols por Time (Time 01 a Time 04 em 2 Colunas) */}
           <div className="grid grid-cols-2 gap-2">
-            {Object.entries(sumula.teamLineups).map(([tName, players]) => {
+            {Object.entries(sumula.teamLineups).map(([tName, players], tIdx) => {
               const totalTeamGoals = players.reduce(
                 (acc, p) => acc + (Number(p.goals) || 0),
                 0
@@ -1553,8 +1553,9 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                           <div className="flex items-center gap-1 min-w-0">
                             <button
                               type="button"
+                              disabled={!canEdit}
                               onClick={() => handleRemovePlayerFromTeam(tName, pIdx)}
-                              className="h-4 w-4 -ml-0.5 shrink-0 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition active:scale-90"
+                              className="h-4 w-4 -ml-0.5 shrink-0 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition active:scale-90 disabled:opacity-35 disabled:pointer-events-none"
                               title={`Excluir ${item.player} do time`}
                             >
                               <Trash2 className="h-2.5 w-2.5" />
@@ -1573,8 +1574,9 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                           <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               type="button"
+                              disabled={!canEdit}
                               onClick={() => handleGoalChange(tName, pIdx, -1)}
-                              className="h-4 w-4 rounded bg-slate-100 text-slate-700 font-bold text-[10px] hover:bg-slate-200 active:scale-95 flex items-center justify-center"
+                              className="h-4 w-4 rounded bg-slate-100 text-slate-700 font-bold text-[10px] hover:bg-slate-200 active:scale-95 flex items-center justify-center disabled:opacity-40 disabled:pointer-events-none"
                             >
                               -
                             </button>
@@ -1583,8 +1585,9 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                             </span>
                             <button
                               type="button"
+                              disabled={!canEdit}
                               onClick={() => handleGoalChange(tName, pIdx, 1)}
-                              className="h-4 w-4 rounded bg-blue-600 text-white font-bold text-[10px] hover:bg-blue-700 active:scale-95 flex items-center justify-center"
+                              className="h-4 w-4 rounded bg-blue-600 text-white font-bold text-[10px] hover:bg-blue-700 active:scale-95 flex items-center justify-center disabled:opacity-40 disabled:pointer-events-none"
                             >
                               +
                             </button>
@@ -1642,7 +1645,11 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
 
                         {/* Dropdown com Lista Inline dos Atletas Disponíveis (com Posição e Pé) */}
                         {openTeamDropdown === tName && (
-                          <div className="absolute left-0 top-full mt-1.5 w-[240px] max-w-[85vw] rounded-xl border border-slate-200 bg-white p-1 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 max-h-56 overflow-y-auto">
+                          <div
+                            className={`absolute ${
+                              tIdx % 2 === 1 ? 'right-0' : 'left-0'
+                            } top-full mt-1.5 w-[235px] max-w-[85vw] rounded-xl border border-slate-200 bg-white p-1 shadow-xl z-50 animate-in fade-in zoom-in-95 duration-150 max-h-56 overflow-y-auto`}
+                          >
                             {(() => {
                               const query = newTeamPlayerName.trim().toUpperCase();
                               const filtered = availableTeamPlayers.filter((p) => {
@@ -1814,13 +1821,15 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                   ) : (
                     <button
                       type="button"
+                      disabled={!canEdit}
                       onClick={() => {
+                        if (!canEdit) return;
                         setActiveAddTeam(tName);
                         setOpenTeamDropdown(tName);
                         setNewTeamPlayerName('');
                         setNewTeamPlayerIsSub(false);
                       }}
-                      className="mt-2 w-full py-1 rounded-lg border border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 text-blue-700 text-[10px] font-bold flex items-center justify-center gap-1 transition active:scale-95"
+                      className="mt-2 w-full py-1 rounded-lg border border-dashed border-blue-200 bg-blue-50/40 hover:bg-blue-50 text-blue-700 text-[10px] font-bold flex items-center justify-center gap-1 transition active:scale-95 disabled:opacity-45 disabled:pointer-events-none"
                     >
                       <Plus className="h-3 w-3" />
                       <span>Adicionar Jogador</span>
@@ -2054,23 +2063,26 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
             <div className="mt-3 pt-2 border-t border-slate-100 flex items-center gap-1">
               <input
                 type="text"
+                disabled={!canEdit}
                 placeholder="Jogador"
                 value={newHighlightPlayer}
                 onChange={(e) => setNewHighlightPlayer(e.target.value)}
-                className="flex-1 rounded border border-slate-200 px-2 py-1 text-[10px] uppercase font-semibold"
+                className="flex-1 rounded border border-slate-200 px-2 py-1 text-[10px] uppercase font-semibold disabled:opacity-50"
               />
               <input
                 type="text"
-                placeholder="Hora (22:04)"
+                disabled={!canEdit}
+                placeholder="22:04"
                 value={newHighlightTime}
                 onChange={(e) => setNewHighlightTime(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddHighlightGoal()}
-                className="w-16 rounded border border-slate-200 px-1 py-1 text-center font-mono text-[10px] font-bold"
+                className="w-16 rounded border border-slate-200 px-1 py-1 text-center font-mono text-[10px] font-bold disabled:opacity-50"
               />
               <button
                 type="button"
+                disabled={!canEdit}
                 onClick={handleAddHighlightGoal}
-                className="rounded bg-red-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-red-700 active:scale-95 transition"
+                className="rounded bg-red-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-red-700 active:scale-95 transition disabled:opacity-45 disabled:pointer-events-none"
               >
                 +
               </button>

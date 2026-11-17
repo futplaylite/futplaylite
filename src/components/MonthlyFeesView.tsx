@@ -423,6 +423,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     let paidCount = 0;
     let pendingCount = 0;
     let exemptCount = 0;
+    let totalPaidAmount = 0;
 
     teamPlayers.forEach((p) => {
       if (isGoalkeeper(p)) {
@@ -431,21 +432,20 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       }
       if (paymentMap.get(p.id) || (p.userId && paymentMap.get(p.userId))) {
         paidCount++;
+        const rec = getLatestPaymentRecord(p, selectedMonth);
+        totalPaidAmount += Number(rec?.amount) || fee;
       } else {
         pendingCount++;
       }
     });
 
     const payingCount = paidCount + pendingCount;
-    const totalPaidAmount = paidCount * fee;
     const totalPendingAmount = pendingCount * fee;
-    const totalExpectedAmount = payingCount * fee;
+    const totalExpectedAmount = totalPaidAmount + totalPendingAmount;
     const pct =
-      totalExpectedAmount > 0
-        ? Math.round((totalPaidAmount / totalExpectedAmount) * 100)
-        : payingCount === 0
-        ? 100
-        : 0;
+      payingCount > 0
+        ? Math.round((paidCount / payingCount) * 100)
+        : 100;
 
     return {
       paidCount,
@@ -457,7 +457,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       totalExpectedAmount,
       pct,
     };
-  }, [teamPlayers, paymentMap, monthlyConfig]);
+  }, [teamPlayers, paymentMap, monthlyConfig, selectedMonth, monthlyPayments]);
 
   // Constrói a grade anual dos 12 meses para qualquer atleta (usado na visão do jogador e do treinador)
   const buildPlayerYearHistory = (
@@ -1623,7 +1623,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                     R$ {monthlyStats.totalPaidAmount}
                   </div>
                   <div className="text-[10px] text-emerald-600 font-semibold">
-                    {monthlyStats.paidCount} atletas
+                    {monthlyStats.paidCount} {monthlyStats.paidCount === 1 ? 'atleta' : 'atletas'}
                   </div>
                 </div>
 
@@ -1635,7 +1635,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                     R$ {monthlyStats.totalPendingAmount}
                   </div>
                   <div className="text-[10px] text-rose-600 font-semibold">
-                    {monthlyStats.pendingCount} atletas
+                    {monthlyStats.pendingCount} {monthlyStats.pendingCount === 1 ? 'atleta' : 'atletas'}
                   </div>
                 </div>
 
@@ -1858,7 +1858,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
             </div>
 
             {/* Chips de Seleção Rápida */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setReportPeriod('month')}
@@ -2370,7 +2370,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       {/* ==================================================== */}
       {isCoachOrAdmin && showAddTransactionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="relative w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
+          <div className="relative w-full max-w-sm max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 font-bold">

@@ -264,12 +264,12 @@ export const SuperCapasCard: React.FC<SuperCapasCardProps> = ({
         </div>
 
         {/* Botões de Ação no Canto Superior Direito: Compartilhar + Trocar Foto + Ativar/Ocultar */}
-        <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5">
+        <div className="absolute top-2.5 right-2.5 z-20 flex items-center gap-1 flex-wrap justify-end max-w-[65%]">
           {isCoachOrAdmin && onToggleActive && (
             <button
               type="button"
               onClick={onToggleActive}
-              className={`flex items-center gap-1 rounded-full backdrop-blur-md px-2.5 py-1 text-[10px] font-bold border transition active:scale-95 shadow-md cursor-pointer ${
+              className={`flex items-center gap-1 rounded-full backdrop-blur-md px-2 py-1 text-[9px] font-bold border transition active:scale-95 shadow-md cursor-pointer whitespace-nowrap ${
                 data.isActive !== false
                   ? 'bg-emerald-950/85 text-emerald-300 border-emerald-500/60 hover:bg-emerald-900/90'
                   : 'bg-amber-950/85 text-amber-300 border-amber-500/60 hover:bg-amber-900/90'
@@ -281,31 +281,31 @@ export const SuperCapasCard: React.FC<SuperCapasCardProps> = ({
               }
             >
               <span
-                className={`h-2 w-2 rounded-full ${
+                className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                   data.isActive !== false ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
                 }`}
               />
-              <span>{data.isActive !== false ? 'Ativo no Time' : 'Oculto'}</span>
+              <span>{data.isActive !== false ? 'Ativo' : 'Oculto'}</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={onShare}
-            className="flex items-center gap-1 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md px-2.5 py-1 text-[10px] font-bold text-white border border-white/20 cursor-pointer transition active:scale-95 shadow-md"
+            className="flex items-center gap-1 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md px-2 py-1 text-[9px] font-bold text-white border border-white/20 cursor-pointer transition active:scale-95 shadow-md whitespace-nowrap"
             title="Compartilhar Foto Oficial dos Super Capas"
           >
-            <Share2 className="h-3 w-3 text-amber-300" />
+            <Share2 className="h-3 w-3 text-amber-300 shrink-0" />
             <span>Compartilhar</span>
           </button>
 
           {onPhotoUpload && (
             <label
-              className="flex items-center gap-1 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md px-2.5 py-1 text-[10px] font-bold text-white border border-white/20 cursor-pointer transition active:scale-95 shadow-md"
+              className="flex items-center gap-1 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md px-2 py-1 text-[9px] font-bold text-white border border-white/20 cursor-pointer transition active:scale-95 shadow-md whitespace-nowrap"
               title="Renovar foto real da equipe campeã (Exclusivo do Treinador)"
             >
-              <Camera className="h-3 w-3 text-amber-300" />
-              <span>Renovar Foto</span>
+              <Camera className="h-3 w-3 text-amber-300 shrink-0" />
+              <span>Foto</span>
               <input
                 type="file"
                 accept="image/*"
@@ -398,8 +398,9 @@ export const SuperCapasCard: React.FC<SuperCapasCardProps> = ({
             <span className="text-amber-300">(SUPER CAPAS)</span>
           </div>
 
-          <div className="text-[10px] sm:text-xs font-semibold text-blue-300">
-            {data.players.length} Atletas Campeões
+          <div className="text-[10px] sm:text-xs font-semibold text-blue-300 shrink-0">
+            {data.players.length}{' '}
+            {data.players.length === 1 ? 'Atleta Campeão' : 'Atletas Campeões'}
           </div>
         </div>
 

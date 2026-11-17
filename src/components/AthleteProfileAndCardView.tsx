@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -150,6 +150,10 @@ export const AthleteProfileAndCardView: React.FC<
 
   const targetCity =
     cities.find((c) => c.id === targetProfile.cityId) || cities[0];
+  const teamCityDisplay =
+    targetProfile.teamCity ||
+    (isOwnProfile ? currentUser?.teamCity : undefined) ||
+    `${targetCity.name}/${targetCity.stateCode}`;
 
   const userTeamName =
     targetProfile.teamName ||
@@ -180,27 +184,107 @@ export const AthleteProfileAndCardView: React.FC<
     drible: 0,
   };
 
-  const targetEntry = seasonEntries.find(
-    (se) =>
-      se.seasonId === selectedSeasonId && se.playerId === targetProfile.id
-  ) || {
-    seasonPoints: 0,
-    pendingPoints: 0,
-    matchesPlayed: 0,
-    wins: 0,
-    draws: 0,
-    losses: 0,
-    goals: 0,
-    assists: 0,
-    mvpCount: 0,
-    superCapas: 0,
-    goalkeeperCapas: 0,
-    capaEfficiencyPct: 0,
-    yellowCards: 0,
-    blueCards: 0,
-    redCards: 0,
-    cleanSheets: 0,
-    defensiveActions: 0,
+  const baseEntry =
+    seasonEntries.find(
+      (se) =>
+        se.seasonId === selectedSeasonId && se.playerId === targetProfile.id
+    ) ||
+    seasonEntries.find((se) => se.playerId === targetProfile.id);
+
+  // Consolida também com súmulas finalizadas para garantir que o card sempre reflita a súmula homologada
+  const sumulaAgg = useMemo(() => {
+    const res = {
+      matchesPlayed: 0,
+      goals: 0,
+      superCapas: 0,
+      yellowCards: 0,
+      blueCards: 0,
+      redCards: 0,
+    };
+    try {
+      const pKey = targetProfile.displayName.trim().toLowerCase();
+      if (!pKey) return res;
+      const sumulas = getStoredSumulas().filter((s) => s.status === 'finalizada');
+      for (const s of sumulas) {
+        const arrived = (s.arrivalList || []).some(
+          (a) => a.confirmed && (a.playerName || '').trim().toLowerCase() === pKey
+        );
+        let inLineup = false;
+        Object.values(s.teamLineups || {}).forEach((lineup) => {
+          (lineup || []).forEach((item) => {
+            if ((item.player || '').trim().toLowerCase() === pKey) {
+              inLineup = true;
+              res.goals += Number(item.goals) || 0;
+            }
+          });
+        });
+        if (arrived || inLineup) res.matchesPlayed += 1;
+
+        res.yellowCards += (s.yellowCards || []).filter(
+          (n) => (n || '').trim().toLowerCase() === pKey
+        ).length;
+        res.blueCards += (s.blueCards || []).filter(
+          (n) => (n || '').trim().toLowerCase() === pKey
+        ).length;
+        res.redCards += (s.redCards || []).filter(
+          (n) => (n || '').trim().toLowerCase() === pKey
+        ).length;
+
+        let champTeam = '';
+        let maxW = -1;
+        let maxD = -1;
+        let maxG = -1;
+        (s.teamsGrid || []).forEach((row) => {
+          const w = (row.matches || []).filter((m) => m === 'V').length;
+          const d = (row.matches || []).filter((m) => m === 'E').length;
+          const pts = w * 3 + d;
+          const bestPts = maxW * 3 + maxD;
+          const lineup = s.teamLineups?.[row.teamName] || [];
+          const tg = lineup.reduce((acc, p) => acc + (Number(p.goals) || 0), 0);
+          if ((w > 0 || d > 0) && (pts > bestPts || (pts === bestPts && tg > maxG))) {
+            maxW = w;
+            maxD = d;
+            maxG = tg;
+            champTeam = row.teamName;
+          }
+        });
+        if (
+          champTeam &&
+          (s.teamLineups?.[champTeam] || []).some(
+            (p) => (p.player || '').trim().toLowerCase() === pKey
+          )
+        ) {
+          res.superCapas += 1;
+        }
+      }
+    } catch {}
+    return res;
+  }, [targetProfile.displayName, seasonEntries]);
+
+  const targetEntry = {
+    seasonPoints: baseEntry?.seasonPoints || 0,
+    pendingPoints: baseEntry?.pendingPoints || 0,
+    matchesPlayed: Math.max(baseEntry?.matchesPlayed || 0, sumulaAgg.matchesPlayed),
+    wins: baseEntry?.wins || 0,
+    draws: baseEntry?.draws || 0,
+    losses: baseEntry?.losses || 0,
+    goals: Math.max(baseEntry?.goals || 0, sumulaAgg.goals),
+    assists: baseEntry?.assists || 0,
+    mvpCount: Math.max(baseEntry?.mvpCount || 0, sumulaAgg.superCapas),
+    superCapas: Math.max(
+      baseEntry?.superCapas ?? baseEntry?.mvpCount ?? 0,
+      sumulaAgg.superCapas
+    ),
+    goalkeeperCapas: Math.max(
+      baseEntry?.goalkeeperCapas ?? 0,
+      targetProfile.position === 'goleiro' ? sumulaAgg.superCapas : 0
+    ),
+    capaEfficiencyPct: baseEntry?.capaEfficiencyPct,
+    yellowCards: Math.max(baseEntry?.yellowCards ?? 0, sumulaAgg.yellowCards),
+    blueCards: Math.max(baseEntry?.blueCards ?? 0, sumulaAgg.blueCards),
+    redCards: Math.max(baseEntry?.redCards ?? 0, sumulaAgg.redCards),
+    cleanSheets: baseEntry?.cleanSheets || 0,
+    defensiveActions: baseEntry?.defensiveActions || 0,
   };
 
   const myPointTx = pointTransactions.filter(
@@ -210,30 +294,12 @@ export const AthleteProfileAndCardView: React.FC<
   const superCapasVal = targetEntry.superCapas ?? targetEntry.mvpCount ?? 0;
   const gkCapasVal = targetEntry.goalkeeperCapas ?? 0;
   const capaEfficiencyVal =
-    targetEntry.capaEfficiencyPct ??
-    (targetEntry.matchesPlayed > 0
+    targetEntry.matchesPlayed > 0
       ? Math.round((superCapasVal / targetEntry.matchesPlayed) * 100)
-      : 0);
+      : targetEntry.capaEfficiencyPct ?? 0;
   const yellowCardsVal = targetEntry.yellowCards ?? 0;
   const blueCardsVal = targetEntry.blueCards ?? 0;
-
-  // Cartões vermelhos (temporada + súmulas)
-  const redCardsFromSumulas = (() => {
-    try {
-      const sumulas = getStoredSumulas();
-      const name = targetProfile.displayName.trim().toUpperCase();
-      let count = 0;
-      for (const s of sumulas) {
-        if (s.redCards) {
-          count += s.redCards.filter((p) => p.trim().toUpperCase() === name).length;
-        }
-      }
-      return count;
-    } catch {
-      return 0;
-    }
-  })();
-  const redCardsVal = (targetEntry.redCards ?? 0) + redCardsFromSumulas;
+  const redCardsVal = targetEntry.redCards ?? 0;
 
   const goalsAvgVal =
     targetEntry.matchesPlayed > 0
@@ -243,7 +309,7 @@ export const AthleteProfileAndCardView: React.FC<
       : '0,00';
 
   const handleCopyShareCard = () => {
-    const shareText = `🏆 FUTPLAY LITE · CARTÃO OFICIAL\nAtleta: ${targetProfile.displayName} (${targetProfile.position.toUpperCase()})\nMunicípio: ${targetCity.name}-${targetCity.stateCode}\n⚽ Artilharia: ${targetEntry.goals} gols (Média ${goalsAvgVal}/jogo)\n📅 Presenças: ${targetEntry.matchesPlayed} jogos\n⭐ Super Capas: ${superCapasVal} (${capaEfficiencyVal}% aprov.)\n🟨 Amarelos: ${yellowCardsVal} | 🟦 Azul: ${blueCardsVal} | 🟥 Vermelhos: ${redCardsVal}`;
+    const shareText = `🏆 FUTPLAY LITE · CARTÃO OFICIAL\nAtleta: ${targetProfile.displayName} (${targetProfile.position.toUpperCase()})\nMunicípio: ${teamCityDisplay}\n⚽ Artilharia: ${targetEntry.goals} gols (Média ${goalsAvgVal}/jogo)\n📅 Presenças: ${targetEntry.matchesPlayed} jogos\n⭐ Super Capas: ${superCapasVal} (${capaEfficiencyVal}% aprov.)\n🟨 Amarelos: ${yellowCardsVal} | 🟦 Azul: ${blueCardsVal} | 🟥 Vermelhos: ${redCardsVal}`;
     navigator.clipboard?.writeText(shareText);
     setCopiedCard(true);
     setTimeout(() => setCopiedCard(false), 3000);
@@ -806,7 +872,7 @@ export const AthleteProfileAndCardView: React.FC<
                 <span>Pé {targetProfile.dominantFoot}</span>
                 <span>·</span>
                 <span className="text-white/90 font-medium">
-                  {targetCity.name}/{targetCity.stateCode}
+                  {teamCityDisplay}
                 </span>
               </div>
 

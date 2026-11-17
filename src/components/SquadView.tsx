@@ -105,6 +105,17 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     cities?.find((c) => c.id === selectedCityId) ||
     cities?.[0] || { name: 'Planalto', stateCode: 'BA' };
 
+  const teamCityDisplay =
+    currentUser?.teamCity ||
+    currentPlayerProfile?.teamCity ||
+    profiles.find(
+      (p) =>
+        p.teamName &&
+        p.teamName.toLowerCase() === userTeamName.toLowerCase() &&
+        p.teamCity
+    )?.teamCity ||
+    `${activeCity.name}/${activeCity.stateCode}`;
+
   // Perfil dos técnicos da equipe (cada time pode ter mais de um treinador)
   const teamCoaches = profiles.filter(
     (p) =>
@@ -289,7 +300,7 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     teamInviteCode
   )}&time=${encodeURIComponent(userTeamName)}`;
 
-  const whatsappMessage = `⚽ *CONVOCAÇÃO OFICIAL — FUTPLAY LITE*\n\nVocê foi convidado para jogar no time *${userTeamName}* (${MODALITY_LABELS[teamModality]} · ${activeCity.name}/${activeCity.stateCode})!\n\n🔑 *Código do Time:* ${teamInviteCode}\n👉 *Link direto para entrar no elenco:*\n${teamInviteLink}`;
+  const whatsappMessage = `⚽ *CONVOCAÇÃO OFICIAL — FUTPLAY LITE*\n\nVocê foi convidado para jogar no time *${userTeamName}* (${MODALITY_LABELS[teamModality]} · ${teamCityDisplay})!\n\n🔑 *Código do Time:* ${teamInviteCode}\n👉 *Link direto para entrar no elenco:*\n${teamInviteLink}`;
 
   const handleCopyCode = () => {
     navigator.clipboard?.writeText(teamInviteCode);
@@ -380,7 +391,7 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                     Time Oficial
                   </span>
                   <span className="text-[10px] text-blue-200 font-medium">
-                    {activeCity.name}/{activeCity.stateCode}
+                    {teamCityDisplay}
                   </span>
                 </div>
 

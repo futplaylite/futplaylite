@@ -36,8 +36,20 @@ export type { PeladaScheduleConfig };
 export const DEFAULT_SUPER_CAPAS_PHOTO =
   '/images/stadium-super-capas.jpg';
 
+function getNextSaturdayDateStr(): string {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  const dayOfWeek = d.getDay(); // 0 = Dom ... 6 = Sáb
+  const daysUntilSat = (6 - dayOfWeek + 7) % 7;
+  d.setDate(d.getDate() + daysUntilSat);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export const DEFAULT_PELADA_CONFIG: PeladaScheduleConfig = {
-  date: '2026-10-31',
+  date: getNextSaturdayDateStr(),
   time: '16:00',
   venueName: 'Arena Society Planalto - BA',
   neighborhood: 'Vila Rosália',
@@ -57,7 +69,12 @@ export function getInitialPeladaSchedule(teamName?: string): PeladaScheduleConfi
       const rawTeam = localStorage.getItem(`futplay_pelada_schedule_${slug}`);
       if (rawTeam) {
         const parsed = JSON.parse(rawTeam);
-        if (parsed.date && parsed.time) return parsed;
+        if (parsed.date && parsed.time) {
+          if (parsed.date === '2026-10-31') {
+            return { ...parsed, date: getNextSaturdayDateStr() };
+          }
+          return parsed;
+        }
       }
     } catch {}
   }
@@ -66,11 +83,19 @@ export function getInitialPeladaSchedule(teamName?: string): PeladaScheduleConfi
     const raw = localStorage.getItem('futplay_pelada_schedule_v1');
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed.date && parsed.time) return parsed;
+      if (parsed.date && parsed.time) {
+        if (parsed.date === '2026-10-31') {
+          return { ...parsed, date: getNextSaturdayDateStr() };
+        }
+        return parsed;
+      }
     }
   } catch {}
 
-  return DEFAULT_PELADA_CONFIG;
+  return {
+    ...DEFAULT_PELADA_CONFIG,
+    date: getNextSaturdayDateStr(),
+  };
 }
 
 export function formatMatchTime(str?: string): string {
@@ -1970,7 +1995,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     {nextGameFormattedDate}
                   </div>
                   <div className="text-[9px] text-blue-300 font-sans mt-0.5">
-                    {countdown.days > 0 ? (countdown.days === 1 ? 'Amanhã' : `Em ${countdown.days} dias`) : 'Hoje!'}
+                    {countdown.isPast
+                      ? 'A reagendar'
+                      : countdown.days > 0
+                      ? countdown.days === 1
+                        ? 'Amanhã'
+                        : `Em ${countdown.days} dias`
+                      : 'Hoje!'}
                   </div>
                 </div>
                 <div>

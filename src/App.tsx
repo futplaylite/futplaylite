@@ -87,6 +87,19 @@ const MainMobileShell: React.FC = () => {
   }, [currentUser.id]);
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     try {
+      if (typeof window !== 'undefined') {
+        const urlTab = new URLSearchParams(window.location.search).get('tab') as ActiveTab | null;
+        if (
+          urlTab === 'dashboard' ||
+          urlTab === 'matches' ||
+          urlTab === 'search' ||
+          urlTab === 'squad' ||
+          urlTab === 'ranking' ||
+          urlTab === 'admin'
+        ) {
+          return urlTab;
+        }
+      }
       const saved = sessionStorage.getItem('futplay_nav_active_tab_v1') as ActiveTab | null;
       if (
         saved === 'dashboard' ||
@@ -138,10 +151,6 @@ const MainMobileShell: React.FC = () => {
       document.removeEventListener('touchstart', handlePointerDown);
     };
   }, [showProfileMenu]);
-  const [publicUrl, setPublicUrl] = useState<string>(
-    'https://concert-mask-never-seniors.trycloudflare.com'
-  );
-  const [lanUrl, setLanUrl] = useState<string>('http://192.168.0.102:3000');
   const [matchIdToOpen, setMatchIdToOpen] = useState<string | undefined>(() => {
     try {
       return sessionStorage.getItem('futplay_nav_match_id_v1') || undefined;
@@ -228,28 +237,6 @@ const MainMobileShell: React.FC = () => {
       clearTimeout(clearTimer);
     };
   }, [notification, clearNotification]);
-
-  useEffect(() => {
-    let mounted = true;
-    const fetchTunnelInfo = async () => {
-      try {
-        const res = await fetch('/api/mobile-url');
-        if (res.ok) {
-          const data = await res.json();
-          if (mounted && data.publicUrl) setPublicUrl(data.publicUrl);
-          if (mounted && data.lanUrl) setLanUrl(data.lanUrl);
-        }
-      } catch {
-        // Static fallback
-      }
-    };
-    fetchTunnelInfo();
-    const timer = setInterval(fetchTunnelInfo, 5000);
-    return () => {
-      mounted = false;
-      clearInterval(timer);
-    };
-  }, []);
 
   const handleNavigate = (
     tab: ActiveTab,
@@ -342,7 +329,7 @@ const MainMobileShell: React.FC = () => {
       <div className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-slate-50">
         {/* Cabeçalho Principal do App */}
         <header
-          className={`sticky top-0 z-50 transition-colors duration-200 ${
+          className={`sticky top-0 z-30 transition-colors duration-200 ${
             sumulaStopwatch.isActive
               ? 'border-b border-slate-800 bg-slate-900 text-white px-3 py-2.5 sm:py-3 shadow-lg'
               : 'border-b border-slate-200 bg-white/95 backdrop-blur-md px-4 py-2.5'
@@ -687,7 +674,7 @@ const MainMobileShell: React.FC = () => {
         </main>
 
         {/* Menu Inferior Fixo e Padrão (Sem transparência, sem mexer, sem contador) */}
-        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 z-50 w-full max-w-[430px] bg-white border-t border-slate-200 px-2 py-1.5 shadow-lg">
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 z-40 w-full max-w-[430px] bg-white border-t border-slate-200 px-2 py-1.5 shadow-lg">
           <div className={`grid ${isAdmin ? 'grid-cols-3' : 'grid-cols-5'} gap-1`}>
             {[
               {
@@ -721,7 +708,7 @@ const MainMobileShell: React.FC = () => {
                 : []),
             ].map((item) => {
               const Icon = item.icon;
-              const isActive = activeTab === item.id;
+              const isActive = !showMonthlyFeesPage && activeTab === item.id;
               return (
                 <button
                   key={item.id}
