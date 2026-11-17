@@ -399,6 +399,13 @@ export interface PeladaMonthlyConfig {
   pixReceiverName: string;
 }
 
+export interface PeladaScheduleConfig {
+  date: string; // 'YYYY-MM-DD'
+  time: string; // 'HH:mm'
+  venueName: string; // 'Arena Society Planalto - BA'
+  neighborhood: string; // 'Vila Rosália'
+}
+
 export type TransactionType = 'receita' | 'despesa';
 
 export type TransactionCategory =

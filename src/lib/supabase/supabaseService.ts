@@ -5,6 +5,7 @@ import {
   MonthlyPaymentRecord,
   PeerEvaluation,
   PeladaMonthlyConfig,
+  PeladaScheduleConfig,
   PlayerPosition,
   PlayerProfile,
   ProfileVisibility,
@@ -1168,6 +1169,100 @@ export const supabaseService = {
   },
 
   /**
+   * Busca a programação do baba/pelada agendada para o time no Supabase.
+   */
+  async getTeamPeladaSchedule(teamName?: string): Promise<PeladaScheduleConfig | null> {
+    if (!isSupabaseConfigured() || !supabase) return null;
+    try {
+      const slug = (teamName || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+      // 1. Tenta buscar pelo ID específico do time
+      if (slug && slug !== 'meu_time' && slug !== 'sem_time') {
+        const teamLedgerId = `pelada_schedule_ledger_${slug}`;
+        const { data: teamRow } = await supabase
+          .from('pelada_sumulas')
+          .select('*')
+          .eq('id', teamLedgerId)
+          .maybeSingle();
+
+        const teamData = teamRow?.data as unknown as { schedule?: PeladaScheduleConfig } | null;
+        if (teamData?.schedule) {
+          return teamData.schedule;
+        }
+      }
+
+      // 2. Fallback geral caso não tenha configuração individualizada
+      const { data: defaultRow } = await supabase
+        .from('pelada_sumulas')
+        .select('*')
+        .eq('id', 'pelada_schedule_ledger_v1')
+        .maybeSingle();
+
+      const defaultData = defaultRow?.data as unknown as { schedule?: PeladaScheduleConfig } | null;
+      if (defaultData?.schedule) {
+        return defaultData.schedule;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Salva a programação do baba/pelada para o time no Supabase (sincronização imediata para todos os usuários).
+   */
+  async saveTeamPeladaSchedule(
+    teamName: string,
+    config: PeladaScheduleConfig
+  ): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
+    try {
+      const slug = (teamName || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+      const ledgerId =
+        slug && slug !== 'meu_time' && slug !== 'sem_time'
+          ? `pelada_schedule_ledger_${slug}`
+          : 'pelada_schedule_ledger_v1';
+
+      const nowIso = new Date().toISOString();
+
+      const { error } = await supabase.from('pelada_sumulas').upsert(
+        {
+          id: ledgerId,
+          team_name: teamName || 'Meu Time',
+          status: 'schedule_ledger',
+          match_date: config.date,
+          start_time: config.time,
+          data: {
+            schedule: config,
+            teamName: teamName || '',
+          } as unknown as Record<string, unknown>,
+          last_updated: nowIso,
+        },
+        { onConflict: 'id' }
+      );
+
+      return !error;
+    } catch (err) {
+      console.error('Erro ao salvar agendamento do baba no Supabase:', err);
+      return false;
+    }
+  },
+
+  /**
    * Salva a súmula da pelada online em tempo real no Supabase.
    * Permite sincronização imediata com múltiplos aparelhos simultâneos.
    */
@@ -1221,8 +1316,14 @@ export const supabaseService = {
         .filter(
           (row) =>
             row.status !== 'financial_ledger' &&
+            row.status !== 'schedule_ledger' &&
+            row.status !== 'audit_ledger' &&
+            row.status !== 'peer_evaluations' &&
+            !row.id?.startsWith('pelada_schedule_ledger_') &&
             !row.id?.startsWith('finance_ledger_') &&
-            !row.id?.startsWith('monthly_')
+            !row.id?.startsWith('monthly_') &&
+            !row.id?.startsWith('audit_logs_') &&
+            !row.id?.startsWith('futplay_peer_')
         )
         .map((row) => {
           const full = (row.data as unknown as SumulaData) || ({} as SumulaData);

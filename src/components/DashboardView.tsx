@@ -43,13 +43,8 @@ import {
   DEFAULT_INITIAL_SUMULA,
 } from './SumulaPeladaView';
 import { isSupabaseConfigured, supabaseService } from '../lib/supabase';
-
-export interface PeladaScheduleConfig {
-  date: string; // 'YYYY-MM-DD'
-  time: string; // '16:00'
-  venueName: string; // 'Arena Society Planalto - BA'
-  neighborhood: string; // 'Vila Rosália'
-}
+import { PeladaScheduleConfig } from '../types/league';
+export type { PeladaScheduleConfig };
 
 export const DEFAULT_SUPER_CAPAS_PHOTO =
   '/images/stadium-super-capas.jpg';
@@ -61,7 +56,25 @@ export const DEFAULT_PELADA_CONFIG: PeladaScheduleConfig = {
   neighborhood: 'Vila Rosália',
 };
 
-export function getInitialPeladaSchedule(): PeladaScheduleConfig {
+export function getInitialPeladaSchedule(teamName?: string): PeladaScheduleConfig {
+  const slug = (teamName || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  if (slug) {
+    try {
+      const rawTeam = localStorage.getItem(`futplay_pelada_schedule_${slug}`);
+      if (rawTeam) {
+        const parsed = JSON.parse(rawTeam);
+        if (parsed.date && parsed.time) return parsed;
+      }
+    } catch {}
+  }
+
   try {
     const raw = localStorage.getItem('futplay_pelada_schedule_v1');
     if (raw) {
@@ -72,13 +85,25 @@ export function getInitialPeladaSchedule(): PeladaScheduleConfig {
 
   try {
     const sumulas = getStoredSumulas();
-    if (sumulas.length > 0 && sumulas[0].matchDate) {
-      const parts = sumulas[0].matchDate.split('/');
+    const teamSumula = slug
+      ? sumulas.find((s) => {
+          const sSlug = (s.teamName || '')
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '_');
+          return sSlug === slug && s.matchDate;
+        }) || sumulas[0]
+      : sumulas[0];
+
+    if (teamSumula && teamSumula.matchDate) {
+      const parts = teamSumula.matchDate.split('/');
       if (parts.length === 3) {
         const yyyyMmDd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
         return {
           date: yyyyMmDd,
-          time: sumulas[0].startTime || '16:00',
+          time: teamSumula.startTime || '16:00',
           venueName: 'Arena Society Planalto - BA',
           neighborhood: 'Vila Rosália',
         };
@@ -310,14 +335,104 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const isAdmin = currentUser?.role === 'admin';
   const canRenewSuperCapasPhoto = isCoach || isAdmin;
 
-  // Estados do Card do Dia da Pelada com Dias Contados
-  const [peladaConfig, setPeladaConfig] = useState<PeladaScheduleConfig>(getInitialPeladaSchedule);
+  const normalizeText = (text: string) =>
+    (text || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+  // Nome do time do usuário atual (atleta ou treinador)
+  const resolvedTeamName = (
+    currentUser?.teamName ||
+    currentPlayerProfile?.teamName ||
+    activeProfile?.teamName ||
+    profiles.find((p) => p.userId === currentUser?.id)?.teamName ||
+    ''
+  ).trim();
+
+  const userTeamNormalized = normalizeText(resolvedTeamName);
+  const userTeamNameLower = userTeamNormalized;
+
+  // Estados do Card do Dia da Pelada com Dias Contados (Sincronizado entre todos os usuários do time)
+  const [peladaConfig, setPeladaConfig] = useState<PeladaScheduleConfig>(() =>
+    getInitialPeladaSchedule(resolvedTeamName)
+  );
   const [showEditScheduleModal, setShowEditScheduleModal] = useState<boolean>(false);
   const [editDate, setEditDate] = useState<string>(peladaConfig.date);
   const [editTime, setEditTime] = useState<string>(peladaConfig.time);
   const [editVenue, setEditVenue] = useState<string>(peladaConfig.venueName);
+  const [isSavingSchedule, setIsSavingSchedule] = useState<boolean>(false);
   const [storedSumulas, setStoredSumulas] = useState<SumulaData[]>(getStoredSumulas);
   const [presenceFeedback, setPresenceFeedback] = useState<string | null>(null);
+
+  // Sincroniza a programação do baba do time a partir do Supabase (para todos os atletas do time)
+  useEffect(() => {
+    let isCancelled = false;
+
+    const syncSchedule = () => {
+      if (!isSupabaseConfigured()) return;
+      supabaseService.getTeamPeladaSchedule(resolvedTeamName).then((remote) => {
+        if (isCancelled || !remote || !remote.date || !remote.time) return;
+        setPeladaConfig(remote);
+        setEditDate(remote.date);
+        setEditTime(remote.time);
+        setEditVenue(remote.venueName || 'Arena Society Planalto - BA');
+
+        const slug = normalizeText(resolvedTeamName).replace(/[^a-z0-9]+/g, '_');
+        try {
+          if (slug) {
+            localStorage.setItem(`futplay_pelada_schedule_${slug}`, JSON.stringify(remote));
+          }
+          localStorage.setItem('futplay_pelada_schedule_v1', JSON.stringify(remote));
+        } catch {}
+      });
+    };
+
+    syncSchedule();
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncSchedule();
+      }
+    };
+
+    const handleScheduleChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        teamSlug?: string;
+        teamName?: string;
+        schedule?: PeladaScheduleConfig;
+      }>;
+      const detail = customEvent?.detail;
+      if (!detail?.schedule) return;
+
+      const eventTeamNorm = normalizeText(detail.teamName || '');
+      const userTeamNorm = normalizeText(resolvedTeamName);
+
+      if (
+        !eventTeamNorm ||
+        !userTeamNorm ||
+        eventTeamNorm === userTeamNorm ||
+        currentUser?.role === 'admin'
+      ) {
+        setPeladaConfig(detail.schedule);
+        setEditDate(detail.schedule.date);
+        setEditTime(detail.schedule.time);
+        setEditVenue(detail.schedule.venueName || 'Arena Society Planalto - BA');
+      }
+    };
+
+    window.addEventListener('futplay_pelada_schedule_changed', handleScheduleChanged);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('futplay_pelada_schedule_changed', handleScheduleChanged);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [resolvedTeamName, currentUser?.role]);
 
   // Dia da semana reconhecido automaticamente através da data digitada/selecionada
   const recognizedWeekday = useMemo(() => {
@@ -385,25 +500,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       window.removeEventListener('futplay_sumulas_changed', handleSumulasChanged);
     };
   }, []);
-
-  const normalizeText = (text: string) =>
-    (text || '')
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-
-  // Nome do time do usuário atual (atleta ou treinador)
-  const resolvedTeamName = (
-    currentUser?.teamName ||
-    currentPlayerProfile?.teamName ||
-    activeProfile?.teamName ||
-    profiles.find((p) => p.userId === currentUser?.id)?.teamName ||
-    ''
-  ).trim();
-
-  const userTeamNormalized = normalizeText(resolvedTeamName);
-  const userTeamNameLower = userTeamNormalized;
 
   // Filtra as súmulas pertencentes ao time vinculado ao atleta/treinador
   const myTeamSumulas = useMemo(() => {
@@ -1073,9 +1169,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   };
 
-  // Salvar novo dia e horário da pelada
-  const handleSaveSchedule = (e: React.FormEvent) => {
+  // Salvar novo dia e horário da pelada (propagado para todos os atletas do time via Supabase)
+  const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingSchedule) return;
+    setIsSavingSchedule(true);
+
     const updated: PeladaScheduleConfig = {
       date: editDate,
       time: editTime,
@@ -1084,6 +1183,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     };
     setPeladaConfig(updated);
     try {
+      const slug = normalizeText(resolvedTeamName).replace(/[^a-z0-9]+/g, '_');
+      if (slug) {
+        localStorage.setItem(`futplay_pelada_schedule_${slug}`, JSON.stringify(updated));
+      }
       localStorage.setItem('futplay_pelada_schedule_v1', JSON.stringify(updated));
 
       // Sincroniza a data e horário também na súmula da rodada atual se existir
@@ -1097,13 +1200,44 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           startTime: updated.time,
           lastUpdated: new Date().toISOString(),
         };
-        saveSumulaToList(syncedSumula);
+        saveSumulaToList(syncedSumula, true);
         setStoredSumulas(getStoredSumulas());
       }
+
+      // Dispara evento local imediato
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('futplay_pelada_schedule_changed', {
+            detail: {
+              teamSlug: slug,
+              teamName: resolvedTeamName,
+              schedule: updated,
+            },
+          })
+        );
+      }
+
+      // Salva no Supabase para propagar online para todos os usuários do time
+      if (isSupabaseConfigured()) {
+        await supabaseService.saveTeamPeladaSchedule(resolvedTeamName, updated);
+      }
+
+      notify(
+        'success',
+        'Data do Baba Atualizada!',
+        'A data e horário foram salvos e atualizados para todos os atletas do time.'
+      );
+      setShowEditScheduleModal(false);
     } catch (err) {
       console.warn('Erro ao salvar agendamento da pelada:', err);
+      notify(
+        'error',
+        'Falha ao Salvar',
+        'Ocorreu um erro ao sincronizar o agendamento.'
+      );
+    } finally {
+      setIsSavingSchedule(false);
     }
-    setShowEditScheduleModal(false);
   };
 
   // Atalhos de datas no modal de edição (dias semanais do baba)
@@ -2112,9 +2246,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 active:scale-98 transition"
+                  disabled={isSavingSchedule}
+                  className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 active:scale-98 transition disabled:opacity-50 cursor-pointer"
                 >
-                  Salvar Data
+                  {isSavingSchedule ? 'Salvando...' : 'Salvar Data'}
                 </button>
               </div>
             </form>

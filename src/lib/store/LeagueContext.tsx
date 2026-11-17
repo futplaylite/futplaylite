@@ -14,6 +14,7 @@ import {
   MatchResultVersion,
   MonthlyPaymentRecord,
   PeladaMonthlyConfig,
+  PeladaScheduleConfig,
   PlayerPosition,
   PlayerProfile,
   PlayerRatingLog,
@@ -1385,7 +1386,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
                 );
               }
             } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              const newRow = payload.new as { data?: unknown; id?: string };
+              const newRow = payload.new as { data?: unknown; id?: string; status?: string; team_name?: string };
               if (newRow && newRow.id === 'audit_logs_ledger_v1' && newRow.data) {
                 const auditData = newRow.data as { logs?: AuditLog[] };
                 if (Array.isArray(auditData.logs)) {
@@ -1400,7 +1401,43 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
                     return { ...prev, auditLogs: list };
                   });
                 }
-              } else if (newRow && newRow.data) {
+              } else if (
+                newRow &&
+                newRow.data &&
+                (newRow.status === 'schedule_ledger' || newRow.id?.startsWith('pelada_schedule_ledger_'))
+              ) {
+                const schedData = newRow.data as { schedule?: PeladaScheduleConfig; teamName?: string };
+                if (schedData && schedData.schedule) {
+                  const teamSlug = (newRow.id || '').replace('pelada_schedule_ledger_', '');
+                  try {
+                    if (teamSlug) {
+                      localStorage.setItem(`futplay_pelada_schedule_${teamSlug}`, JSON.stringify(schedData.schedule));
+                    }
+                    localStorage.setItem('futplay_pelada_schedule_v1', JSON.stringify(schedData.schedule));
+                  } catch {}
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(
+                      new CustomEvent('futplay_pelada_schedule_changed', {
+                        detail: {
+                          teamSlug,
+                          teamName: schedData.teamName || newRow.team_name,
+                          schedule: schedData.schedule,
+                        },
+                      })
+                    );
+                  }
+                }
+              } else if (
+                newRow &&
+                newRow.data &&
+                newRow.status !== 'financial_ledger' &&
+                newRow.status !== 'audit_ledger' &&
+                newRow.status !== 'peer_evaluations' &&
+                !newRow.id?.startsWith('finance_ledger_') &&
+                !newRow.id?.startsWith('monthly_') &&
+                !newRow.id?.startsWith('audit_logs_') &&
+                !newRow.id?.startsWith('futplay_peer_')
+              ) {
                 const updatedSumula = newRow.data as SumulaData;
                 const idx = list.findIndex((s) => s.id === updatedSumula.id);
                 if (idx >= 0) {
