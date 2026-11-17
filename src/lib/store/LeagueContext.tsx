@@ -713,8 +713,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [currentUserId]);
 
-  // Trava para evitar execuções concorrentes simultâneas de refreshLeagueData
+  // Trava para evitar execuções concorrentes simultâneas de refreshLeagueData com timeout de segurança
   const isRefreshingRef = useRef<boolean>(false);
+  const lastRefreshTimeRef = useRef<number>(0);
 
   // Reconciliação robusta de súmulas de peladas do Supabase (inclusões, alterações e exclusões)
   const reconcileSumulas = (remoteSumulas: SumulaData[] | null) => {
@@ -797,8 +798,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsCloudSyncReady(true);
       return;
     }
-    if (isRefreshingRef.current) return;
+    const nowTs = Date.now();
+    if (isRefreshingRef.current && nowTs - lastRefreshTimeRef.current < 4000) {
+      return;
+    }
     isRefreshingRef.current = true;
+    lastRefreshTimeRef.current = nowTs;
 
     try {
       const activeUser = state.users.find((u) => u.id === currentUserId);
@@ -1058,21 +1063,48 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
             if (loc) matchedLocalIds.add(loc.id);
 
+            // Cruza com remoteUsers para garantir que dados de time nunca fiquem em branco
+            const matchingUser = (remoteUsers || []).find(
+              (u) =>
+                (rp.userId && u.id === rp.userId) ||
+                (loc?.userId && u.id === loc.userId)
+            );
+
             const team =
-              (loc?.teamName && loc.teamName !== 'Meu Time' && loc.teamName !== 'Sem Time' ? loc.teamName : undefined) ||
               (rp.teamName && rp.teamName !== 'Meu Time' && rp.teamName !== 'Sem Time' ? rp.teamName : undefined) ||
-              loc?.teamName ||
+              (matchingUser?.teamName && matchingUser.teamName !== 'Meu Time' && matchingUser.teamName !== 'Sem Time' ? matchingUser.teamName : undefined) ||
+              (loc?.teamName && loc.teamName !== 'Meu Time' && loc.teamName !== 'Sem Time' ? loc.teamName : undefined) ||
               rp.teamName ||
+              matchingUser?.teamName ||
+              loc?.teamName ||
               '';
 
             const crest =
-              loc?.teamCrestUrl ||
               rp.teamCrestUrl ||
+              matchingUser?.teamCrestUrl ||
+              loc?.teamCrestUrl ||
               (team ? crestCatalog.get(team.toLowerCase()) : undefined);
 
             if (team && crest) crestCatalog.set(team.toLowerCase(), crest);
 
-            const isOwner = loc?.isTeamOwner === true || rp.isTeamOwner === true;
+            const code =
+              rp.teamInviteCode ||
+              matchingUser?.teamInviteCode ||
+              loc?.teamInviteCode;
+
+            const city =
+              rp.teamCity ||
+              matchingUser?.teamCity ||
+              loc?.teamCity ||
+              'Planalto - BA';
+
+            const modality =
+              rp.teamModality ||
+              matchingUser?.teamModality ||
+              loc?.teamModality ||
+              'society';
+
+            const isOwner = loc?.isTeamOwner === true || rp.isTeamOwner === true || matchingUser?.isTeamOwner === true;
 
             return {
               ...loc,
@@ -1080,11 +1112,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               id: rp.id,
               userId: rp.userId || loc?.userId,
               displayName: rp.displayName || loc?.displayName,
-              teamName: team || loc?.teamName || rp.teamName,
-              teamCrestUrl: crest || loc?.teamCrestUrl || rp.teamCrestUrl,
-              teamCity: loc?.teamCity || rp.teamCity,
-              teamModality: loc?.teamModality || rp.teamModality,
-              teamInviteCode: loc?.teamInviteCode || rp.teamInviteCode,
+              teamName: team,
+              teamCrestUrl: crest,
+              teamCity: city,
+              teamModality: modality,
+              teamInviteCode: code,
               isTeamOwner: isOwner,
               skills: loc?.skills || rp.skills,
               overallStars: loc?.overallStars || rp.overallStars,
@@ -1125,12 +1157,15 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           const poolIds = new Set(mergedPool.map((p) => p.id));
           const poolNames = new Set(mergedPool.map((p) => (p.displayName || '').trim().toUpperCase()));
 
-          INITIAL_PROFILES.forEach((ip) => {
-            if (!poolIds.has(ip.id) && !poolNames.has((ip.displayName || '').trim().toUpperCase())) {
-              mergedPool.push(ip);
-              poolIds.add(ip.id);
-            }
-          });
+          // Se a nuvem não retornou perfis, usa INITIAL_PROFILES como fallback inicial para ambiente zerado
+          if (filteredRemote.length === 0) {
+            INITIAL_PROFILES.forEach((ip) => {
+              if (!poolIds.has(ip.id) && !poolNames.has((ip.displayName || '').trim().toUpperCase())) {
+                mergedPool.push(ip);
+                poolIds.add(ip.id);
+              }
+            });
+          }
 
           mergedProfiles = computeProfilesWithPeerEvaluations(
             mergedPool,
@@ -1937,6 +1972,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch {
       // Ignore
     }
+
+    // Sincroniza imediatamente com a nuvem do Supabase ao ativar o usuário para puxar o elenco completo
+    setTimeout(() => {
+      refreshLeagueData().catch(() => {});
+    }, 50);
   };
 
   // Remove um usuário apenas da memória local (sem notificação e sem tocar no Supabase).

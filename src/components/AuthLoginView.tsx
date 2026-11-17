@@ -159,6 +159,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [regJoinCode, setRegJoinCode] = useState<string>('');
   const [asyncRemoteTeam, setAsyncRemoteTeam] = useState<any | null>(null);
   const [isSearchingTeam, setIsSearchingTeam] = useState<boolean>(false);
+  const foundTeamsCache = useRef<Map<string, any>>(new Map());
 
   // Auto-preenchimento caso venha de link com ?convite=XYZ
   useEffect(() => {
@@ -176,7 +177,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const normalizeCode = (code?: string) =>
     (code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 
-  // Catálogo completo de times locais (cache de times, perfis de atletas e contas de usuários)
+  // Catálogo completo de times (perfis de atletas, contas de usuários e cache)
   const allAvailableTeams = useMemo(() => {
     const teamsMap = new Map<string, any>();
 
@@ -185,6 +186,12 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       futsal: 'Futsal',
       futebol_campo: 'Futebol de Campo',
       futebol_areia: 'Futebol de Areia',
+    };
+
+    const registerTeamInMap = (key: string, teamObj: any) => {
+      if (!key) return;
+      teamsMap.set(key, teamObj);
+      foundTeamsCache.current.set(key, teamObj);
     };
 
     // 1. Chave dedicada de times salvos no aparelho (futplay_registered_teams_v1)
@@ -198,7 +205,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
               const code = (t.inviteCode || '').trim();
               const key = normalizeCode(code || t.name);
               const mod = (t.modality || 'society') as TeamModality;
-              teamsMap.set(key, {
+              const teamObj = {
                 id: t.id || `team-${key}`,
                 inviteCode: (code || key).toUpperCase(),
                 name: t.name,
@@ -208,7 +215,11 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                 modality: mod,
                 modalityLabel: MODALITY_LABELS[mod] || 'Society',
                 ownerName: t.ownerName || 'Treinador',
-              });
+              };
+              registerTeamInMap(key, teamObj);
+              if (code) registerTeamInMap(code.toUpperCase(), teamObj);
+              const namePrefix = normalizeCode(t.name).slice(0, 4);
+              if (namePrefix) registerTeamInMap(namePrefix, teamObj);
             }
           });
         }
@@ -240,7 +251,10 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           modalityLabel: MODALITY_LABELS[mod] || 'Society',
           ownerName: p.displayName || 'Treinador',
         };
-        teamsMap.set(codeKey, team);
+        registerTeamInMap(codeKey, team);
+        if (rawCode) registerTeamInMap(rawCode.toUpperCase(), team);
+        const namePrefix = normalizeCode(rawName).slice(0, 4);
+        if (namePrefix) registerTeamInMap(namePrefix, team);
       } else {
         if (!team.crestUrl && p.teamCrestUrl) team.crestUrl = p.teamCrestUrl;
         if (p.isTeamOwner && p.displayName) team.ownerName = p.displayName;
@@ -272,7 +286,10 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           modalityLabel: MODALITY_LABELS[mod] || 'Society',
           ownerName: u.email?.split('@')[0] || 'Treinador',
         };
-        teamsMap.set(codeKey, team);
+        registerTeamInMap(codeKey, team);
+        if (rawCode) registerTeamInMap(rawCode.toUpperCase(), team);
+        const namePrefix = normalizeCode(rawName).slice(0, 4);
+        if (namePrefix) registerTeamInMap(namePrefix, team);
       } else {
         if (!team.crestUrl && u.teamCrestUrl) team.crestUrl = u.teamCrestUrl;
       }
@@ -281,14 +298,21 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     return Array.from(teamsMap.values());
   }, [profiles, users]);
 
-  // Reconhecimento do time em tempo real: Time local tem prioridade absoluta e NUNCA some
+  // Reconhecimento do time em tempo real: Time reconhecido NUNCA some
   const matchedTeam = useMemo(() => {
     const raw = regJoinCode.trim();
     if (!raw || raw.length < 2) return null;
     const clean = normalizeCode(raw);
     if (!clean) return null;
 
-    // 1. Procura na lista local completa (instantâneo, sem latência de rede)
+    // 1. Checa cache de times já encontrados
+    const cached =
+      foundTeamsCache.current.get(clean) ||
+      foundTeamsCache.current.get(raw.toUpperCase()) ||
+      (clean.length >= 4 ? foundTeamsCache.current.get(clean.slice(0, 4)) : undefined);
+    if (cached) return cached;
+
+    // 2. Procura na lista local completa (instantâneo, sem latência de rede)
     const local = allAvailableTeams.find((t) => {
       const tNorm = normalizeCode(t.inviteCode);
       const namePrefix = normalizeCode(t.name).slice(0, 4);
@@ -296,12 +320,15 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         tNorm === clean ||
         t.inviteCode.toUpperCase() === raw.toUpperCase() ||
         tNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
-        (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix))
+        (clean.length >= 4 && namePrefix && (clean === namePrefix || clean.startsWith(namePrefix)))
       );
     });
-    if (local) return local;
+    if (local) {
+      foundTeamsCache.current.set(clean, local);
+      return local;
+    }
 
-    // 2. Se não achou localmente, checa se já veio da consulta assíncrona ao Supabase
+    // 3. Se não achou localmente, checa se já veio da consulta assíncrona ao Supabase
     if (asyncRemoteTeam) {
       const rNorm = normalizeCode(asyncRemoteTeam.inviteCode);
       const namePrefix = normalizeCode(asyncRemoteTeam.name).slice(0, 4);
@@ -309,8 +336,9 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         rNorm === clean ||
         asyncRemoteTeam.inviteCode.toUpperCase() === raw.toUpperCase() ||
         rNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
-        (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix))
+        (clean.length >= 4 && namePrefix && (clean === namePrefix || clean.startsWith(namePrefix)))
       ) {
+        foundTeamsCache.current.set(clean, asyncRemoteTeam);
         return asyncRemoteTeam;
       }
     }
@@ -318,52 +346,37 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     return null;
   }, [regJoinCode, allAvailableTeams, asyncRemoteTeam]);
 
-  // Busca remota no Supabase apenas se o time não estiver em memória local (protegido contra condição de corrida)
+  // Busca remota no Supabase apenas se o time não estiver em memória local (com proteção contra cancelamento)
   useEffect(() => {
     const raw = regJoinCode.trim();
     if (!raw || raw.length < 2) {
-      setAsyncRemoteTeam(null);
       setIsSearchingTeam(false);
       return;
     }
 
     const clean = normalizeCode(raw);
     if (!clean) {
-      setAsyncRemoteTeam(null);
       setIsSearchingTeam(false);
       return;
     }
 
-    // Se já foi encontrado localmente, nem precisa chamar a nuvem nem exibir loading!
-    const alreadyLocal = allAvailableTeams.some((t) => {
-      const tNorm = normalizeCode(t.inviteCode);
-      const namePrefix = normalizeCode(t.name).slice(0, 4);
-      return (
-        tNorm === clean ||
-        t.inviteCode.toUpperCase() === raw.toUpperCase() ||
-        tNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
-        (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix))
-      );
-    });
+    // Se já foi encontrado localmente ou no cache, nem precisa chamar a nuvem nem exibir loading
+    const alreadyFound =
+      foundTeamsCache.current.has(clean) ||
+      allAvailableTeams.some((t) => {
+        const tNorm = normalizeCode(t.inviteCode);
+        const namePrefix = normalizeCode(t.name).slice(0, 4);
+        return (
+          tNorm === clean ||
+          t.inviteCode.toUpperCase() === raw.toUpperCase() ||
+          tNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
+          (clean.length >= 4 && namePrefix && clean.startsWith(namePrefix))
+        );
+      });
 
-    if (alreadyLocal) {
+    if (alreadyFound) {
       setIsSearchingTeam(false);
       return;
-    }
-
-    // Se o time remoto já corresponde a este código, não busca repetidamente
-    if (asyncRemoteTeam) {
-      const rNorm = normalizeCode(asyncRemoteTeam.inviteCode);
-      const namePrefix = normalizeCode(asyncRemoteTeam.name).slice(0, 4);
-      if (
-        rNorm === clean ||
-        asyncRemoteTeam.inviteCode.toUpperCase() === raw.toUpperCase() ||
-        rNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
-        (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix))
-      ) {
-        setIsSearchingTeam(false);
-        return;
-      }
     }
 
     let active = true;
@@ -374,6 +387,10 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         if (isSupabaseConfigured()) {
           const remote = await supabaseService.findTeamByInviteCode(clean);
           if (active && remote) {
+            foundTeamsCache.current.set(clean, remote);
+            foundTeamsCache.current.set(normalizeCode(remote.inviteCode), remote);
+            const prefix = normalizeCode(remote.name).slice(0, 4);
+            if (prefix) foundTeamsCache.current.set(prefix, remote);
             setAsyncRemoteTeam(remote);
           }
         }
@@ -384,13 +401,13 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           setIsSearchingTeam(false);
         }
       }
-    }, 250);
+    }, 200);
 
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [regJoinCode, allAvailableTeams, asyncRemoteTeam]);
+  }, [regJoinCode]);
 
   const handleCrestSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
