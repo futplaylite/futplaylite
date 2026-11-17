@@ -311,7 +311,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   const [allMonthsSelectedYm, setAllMonthsSelectedYm] = useState<string>(() => getCurrentYearMonth());
 
   // Campos para edição de configuração do PIX e Valor
-  const [editAmount, setEditAmount] = useState<number>(monthlyConfig?.monthlyAmount || 30);
+  const [editAmount, setEditAmount] = useState<number | string>(monthlyConfig?.monthlyAmount || 30);
   const [editPixKey, setEditPixKey] = useState<string>(monthlyConfig?.pixKey || '77988001122');
   const [editPixReceiver, setEditPixReceiver] = useState<string>(
     monthlyConfig?.pixReceiverName || 'Rosália Esportes'
@@ -941,11 +941,13 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   // Salvar configurações do time (Apenas Treinador)
   const handleSaveConfig = () => {
     if (!isCoachOrAdmin) return;
+    const finalAmount = Math.max(1, Number(editAmount) || monthlyConfig?.monthlyAmount || 30);
     updateMonthlyConfig({
-      monthlyAmount: editAmount,
+      monthlyAmount: finalAmount,
       pixKey: editPixKey.trim(),
       pixReceiverName: editPixReceiver.trim(),
     });
+    setEditAmount(finalAmount);
     setShowConfig(false);
   };
 
@@ -1344,7 +1346,12 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                 {isCoachOrAdmin && (
                   <button
                     type="button"
-                    onClick={() => setShowConfig(true)}
+                    onClick={() => {
+                      setEditAmount(monthlyConfig?.monthlyAmount || 30);
+                      setEditPixKey(monthlyConfig?.pixKey || '77988001122');
+                      setEditPixReceiver(monthlyConfig?.pixReceiverName || 'Rosália Esportes');
+                      setShowConfig(true);
+                    }}
                     className="flex items-center gap-1 rounded-full bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 text-[10px] font-bold transition active:scale-95 cursor-pointer shadow-2xs"
                     title="Configurar valor da mensalidade e chave PIX"
                   >
@@ -2543,7 +2550,11 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                     min="0.5"
                     required
                     value={txAmount}
-                    onChange={(e) => setTxAmount(e.target.value)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const cleaned = raw.replace(/^0+(?=\d)/, '');
+                      setTxAmount(cleaned);
+                    }}
                     placeholder="150.00"
                     className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
@@ -2767,8 +2778,24 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
                   type="number"
                   min="5"
                   max="500"
-                  value={editAmount}
-                  onChange={(e) => setEditAmount(Number(e.target.value))}
+                  placeholder="30"
+                  value={editAmount === 0 || editAmount === '0' ? '' : editAmount}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === '') {
+                      setEditAmount('');
+                      return;
+                    }
+                    const cleaned = raw.replace(/^0+(?=\d)/, '');
+                    setEditAmount(cleaned);
+                  }}
+                  onBlur={() => {
+                    if (editAmount === '' || Number(editAmount) <= 0) {
+                      setEditAmount(monthlyConfig?.monthlyAmount || 30);
+                    } else {
+                      setEditAmount(Number(editAmount));
+                    }
+                  }}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
