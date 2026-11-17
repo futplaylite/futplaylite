@@ -83,34 +83,6 @@ export function getInitialPeladaSchedule(teamName?: string): PeladaScheduleConfi
     }
   } catch {}
 
-  try {
-    const sumulas = getStoredSumulas();
-    const teamSumula = slug
-      ? sumulas.find((s) => {
-          const sSlug = (s.teamName || '')
-            .trim()
-            .toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-z0-9]+/g, '_');
-          return sSlug === slug && s.matchDate;
-        }) || sumulas[0]
-      : sumulas[0];
-
-    if (teamSumula && teamSumula.matchDate) {
-      const parts = teamSumula.matchDate.split('/');
-      if (parts.length === 3) {
-        const yyyyMmDd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-        return {
-          date: yyyyMmDd,
-          time: teamSumula.startTime || '16:00',
-          venueName: 'Arena Society Planalto - BA',
-          neighborhood: 'Vila Rosália',
-        };
-      }
-    }
-  } catch {}
-
   return DEFAULT_PELADA_CONFIG;
 }
 
@@ -364,7 +336,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [editVenue, setEditVenue] = useState<string>(peladaConfig.venueName);
   const [isSavingSchedule, setIsSavingSchedule] = useState<boolean>(false);
   const [storedSumulas, setStoredSumulas] = useState<SumulaData[]>(getStoredSumulas);
-  const [presenceFeedback, setPresenceFeedback] = useState<string | null>(null);
 
   // Sincroniza a programação do baba do time a partir do Supabase (para todos os atletas do time)
   useEffect(() => {
@@ -887,19 +858,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const base = new Date();
     base.setHours(12, 0, 0, 0);
 
-    // Conjunto de datas de súmulas cadastradas pertencentes ao time do usuário
-    const sumulaDates = new Set<string>();
-    try {
-      for (const s of myTeamSumulas) {
-        if (s.matchDate) {
-          const parts = s.matchDate.split('/');
-          if (parts.length === 3) {
-            sumulaDates.add(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-          }
-        }
-      }
-    } catch {}
-
     // Dia da semana habitual de pelada (baseado na data configurada, ex: sábado = 6)
     let peladaDayOfWeek = 6;
     try {
@@ -924,9 +882,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       const isToday = dateStr === todayDateStr;
       const isExactConfig = dateStr === peladaConfig.date;
-      const isSumula = sumulaDates.has(dateStr);
       const isWeeklyPelada = d.getDay() === peladaDayOfWeek;
-      const isPelada = isExactConfig || isSumula || isWeeklyPelada;
+      const isPelada = isExactConfig || isWeeklyPelada;
 
       const dayOfficialMatches = officialMatchesByDate.get(dateStr) || [];
       const hasOfficialMatch = dayOfficialMatches.length > 0;
@@ -961,7 +918,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       });
     }
     return list;
-  }, [todayDateStr, peladaConfig.date, storedSumulas, officialMatchesByDate, activeProfile.teamName, currentUser?.teamName]);
+  }, [todayDateStr, peladaConfig.date, officialMatchesByDate, activeProfile.teamName, currentUser?.teamName]);
 
   // Centraliza no dia atual quando o carrossel é montado ou a data muda
   useEffect(() => {
@@ -1042,134 +999,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
 
 
-  // Status de Presença do atleta na súmula da rodada atual do seu time
-  const activeSumula = myTeamSumulas[0];
-  const myNameUpper = activeProfile.displayName.trim().toUpperCase();
-  const myArrivalEntry = activeSumula?.arrivalList?.find(
-    (a) => a.playerName.trim().toUpperCase() === myNameUpper
-  );
-  const isMyPresenceConfirmed = Boolean(myArrivalEntry?.confirmed);
-  const confirmedCount =
-    activeSumula?.arrivalList?.filter((a) => a.confirmed).length || 0;
-  const totalRosterCount = activeSumula?.arrivalList?.length || 0;
-
-  // Alternar presença do atleta diretamente no Card (conta admin não participa)
-  const handleToggleMyPresence = () => {
-    if (isAdmin) return;
-    try {
-      const all = getStoredSumulas();
-      let current = all.find(
-        (s) => (s.teamName || '').trim().toLowerCase() === userTeamNameLower && s.status === 'em_andamento'
-      ) || myTeamSumulas.find((s) => s.status === 'em_andamento') || myTeamSumulas[0];
-      const isGk = activeProfile.position === 'goleiro';
-
-      if (!current) {
-        // Se ainda não existir súmula para o time E o usuário NÃO for treinador/coach, NÃO cria súmula!
-        if (!isCoach) {
-          setPresenceFeedback('Aguarde o treinador abrir a súmula da rodada.');
-          setTimeout(() => setPresenceFeedback(null), 3000);
-          return;
-        }
-
-        // Se for treinador, cria a súmula oficial do time:
-        const teamProfiles = profiles.filter((p) => {
-          const pTeam = (p.teamName || '').trim().toLowerCase();
-          return pTeam === userTeamNameLower;
-        });
-        const activeAthletes = teamProfiles.length > 0 ? teamProfiles : [activeProfile];
-        const initialArrivals: SumulaData['arrivalList'] = activeAthletes.map((p, idx) => ({
-          order: idx + 1,
-          playerName: p.displayName.trim().toUpperCase(),
-          confirmed: p.id === activeProfile.id,
-          isGuest: false,
-          isGoalkeeper: p.position === 'goleiro',
-          note: p.position === 'goleiro' ? 'Goleiro' : undefined,
-        }));
-
-        const fresh: SumulaData = {
-          id: `sumula-pelada-${Date.now()}`,
-          status: 'em_andamento',
-          matchDate: formatPeladaDateExtended(peladaConfig.date),
-          startTime: peladaConfig.time,
-          lastUpdated: new Date().toISOString(),
-          teamName: activeProfile.teamName || currentUser?.teamName || 'Meu Time',
-          createdByUserId: currentUser?.id,
-          createdByName: activeProfile.displayName,
-          timerSeconds: 0,
-          isTimerRunning: false,
-          arrivalList: initialArrivals,
-          yellowCards: [],
-          blueCards: [],
-          redCards: [],
-          goalkeepers: syncFixedGoalkeepers(initialArrivals),
-          teamsGrid: [
-            { teamName: 'Time 01', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
-            { teamName: 'Time 02', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
-            { teamName: 'Time 03', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
-            { teamName: 'Time 04', matches: ['-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-', '-'] },
-          ],
-          teamLineups: {
-            'Time 01': [],
-            'Time 02': [],
-            'Time 03': [],
-            'Time 04': [],
-          },
-          highlightGoals: [],
-        };
-
-        saveSumulaToList(fresh);
-        setStoredSumulas(getStoredSumulas());
-        setPresenceFeedback('✓ Sua presença na pelada foi confirmada!');
-        setTimeout(() => setPresenceFeedback(null), 3000);
-        return;
-      }
-
-      let found = false;
-      const updatedArrivals = (current.arrivalList || []).map((a) => {
-        if (a.playerName.trim().toUpperCase() === myNameUpper) {
-          found = true;
-          return {
-            ...a,
-            confirmed: !a.confirmed,
-            isGoalkeeper: isGk,
-          };
-        }
-        return a;
-      });
-
-      if (!found) {
-        updatedArrivals.push({
-          order: updatedArrivals.length + 1,
-          playerName: activeProfile.displayName,
-          confirmed: true,
-          isGuest: false,
-          isGoalkeeper: isGk,
-        });
-      }
-
-      const updatedSumula: SumulaData = {
-        ...current,
-        arrivalList: updatedArrivals,
-        goalkeepers: syncFixedGoalkeepers(updatedArrivals),
-        lastUpdated: new Date().toISOString(),
-      };
-
-      saveSumulaToList(updatedSumula);
-      setStoredSumulas(getStoredSumulas());
-
-      const willBeConfirmed = !isMyPresenceConfirmed;
-      setPresenceFeedback(
-        willBeConfirmed
-          ? '✓ Sua presença na pelada foi confirmada!'
-          : 'Presença desmarcada na súmula.'
-      );
-      setTimeout(() => setPresenceFeedback(null), 3000);
-    } catch (e) {
-      console.warn('Erro ao atualizar presença na pelada:', e);
-    }
-  };
-
-  // Salvar novo dia e horário da pelada (propagado para todos os atletas do time via Supabase)
+  // Salvar novo dia e horário da pelada (propagado para todos os atletas do time via Supabase, puramente informativo e sem vínculo com súmula)
   const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSavingSchedule) return;
@@ -1188,21 +1018,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         localStorage.setItem(`futplay_pelada_schedule_${slug}`, JSON.stringify(updated));
       }
       localStorage.setItem('futplay_pelada_schedule_v1', JSON.stringify(updated));
-
-      // Sincroniza a data e horário também na súmula da rodada atual se existir
-      const [y, m, d] = updated.date.split('-');
-      const dateBr = `${d}/${m}/${y}`;
-      const current = myTeamSumulas[0];
-      if (current) {
-        const syncedSumula: SumulaData = {
-          ...current,
-          matchDate: dateBr,
-          startTime: updated.time,
-          lastUpdated: new Date().toISOString(),
-        };
-        saveSumulaToList(syncedSumula, true);
-        setStoredSumulas(getStoredSumulas());
-      }
 
       // Dispara evento local imediato
       if (typeof window !== 'undefined') {
