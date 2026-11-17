@@ -481,22 +481,23 @@ const MainMobileShell: React.FC = () => {
                 </div>
               </div>
 
-              {/* Nome Padrão do App (FUTPLAY LITE) com transição Fade In / Fade Out */}
+              {/* Brasão Oficial do App (FUTPLAY LITE) no canto esquerdo com o mesmo tamanho e características do time central */}
               <button
                 onClick={() => handleNavigate('dashboard')}
-                className={`flex items-center gap-1.5 font-display text-base font-black tracking-wider text-blue-900 uppercase hover:text-blue-700 transition-all duration-300 truncate ${
+                className={`flex items-center justify-center transition-transform hover:scale-105 active:scale-95 ${
                   activeHeaderNotice && !isFading
                     ? 'opacity-0 translate-y-1 pointer-events-none'
                     : 'opacity-100 translate-y-0 pointer-events-auto'
                 }`}
                 title="FUTPLAY LITE - Início"
+                aria-label="Ir para o Início"
               >
                 <img
-                  src="/favicon.png"
+                  src="/images/futplay-crest.jpg"
                   alt="FutPlay Lite"
-                  className="h-5 w-5 rounded-md object-contain shrink-0 drop-shadow-xs"
+                  className="object-contain drop-shadow-sm shrink-0 rounded-full"
+                  style={{ width: 38, height: 38 }}
                 />
-                <span className="truncate">FUTPLAY LITE</span>
               </button>
             </div>
 
