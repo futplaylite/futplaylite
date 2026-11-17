@@ -157,7 +157,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
 
   // Código digitado pelo atleta para entrar em um time existente
   const [regJoinCode, setRegJoinCode] = useState<string>('');
-  const [matchedTeam, setMatchedTeam] = useState<any | null>(null);
+  const [asyncRemoteTeam, setAsyncRemoteTeam] = useState<any | null>(null);
   const [isSearchingTeam, setIsSearchingTeam] = useState<boolean>(false);
 
   // Auto-preenchimento caso venha de link com ?convite=XYZ
@@ -176,66 +176,221 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const normalizeCode = (code?: string) =>
     (code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 
-  // Reconhecimento do time em tempo real pelo código de convite digitado
-  useEffect(() => {
-    const raw = regJoinCode.trim();
-    if (!raw || raw.length < 2) {
-      setMatchedTeam(null);
-      return;
-    }
-    const clean = normalizeCode(raw);
+  // Catálogo completo de times locais (cache de times, perfis de atletas e contas de usuários)
+  const allAvailableTeams = useMemo(() => {
+    const teamsMap = new Map<string, any>();
 
-    // 1. Procura primeiro nos times do cache local
-    let found: any = null;
+    const MODALITY_LABELS: Record<string, string> = {
+      society: 'Society',
+      futsal: 'Futsal',
+      futebol_campo: 'Futebol de Campo',
+      futebol_areia: 'Futebol de Areia',
+    };
+
+    // 1. Chave dedicada de times salvos no aparelho (futplay_registered_teams_v1)
     try {
       const stored = localStorage.getItem('futplay_registered_teams_v1');
       if (stored) {
         const list = JSON.parse(stored);
         if (Array.isArray(list)) {
-          found = list.find((t: any) => normalizeCode(t.inviteCode) === clean);
+          list.forEach((t: any) => {
+            if (t && t.name) {
+              const code = (t.inviteCode || '').trim();
+              const key = normalizeCode(code || t.name);
+              const mod = (t.modality || 'society') as TeamModality;
+              teamsMap.set(key, {
+                id: t.id || `team-${key}`,
+                inviteCode: (code || key).toUpperCase(),
+                name: t.name,
+                city: t.city || 'Planalto - BA',
+                neighborhood: t.neighborhood || 'Centro',
+                crestUrl: t.crestUrl,
+                modality: mod,
+                modalityLabel: MODALITY_LABELS[mod] || 'Society',
+                ownerName: t.ownerName || 'Treinador',
+              });
+            }
+          });
         }
       }
     } catch {}
 
-    // 2. Procura nos perfis da liga
-    if (!found) {
-      const prof = profiles.find((p) => normalizeCode(p.teamInviteCode) === clean);
-      if (prof && prof.teamName) {
-        found = {
-          name: prof.teamName,
-          city: prof.teamCity || 'Planalto - BA',
-          crestUrl: prof.teamCrestUrl,
-          modality: prof.teamModality || 'society',
-          inviteCode: (prof.teamInviteCode || clean).toUpperCase(),
-          ownerName: prof.isTeamOwner ? prof.displayName : 'Treinador',
+    // 2. Extrai times de todos os perfis cadastrados (profiles)
+    profiles.forEach((p) => {
+      const rawCode = (p.teamInviteCode || '').trim();
+      const rawName = (p.teamName || '').trim();
+      if (!rawName) return;
+
+      const codeKey = rawCode
+        ? normalizeCode(rawCode)
+        : normalizeCode(rawName.slice(0, 4));
+
+      let team = teamsMap.get(codeKey);
+      const mod = (p.teamModality || 'society') as TeamModality;
+
+      if (!team) {
+        team = {
+          id: `profile-${p.id}`,
+          inviteCode: (rawCode || codeKey).toUpperCase(),
+          name: rawName,
+          city: p.teamCity || 'Planalto - BA',
+          neighborhood: p.neighborhood || 'Centro',
+          crestUrl: p.teamCrestUrl,
+          modality: mod,
+          modalityLabel: MODALITY_LABELS[mod] || 'Society',
+          ownerName: p.displayName || 'Treinador',
         };
+        teamsMap.set(codeKey, team);
+      } else {
+        if (!team.crestUrl && p.teamCrestUrl) team.crestUrl = p.teamCrestUrl;
+        if (p.isTeamOwner && p.displayName) team.ownerName = p.displayName;
+      }
+    });
+
+    // 3. Extrai times de todas as contas de usuário (users)
+    users.forEach((u) => {
+      const rawCode = (u.teamInviteCode || '').trim();
+      const rawName = (u.teamName || '').trim();
+      if (!rawName) return;
+
+      const codeKey = rawCode
+        ? normalizeCode(rawCode)
+        : normalizeCode(rawName.slice(0, 4));
+
+      let team = teamsMap.get(codeKey);
+      const mod = (u.teamModality || 'society') as TeamModality;
+
+      if (!team) {
+        team = {
+          id: `user-${u.id}`,
+          inviteCode: (rawCode || codeKey).toUpperCase(),
+          name: rawName,
+          city: u.teamCity || 'Planalto - BA',
+          neighborhood: 'Centro',
+          crestUrl: u.teamCrestUrl,
+          modality: mod,
+          modalityLabel: MODALITY_LABELS[mod] || 'Society',
+          ownerName: u.email?.split('@')[0] || 'Treinador',
+        };
+        teamsMap.set(codeKey, team);
+      } else {
+        if (!team.crestUrl && u.teamCrestUrl) team.crestUrl = u.teamCrestUrl;
+      }
+    });
+
+    return Array.from(teamsMap.values());
+  }, [profiles, users]);
+
+  // Reconhecimento do time em tempo real: Time local tem prioridade absoluta e NUNCA some
+  const matchedTeam = useMemo(() => {
+    const raw = regJoinCode.trim();
+    if (!raw || raw.length < 2) return null;
+    const clean = normalizeCode(raw);
+    if (!clean) return null;
+
+    // 1. Procura na lista local completa (instantâneo, sem latência de rede)
+    const local = allAvailableTeams.find((t) => {
+      const tNorm = normalizeCode(t.inviteCode);
+      const namePrefix = normalizeCode(t.name).slice(0, 4);
+      return (
+        tNorm === clean ||
+        t.inviteCode.toUpperCase() === raw.toUpperCase() ||
+        tNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
+        (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix))
+      );
+    });
+    if (local) return local;
+
+    // 2. Se não achou localmente, checa se já veio da consulta assíncrona ao Supabase
+    if (asyncRemoteTeam) {
+      const rNorm = normalizeCode(asyncRemoteTeam.inviteCode);
+      const namePrefix = normalizeCode(asyncRemoteTeam.name).slice(0, 4);
+      if (
+        rNorm === clean ||
+        asyncRemoteTeam.inviteCode.toUpperCase() === raw.toUpperCase() ||
+        rNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
+        (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix))
+      ) {
+        return asyncRemoteTeam;
       }
     }
 
-    if (found) {
-      setMatchedTeam(found);
+    return null;
+  }, [regJoinCode, allAvailableTeams, asyncRemoteTeam]);
+
+  // Busca remota no Supabase apenas se o time não estiver em memória local (protegido contra condição de corrida)
+  useEffect(() => {
+    const raw = regJoinCode.trim();
+    if (!raw || raw.length < 2) {
+      setAsyncRemoteTeam(null);
+      setIsSearchingTeam(false);
       return;
     }
 
-    // 3. Procura no banco de dados Supabase
-    if (isSupabaseConfigured()) {
-      setIsSearchingTeam(true);
-      const timer = setTimeout(() => {
-        supabaseService
-          .findTeamByInviteCode(clean)
-          .then((res) => {
-            if (res) {
-              setMatchedTeam(res);
-            } else {
-              setMatchedTeam(null);
-            }
-          })
-          .catch(() => setMatchedTeam(null))
-          .finally(() => setIsSearchingTeam(false));
-      }, 350);
-      return () => clearTimeout(timer);
+    const clean = normalizeCode(raw);
+    if (!clean) {
+      setAsyncRemoteTeam(null);
+      setIsSearchingTeam(false);
+      return;
     }
-  }, [regJoinCode, profiles]);
+
+    // Se já foi encontrado localmente, nem precisa chamar a nuvem nem exibir loading!
+    const alreadyLocal = allAvailableTeams.some((t) => {
+      const tNorm = normalizeCode(t.inviteCode);
+      const namePrefix = normalizeCode(t.name).slice(0, 4);
+      return (
+        tNorm === clean ||
+        t.inviteCode.toUpperCase() === raw.toUpperCase() ||
+        tNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
+        (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix))
+      );
+    });
+
+    if (alreadyLocal) {
+      setIsSearchingTeam(false);
+      return;
+    }
+
+    // Se o time remoto já corresponde a este código, não busca repetidamente
+    if (asyncRemoteTeam) {
+      const rNorm = normalizeCode(asyncRemoteTeam.inviteCode);
+      const namePrefix = normalizeCode(asyncRemoteTeam.name).slice(0, 4);
+      if (
+        rNorm === clean ||
+        asyncRemoteTeam.inviteCode.toUpperCase() === raw.toUpperCase() ||
+        rNorm.replace(/[^a-zA-Z0-9]/g, '') === clean ||
+        (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix))
+      ) {
+        setIsSearchingTeam(false);
+        return;
+      }
+    }
+
+    let active = true;
+    setIsSearchingTeam(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        if (isSupabaseConfigured()) {
+          const remote = await supabaseService.findTeamByInviteCode(clean);
+          if (active && remote) {
+            setAsyncRemoteTeam(remote);
+          }
+        }
+      } catch {
+        // Ignora erro de conexão silenciosamente
+      } finally {
+        if (active) {
+          setIsSearchingTeam(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [regJoinCode, allAvailableTeams, asyncRemoteTeam]);
 
   const handleCrestSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

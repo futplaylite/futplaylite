@@ -787,8 +787,10 @@ export const supabaseService = {
       const { data: pData } = await supabase.from('player_profiles').select('*');
       if (pData && pData.length > 0) {
         const matching = pData.filter((p: any) => {
+          if (!p.team_name) return false;
           const c = (p.team_invite_code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-          return c === clean && p.team_name;
+          const namePrefix = (p.team_name || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+          return c === clean || (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix));
         });
 
         if (matching.length > 0) {
@@ -821,8 +823,10 @@ export const supabaseService = {
       const { data: uData } = await supabase.from('users').select('*');
       if (uData && uData.length > 0) {
         const matchingUser = uData.find((u: any) => {
+          if (!u.team_name) return false;
           const c = (u.team_invite_code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-          return c === clean && u.team_name;
+          const namePrefix = (u.team_name || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+          return c === clean || (clean.length >= 5 && namePrefix && clean.startsWith(namePrefix));
         });
 
         if (matchingUser) {

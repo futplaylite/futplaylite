@@ -2395,6 +2395,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         teamCity: trimmedCity,
         teamCrestUrl: params.teamCrestUrl,
         teamModality: params.teamModality,
+        teamInviteCode: currentUser.teamInviteCode || currentPlayerProfile?.teamInviteCode,
         isTeamOwner: true,
       });
     }
