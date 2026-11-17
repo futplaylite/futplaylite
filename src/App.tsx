@@ -20,8 +20,6 @@ import {
 import { LeagueProvider, useLeague, NotificationBanner } from './lib/store/LeagueContext';
 import { TeamCrestBadge } from './components/TeamCrestBadge';
 import { AuthLoginView } from './components/AuthLoginView';
-import { WhatsappOnboardingView } from './components/WhatsappOnboardingView';
-import { AthleteOnboardingWizard } from './components/AthleteOnboardingWizard';
 import { DashboardView } from './components/DashboardView';
 import { LeagueRankingView } from './components/LeagueRankingView';
 import { MatchesAndValidationView } from './components/MatchesAndValidationView';
@@ -307,37 +305,8 @@ const MainMobileShell: React.FC = () => {
     );
   }
 
-  // Contas de Administrador da Liga nunca passam pelos passos de integração de atletas
+  // Contas de Administrador da Liga nunca participam como atleta
   const isAdmin = currentUser.role === 'admin';
-
-  // 2. TELA DE PRIMEIRO ACESSO: BOAS-VINDAS + CADASTRO DE WHATSAPP PARA NOTIFICAÇÕES
-  // Exibe APENAS no primeiro acesso da conta de atleta (nunca para administradores)
-  if (!isAdmin && !currentUser.onboardingCompleted && !currentUser.whatsappNumber) {
-    return (
-      <WhatsappOnboardingView
-        onComplete={() => {
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      />
-    );
-  }
-
-  // 3. PASSOS DE PRIMEIRO ACESSO APÓS SALVAR O WHATSAPP (Passos 1, 2 e 3)
-  // Ao confirmar a entrada no time ou concluir os convites, encerra os passos definitivamente e nunca se repete
-  if (
-    !isAdmin &&
-    !currentUser.onboardingCompleted &&
-    (currentUser.onboardingStep || 1) < 4
-  ) {
-    return (
-      <AthleteOnboardingWizard
-        onCompleteWizard={() => {
-          setActiveTab('dashboard');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      />
-    );
-  }
 
   const pendingMatchesCount = matches.filter(
     (m) =>

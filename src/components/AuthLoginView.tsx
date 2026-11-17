@@ -5,21 +5,28 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  Crown,
   Eye,
   EyeOff,
+  ImagePlus,
+  KeyRound,
   Loader2,
   Lock,
   Mail,
   MapPin,
   Phone,
+  Shield,
   ShieldCheck,
+  Trash2,
+  Trophy,
   UserPlus,
+  Users,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
 import { supabase, supabaseService, isSupabaseConfigured } from '../lib/supabase';
 import { RosaliaCrest } from './RosaliaCrest';
 import { PWAInstallBanner } from './PWAInstallBanner';
-import { DominantFoot, PlayerPosition, ProfileVisibility, User, PlayerProfile } from '../types/league';
+import { DominantFoot, PlayerPosition, ProfileVisibility, User, PlayerProfile, TeamModality, UserRole } from '../types/league';
 
 interface AuthLoginViewProps {
   onAuthenticated: () => void;
@@ -37,6 +44,49 @@ const FOOT_OPTIONS: { value: DominantFoot; label: string; sub: string }[] = [
   { value: 'esquerdo', label: 'Esquerdo', sub: 'Canhoto' },
   { value: 'ambos', label: 'Ambos', sub: 'Ambidestro' },
 ];
+
+const MODALITY_OPTIONS: { id: TeamModality; label: string; desc: string }[] = [
+  { id: 'society', label: 'Society', desc: 'Gramado sintético · 6v6 / 7v7' },
+  { id: 'futsal', label: 'Futsal', desc: 'Quadra esportiva · 5v5' },
+  { id: 'futebol_campo', label: 'Futebol de Campo', desc: 'Campo oficial · 11v11' },
+  { id: 'futebol_areia', label: 'Futebol de Areia', desc: 'Quadra de areia · Beach Soccer' },
+];
+
+/**
+ * Processa o Brasão / Escudo do Time mantendo 100% do fundo transparente (PNG Alpha)
+ * e sem cortar nenhuma ponta do escudo.
+ */
+function processCrestTransparentPng(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Falha ao ler o brasão.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Formato de imagem inválido.'));
+      img.onload = () => {
+        const maxDim = 320;
+        const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(reader.result as string);
+          return;
+        }
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 /**
  * Formata a entrada do usuário: se parecer número, aplica máscara de celular (DDD) 9XXXX-XXXX;
@@ -89,6 +139,124 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [openFootDropdown, setOpenFootDropdown] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const errorBoxRef = useRef<HTMLDivElement>(null);
+
+  // Estados do Vínculo com a Equipe
+  const [teamAction, setTeamAction] = useState<'create' | 'join'>('create');
+  const [regTeamName, setRegTeamName] = useState<string>('');
+  const [regTeamModality, setRegTeamModality] = useState<TeamModality>('society');
+  const [regTeamCity, setRegTeamCity] = useState<string>('Planalto - BA');
+  const [regTeamCrestUrl, setRegTeamCrestUrl] = useState<string | undefined>(undefined);
+  const [isUploadingCrest, setIsUploadingCrest] = useState<boolean>(false);
+  const crestInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [ownerInviteSuffix] = useState<number>(() => Math.floor(10 + Math.random() * 89));
+  const generatedOwnerCode = useMemo(() => {
+    const prefix = regTeamName.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase() || 'TIME';
+    return `${prefix}-${ownerInviteSuffix}`;
+  }, [regTeamName, ownerInviteSuffix]);
+
+  // Código digitado pelo atleta para entrar em um time existente
+  const [regJoinCode, setRegJoinCode] = useState<string>('');
+  const [matchedTeam, setMatchedTeam] = useState<any | null>(null);
+  const [isSearchingTeam, setIsSearchingTeam] = useState<boolean>(false);
+
+  // Auto-preenchimento caso venha de link com ?convite=XYZ
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlCode = params.get('convite');
+      if (urlCode) {
+        setMode('register');
+        setTeamAction('join');
+        setRegJoinCode(urlCode.toUpperCase());
+      }
+    }
+  }, []);
+
+  const normalizeCode = (code?: string) =>
+    (code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+
+  // Reconhecimento do time em tempo real pelo código de convite digitado
+  useEffect(() => {
+    const raw = regJoinCode.trim();
+    if (!raw || raw.length < 2) {
+      setMatchedTeam(null);
+      return;
+    }
+    const clean = normalizeCode(raw);
+
+    // 1. Procura primeiro nos times do cache local
+    let found: any = null;
+    try {
+      const stored = localStorage.getItem('futplay_registered_teams_v1');
+      if (stored) {
+        const list = JSON.parse(stored);
+        if (Array.isArray(list)) {
+          found = list.find((t: any) => normalizeCode(t.inviteCode) === clean);
+        }
+      }
+    } catch {}
+
+    // 2. Procura nos perfis da liga
+    if (!found) {
+      const prof = profiles.find((p) => normalizeCode(p.teamInviteCode) === clean);
+      if (prof && prof.teamName) {
+        found = {
+          name: prof.teamName,
+          city: prof.teamCity || 'Planalto - BA',
+          crestUrl: prof.teamCrestUrl,
+          modality: prof.teamModality || 'society',
+          inviteCode: (prof.teamInviteCode || clean).toUpperCase(),
+          ownerName: prof.isTeamOwner ? prof.displayName : 'Treinador',
+        };
+      }
+    }
+
+    if (found) {
+      setMatchedTeam(found);
+      return;
+    }
+
+    // 3. Procura no banco de dados Supabase
+    if (isSupabaseConfigured()) {
+      setIsSearchingTeam(true);
+      const timer = setTimeout(() => {
+        supabaseService
+          .findTeamByInviteCode(clean)
+          .then((res) => {
+            if (res) {
+              setMatchedTeam(res);
+            } else {
+              setMatchedTeam(null);
+            }
+          })
+          .catch(() => setMatchedTeam(null))
+          .finally(() => setIsSearchingTeam(false));
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [regJoinCode, profiles]);
+
+  const handleCrestSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setLoginError('Selecione uma imagem válida (PNG, JPG) para o escudo do time.');
+      return;
+    }
+
+    setLoginError('');
+    setIsUploadingCrest(true);
+    try {
+      const dataUrl = await processCrestTransparentPng(file);
+      setRegTeamCrestUrl(dataUrl);
+    } catch {
+      setLoginError('Não foi possível processar a imagem do escudo.');
+    } finally {
+      setIsUploadingCrest(false);
+    }
+  };
 
   // Validações em tempo real se os campos de confirmação coincidem
   const isIdentifierMatching = useMemo(() => {
@@ -474,7 +642,49 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       ? formatIdentifierInput(digits)
       : undefined;
 
-    // Registra o novo atleta no estado da liga
+    // Validação da Equipe selecionada (passos integrados diretamente no cadastro)
+    let finalTeamName: string | undefined;
+    let finalTeamCrest: string | undefined;
+    let finalTeamCity = 'Planalto - BA';
+    let finalTeamModality: TeamModality = 'society';
+    let finalTeamInviteCode: string | undefined;
+    let finalIsOwner = false;
+    let finalRole: UserRole = 'player';
+
+    if (teamAction === 'create') {
+      if (regTeamName.trim().length < 2) {
+        setIsSubmitting(false);
+        setLoginError('Informe o nome da sua equipe / pelada (mínimo 2 letras).');
+        return;
+      }
+      finalTeamName = regTeamName.trim();
+      finalTeamCrest = regTeamCrestUrl;
+      finalTeamCity = regTeamCity.trim() || 'Planalto - BA';
+      finalTeamModality = regTeamModality;
+      finalTeamInviteCode = generatedOwnerCode;
+      finalIsOwner = true;
+      finalRole = 'coach';
+    } else if (teamAction === 'join') {
+      if (!regJoinCode.trim()) {
+        setIsSubmitting(false);
+        setLoginError('Informe o código de convite da sua equipe para entrar no elenco.');
+        return;
+      }
+      if (!matchedTeam) {
+        setIsSubmitting(false);
+        setLoginError(`Nenhum time encontrado com o código "${regJoinCode.toUpperCase()}". Solicite o código correto ao treinador.`);
+        return;
+      }
+      finalTeamName = matchedTeam.name;
+      finalTeamCrest = matchedTeam.crestUrl;
+      finalTeamCity = matchedTeam.city || 'Planalto - BA';
+      finalTeamModality = matchedTeam.modality || 'society';
+      finalTeamInviteCode = matchedTeam.inviteCode || regJoinCode.trim().toUpperCase();
+      finalIsOwner = false;
+      finalRole = 'player';
+    }
+
+    // Registra o novo atleta no estado da liga com os dados do time e sem passos posteriores
     const created = registerNewAthlete({
       displayName: trimmedName,
       email: finalEmail,
@@ -485,6 +695,12 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       position: regPosition,
       dominantFoot: regFoot,
       profileVisibility: 'publico',
+      teamName: finalTeamName,
+      teamCity: finalTeamCity,
+      teamCrestUrl: finalTeamCrest,
+      teamModality: finalTeamModality,
+      teamInviteCode: finalTeamInviteCode,
+      isTeamOwner: finalIsOwner,
     });
 
     if (created) {
@@ -509,12 +725,26 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           id: created.userId,
           email: finalEmail,
           whatsappNumber: finalWhatsapp,
-          role: 'player',
+          role: finalRole,
+          teamName: finalTeamName,
+          teamCrestUrl: finalTeamCrest,
+          teamCity: finalTeamCity,
+          teamModality: finalTeamModality,
+          teamInviteCode: finalTeamInviteCode,
+          isTeamOwner: finalIsOwner,
           status: 'ativa',
           createdAt: new Date().toISOString(),
+          onboardingStep: 4,
+          onboardingCompleted: true,
         };
         const supProfile: PlayerProfile = {
           ...created,
+          teamName: finalTeamName,
+          teamCrestUrl: finalTeamCrest,
+          teamCity: finalTeamCity,
+          teamModality: finalTeamModality,
+          teamInviteCode: finalTeamInviteCode,
+          isTeamOwner: finalIsOwner,
         };
         try {
           const supSync = await supabaseService.registerAthleteInSupabase({
@@ -549,14 +779,33 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           id: created.userId,
           email: finalEmail,
           whatsappNumber: finalWhatsapp,
-          role: 'player',
+          role: finalRole,
+          teamName: finalTeamName,
+          teamCrestUrl: finalTeamCrest,
+          teamCity: finalTeamCity,
+          teamModality: finalTeamModality,
+          teamInviteCode: finalTeamInviteCode,
+          isTeamOwner: finalIsOwner,
           status: 'ativa',
           createdAt: new Date().toISOString(),
-          onboardingStep: 1,
-          onboardingCompleted: false,
+          onboardingStep: 4,
+          onboardingCompleted: true,
         },
-        created
+        {
+          ...created,
+          teamName: finalTeamName,
+          teamCrestUrl: finalTeamCrest,
+          teamCity: finalTeamCity,
+          teamModality: finalTeamModality,
+          teamInviteCode: finalTeamInviteCode,
+          isTeamOwner: finalIsOwner,
+        }
       );
+
+      try {
+        localStorage.setItem('futplay_lite_auth_session_v3', 'true');
+        localStorage.setItem('futplay_lite_active_user_id_v3', created.userId);
+      } catch {}
 
       notify(
         'success',
@@ -1012,6 +1261,224 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
                   />
                 </div>
+              </div>
+
+              {/* Vínculo com a Equipe / Baba (Passos integrados no cadastro) */}
+              <div className="rounded-2xl border border-blue-200/90 bg-blue-50/40 p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-4 w-4 text-blue-600" />
+                    <span className="text-xs font-bold text-slate-900">Vínculo com a Equipe / Baba</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                    Obrigatório
+                  </span>
+                </div>
+
+                {/* Seletor de Criar vs Entrar */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-200/70 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTeamAction('create');
+                      setLoginError('');
+                    }}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      teamAction === 'create'
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Crown className="h-3.5 w-3.5" />
+                    <span>Criar Meu Time</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTeamAction('join');
+                      setLoginError('');
+                    }}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      teamAction === 'join'
+                        ? 'bg-white text-blue-700 shadow-sm'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Users className="h-3.5 w-3.5" />
+                    <span>Entrar com Código</span>
+                  </button>
+                </div>
+
+                {/* Opção A: Criar Meu Time (Dono / Treinador) */}
+                {teamAction === 'create' && (
+                  <div className="space-y-3 pt-1 animate-in fade-in duration-150">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Nome da Equipe / Baba <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={regTeamName}
+                        onChange={(e) => setRegTeamName(e.target.value)}
+                        placeholder="Ex.: Paredão FC, Rosália Baba, Elite..."
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none transition"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Modalidade
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {MODALITY_OPTIONS.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setRegTeamModality(m.id)}
+                            className={`flex flex-col text-left p-2 rounded-xl border transition cursor-pointer ${
+                              regTeamModality === m.id
+                                ? 'border-blue-600 bg-blue-100/70 ring-1 ring-blue-600'
+                                : 'border-slate-200 bg-white hover:border-slate-300'
+                            }`}
+                          >
+                            <span className="text-xs font-bold text-slate-800">{m.label}</span>
+                            <span className="text-[10px] text-slate-500 line-clamp-1">{m.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Escudo / Brasão do Time (PNG Transparente Opcional) */}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Escudo do Time (Opcional)
+                      </label>
+                      <div className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div className="relative h-11 w-11 shrink-0 rounded-xl bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
+                          {regTeamCrestUrl ? (
+                            <img
+                              src={regTeamCrestUrl}
+                              alt="Escudo"
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <Shield className="h-5 w-5 text-blue-500" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <input
+                            ref={crestInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleCrestSelect}
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            disabled={isUploadingCrest}
+                            onClick={() => crestInputRef.current?.click()}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+                          >
+                            {isUploadingCrest ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <ImagePlus className="h-3.5 w-3.5 text-blue-600" />
+                            )}
+                            <span>{regTeamCrestUrl ? 'Trocar Escudo' : 'Adicionar Escudo'}</span>
+                          </button>
+                          <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                            PNG transparente ou foto do escudo
+                          </p>
+                        </div>
+                        {regTeamCrestUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setRegTeamCrestUrl(undefined)}
+                            className="text-slate-400 hover:text-rose-500 p-1 cursor-pointer"
+                            title="Remover escudo"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Código de Convite Automático */}
+                    <div className="rounded-xl border border-blue-200 bg-blue-100/50 p-2.5 flex items-center justify-between">
+                      <div>
+                        <span className="block text-[10px] font-bold text-blue-800 uppercase tracking-wider">
+                          Código de Convite do seu time:
+                        </span>
+                        <span className="text-sm font-extrabold text-blue-900 tracking-wider">
+                          {generatedOwnerCode}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-semibold text-blue-700 bg-white px-2 py-0.5 rounded-md">
+                        Treinador / Dono
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Opção B: Entrar com Código de Convite */}
+                {teamAction === 'join' && (
+                  <div className="space-y-3 pt-1 animate-in fade-in duration-150">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Código de Convite da Equipe <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={regJoinCode}
+                          onChange={(e) => setRegJoinCode(e.target.value.toUpperCase())}
+                          placeholder="Ex.: TIME-84, PARE-12"
+                          className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3.5 py-2.5 text-xs font-bold text-slate-900 placeholder:text-slate-400 uppercase tracking-wider focus:border-blue-600 focus:outline-none transition"
+                        />
+                        {isSearchingTeam && (
+                          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-blue-600" />
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Peça o código de convite ao dono ou treinador do seu time.
+                      </p>
+                    </div>
+
+                    {/* Card de Time Reconhecido */}
+                    {matchedTeam ? (
+                      <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 flex items-center gap-3 animate-in fade-in">
+                        <div className="h-10 w-10 shrink-0 rounded-xl bg-white border border-emerald-200 flex items-center justify-center overflow-hidden">
+                          {matchedTeam.crestUrl ? (
+                            <img
+                              src={matchedTeam.crestUrl}
+                              alt={matchedTeam.name}
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <Shield className="h-5 w-5 text-emerald-600" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-extrabold text-emerald-950 truncate">
+                              {matchedTeam.name}
+                            </span>
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                          </div>
+                          <span className="block text-[10px] text-emerald-700 truncate">
+                            Treinador: {matchedTeam.ownerName || 'Oficial'} · {matchedTeam.city || 'Planalto - BA'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : regJoinCode.trim().length >= 3 && !isSearchingTeam ? (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-2.5 flex items-center gap-2 text-xs text-amber-800">
+                        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                        <span className="text-[11px]">Nenhum time encontrado com esse código ainda.</span>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
 

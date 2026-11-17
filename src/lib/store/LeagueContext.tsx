@@ -201,6 +201,12 @@ interface LeagueContextValue extends LeagueState {
     position: PlayerPosition;
     dominantFoot: DominantFoot;
     profileVisibility: ProfileVisibility;
+    teamName?: string;
+    teamCity?: string;
+    teamCrestUrl?: string;
+    teamModality?: TeamModality;
+    teamInviteCode?: string;
+    isTeamOwner?: boolean;
   }) => PlayerProfile | null;
   updateOwnProfile: (params: {
     displayName: string;
@@ -1982,23 +1988,33 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     const newPlayerId = generateUUID();
 
     const isFirstUser = state.users.length === 0;
+    const isOwner = Boolean(params.isTeamOwner);
+    const assignedRole: UserRole = isOwner ? 'coach' : 'player';
+    const assignedTeamName = params.teamName?.trim() || undefined;
+    const assignedTeamCity = params.teamCity?.trim() || 'Planalto - BA';
+    const assignedTeamCrest = params.teamCrestUrl || undefined;
+    const assignedModality = params.teamModality || 'society';
+    const assignedInviteCode = params.teamInviteCode?.trim() || undefined;
 
     const newUser: User = {
       id: newUserId,
       email: params.email?.trim() || `${trimmedName.toLowerCase().replace(/\s+/g, '')}@futplay.com`,
       whatsappNumber: params.whatsappNumber?.trim() || undefined,
-      role: 'player',
-      isTeamOwner: false,
-      teamName: undefined,
-      teamCity: 'Planalto - BA',
+      role: assignedRole,
+      isTeamOwner: isOwner,
+      teamName: assignedTeamName,
+      teamCrestUrl: assignedTeamCrest,
+      teamCity: assignedTeamCity,
+      teamModality: assignedModality,
+      teamInviteCode: assignedInviteCode,
       status: 'ativa',
       createdAt: now,
-      onboardingStep: 1,
-      onboardingCompleted: false,
+      onboardingStep: 4,
+      onboardingCompleted: true,
     };
 
-    // Garante que uma nova conta SEMPRE passe pelos passos de primeiro acesso
-    unmarkFirstAccessCompletedInStorage(
+    // Marca imediatamente o primeiro acesso como concluído
+    markFirstAccessCompletedInStorage(
       newUserId,
       newUser.email,
       newUser.whatsappNumber
@@ -2024,9 +2040,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       isProvisional: true, // Classificação provisória (Seção 2.3 / CA-021)
       currentDivisionId: targetDivisionId,
       totalValidatedMatches: 0,
-      isTeamOwner: false,
-      teamName: undefined,
-      teamCity: 'Planalto - BA',
+      isTeamOwner: isOwner,
+      teamName: assignedTeamName,
+      teamCrestUrl: assignedTeamCrest,
+      teamCity: assignedTeamCity,
+      teamModality: assignedModality,
+      teamInviteCode: assignedInviteCode,
       experimentalPositionScore: null,
       badges: ['Estreante Planalto'],
       createdAt: now,
@@ -2098,7 +2117,49 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         });
     }
 
+    if (assignedTeamName && assignedTeamCrest) {
+      try {
+        const rawC = localStorage.getItem('futplay_team_crests_v1');
+        const crests = rawC ? JSON.parse(rawC) : {};
+        crests[assignedTeamName.trim().toLowerCase()] = assignedTeamCrest;
+        localStorage.setItem('futplay_team_crests_v1', JSON.stringify(crests));
+      } catch {}
+    }
+
+    if (isOwner && assignedTeamName) {
+      try {
+        const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
+        const list = rawTeams ? JSON.parse(rawTeams) : [];
+        list.push({
+          id: `team-${Date.now()}`,
+          inviteCode: assignedInviteCode || 'TIME-01',
+          name: assignedTeamName,
+          city: assignedTeamCity,
+          neighborhood: params.neighborhood.trim() || 'Centro',
+          foundedYear: String(new Date().getFullYear()),
+          crestUrl: assignedTeamCrest,
+          crestColor: '#1D4ED8',
+          modality: assignedModality,
+          ownerName: trimmedName,
+          roster: [
+            {
+              id: newPlayerId,
+              name: trimmedName,
+              position: params.position,
+              isCaptain: true,
+            },
+          ],
+        });
+        localStorage.setItem('futplay_registered_teams_v1', JSON.stringify(list));
+      } catch {}
+    }
+
     setCurrentUserId(newUserId);
+    try {
+      localStorage.setItem(ACTIVE_USER_STORAGE_KEY, newUserId);
+      localStorage.setItem('futplay_lite_auth_session_v3', 'true');
+      localStorage.setItem('futplay_lite_active_user_id_v3', newUserId);
+    } catch {}
     notify(
       'success',
       'Bem-vindo ao FutPlay Lite!',
