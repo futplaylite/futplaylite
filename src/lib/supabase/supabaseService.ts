@@ -683,6 +683,72 @@ export const supabaseService = {
   },
 
   /**
+   * Registra a sessão ativa do usuário no Supabase para impedir login simultâneo em múltiplos aparelhos
+   */
+  async registerActiveSession(userId: string, sessionToken: string): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase || !userId || !sessionToken) return false;
+    try {
+      const { error } = await supabase.from('pelada_sumulas').upsert({
+        id: `user_session_${userId}`,
+        status: 'active_session',
+        team_name: 'Auth',
+        created_by_user_id: userId,
+        created_by_name: 'Session Manager',
+        data: {
+          userId,
+          sessionToken,
+          updatedAt: new Date().toISOString(),
+        },
+        last_updated: new Date().toISOString(),
+      });
+      if (error) {
+        console.warn('Aviso ao registrar sessão ativa no Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Erro ao registrar sessão ativa no Supabase:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Consulta o token de sessão ativo atual do usuário no Supabase
+   */
+  async getActiveSessionToken(userId: string): Promise<string | null> {
+    if (!isSupabaseConfigured() || !supabase || !userId) return null;
+    try {
+      const { data, error } = await supabase
+        .from('pelada_sumulas')
+        .select('data')
+        .eq('id', `user_session_${userId}`)
+        .maybeSingle();
+
+      if (error || !data) return null;
+      const sessionData = data.data as unknown as { sessionToken?: string } | null;
+      return sessionData?.sessionToken || null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Remove o registro de sessão ativa ao realizar logout manual
+   */
+  async clearActiveSession(userId: string): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase || !userId) return false;
+    try {
+      const { error } = await supabase
+        .from('pelada_sumulas')
+        .delete()
+        .eq('id', `user_session_${userId}`);
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
    * Busca perfis esportivos cadastrados no Supabase
    */
   async getProfiles(): Promise<PlayerProfile[] | null> {

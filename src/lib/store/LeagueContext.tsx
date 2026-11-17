@@ -65,6 +65,8 @@ import { isSupabaseConfigured, supabaseService, supabase, generateUUID } from '.
 const STORAGE_KEY = 'futplay_lite_planalto_ba_v3_clean';
 const ACTIVE_USER_STORAGE_KEY = 'futplay_lite_active_user_id_v3';
 const COMPLETED_FIRST_ACCESS_KEY = 'futplay_lite_completed_first_access_v3';
+const ACTIVE_SESSION_TOKEN_KEY = 'futplay_lite_active_session_token_v1';
+const SESSION_CONFLICT_NOTICE_KEY = 'futplay_session_conflict_notice';
 
 function getCompletedFirstAccessSet(): Set<string> {
   try {
@@ -182,7 +184,7 @@ interface LeagueContextValue extends LeagueState {
   setSelectedCityId: (cityId: string) => void;
   setSelectedSeasonId: (seasonId: string) => void;
   switchActiveUser: (userId: string) => void;
-  logoutUser: () => void;
+  logoutUser: (reason?: 'manual' | 'concurrent_session') => void;
   setActiveUserWithData: (user: User, profile?: PlayerProfile) => void;
   removeLocalUserSilently: (userId: string) => void;
   clearNotification: () => void;
@@ -1429,6 +1431,28 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const newRow = payload.new as { data?: unknown; id?: string; status?: string; team_name?: string };
+
+              // Verificação instantânea de sessão única via Realtime
+              if (
+                newRow &&
+                newRow.id &&
+                currentUserId &&
+                newRow.id === `user_session_${currentUserId}`
+              ) {
+                const sessionPayload = newRow.data as { sessionToken?: string } | undefined;
+                const remoteToken = sessionPayload?.sessionToken;
+                const localToken = localStorage.getItem(ACTIVE_SESSION_TOKEN_KEY);
+                if (remoteToken && localToken && remoteToken !== localToken) {
+                  logoutUser('concurrent_session');
+                  notify(
+                    'error',
+                    'Sessão Desconectada!',
+                    'Sua conta foi conectada em outro aparelho. Não é permitido o uso simultâneo em múltiplos dispositivos.'
+                  );
+                  return;
+                }
+              }
+
               if (newRow && newRow.id === 'audit_logs_ledger_v1' && newRow.data) {
                 const auditData = newRow.data as { logs?: AuditLog[] };
                 if (Array.isArray(auditData.logs)) {
@@ -1537,6 +1561,55 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       window.removeEventListener('storage', handleStorageSync);
     };
   }, []);
+
+  // Monitoramento contínuo de sessão única (impede login simultâneo em múltiplos aparelhos)
+  useEffect(() => {
+    if (!currentUserId || !isSupabaseConfigured()) return;
+
+    let localToken = '';
+    try {
+      localToken = localStorage.getItem(ACTIVE_SESSION_TOKEN_KEY) || '';
+      if (!localToken) {
+        localToken = generateUUID();
+        localStorage.setItem(ACTIVE_SESSION_TOKEN_KEY, localToken);
+        supabaseService.registerActiveSession(currentUserId, localToken).catch(() => {});
+      }
+    } catch {}
+
+    const verifyActiveSession = async () => {
+      try {
+        const curLocal = localStorage.getItem(ACTIVE_SESSION_TOKEN_KEY);
+        if (!curLocal || !currentUserId) return;
+        const remoteToken = await supabaseService.getActiveSessionToken(currentUserId);
+        if (remoteToken && remoteToken !== curLocal) {
+          logoutUser('concurrent_session');
+          notify(
+            'error',
+            'Sessão Desconectada!',
+            'Sua conta foi conectada em outro aparelho. Não é permitido o uso simultâneo em dois ou mais aparelhos ao mesmo tempo.'
+          );
+        }
+      } catch {}
+    };
+
+    verifyActiveSession();
+
+    const handleFocusCheck = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        verifyActiveSession();
+      }
+    };
+
+    window.addEventListener('focus', handleFocusCheck);
+    document.addEventListener('visibilitychange', handleFocusCheck);
+    const pollTimer = setInterval(verifyActiveSession, 12000);
+
+    return () => {
+      clearInterval(pollTimer);
+      window.removeEventListener('focus', handleFocusCheck);
+      document.removeEventListener('visibilitychange', handleFocusCheck);
+    };
+  }, [currentUserId]);
 
   const refreshTeamTransactions: LeagueContextValue['refreshTeamTransactions'] = async () => {
     if (!isSupabaseConfigured()) return;
@@ -1838,7 +1911,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const logoutUser = () => {
+  const logoutUser: LeagueContextValue['logoutUser'] = (reason = 'manual') => {
+    const prevId = currentUserId;
     setCurrentUserId('');
     try {
       localStorage.removeItem('futplay_lite_auth_session_v1');
@@ -1846,6 +1920,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.removeItem('futplay_lite_auth_session_v3');
       localStorage.removeItem('futplay_lite_active_user_id_v3');
       localStorage.removeItem(ACTIVE_USER_STORAGE_KEY);
+      localStorage.removeItem(ACTIVE_SESSION_TOKEN_KEY);
       sessionStorage.removeItem('futplay_nav_active_tab_v1');
       sessionStorage.removeItem('futplay_nav_show_finance_v1');
       sessionStorage.removeItem('futplay_nav_match_id_v1');
@@ -1853,7 +1928,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       sessionStorage.removeItem('futplay_finance_subtab_v1');
       sessionStorage.removeItem('futplay_matches_sumula_view_v1');
       sessionStorage.removeItem('futplay_matches_sumula_id_v1');
+      if (reason === 'concurrent_session') {
+        sessionStorage.setItem(
+          SESSION_CONFLICT_NOTICE_KEY,
+          'Sua conta foi conectada em outro aparelho. Não é permitido utilizar a mesma conta em dois ou mais aparelhos ao mesmo tempo.'
+        );
+      }
     } catch {}
+    if (prevId && reason !== 'concurrent_session') {
+      supabaseService.clearActiveSession(prevId).catch(() => {});
+    }
     clearNotification();
   };
 
@@ -1967,10 +2051,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     setCurrentUserId(user.id);
+    const newSessionToken = generateUUID();
     try {
       localStorage.setItem(ACTIVE_USER_STORAGE_KEY, user.id);
+      localStorage.setItem(ACTIVE_SESSION_TOKEN_KEY, newSessionToken);
     } catch {
       // Ignore
+    }
+
+    if (isSupabaseConfigured() && user.id) {
+      supabaseService.registerActiveSession(user.id, newSessionToken).catch(() => {});
     }
 
     // Sincroniza imediatamente com a nuvem do Supabase ao ativar o usuário para puxar o elenco completo
@@ -2195,11 +2285,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     setCurrentUserId(newUserId);
+    const newSessionToken = generateUUID();
     try {
       localStorage.setItem(ACTIVE_USER_STORAGE_KEY, newUserId);
       localStorage.setItem('futplay_lite_auth_session_v3', 'true');
       localStorage.setItem('futplay_lite_active_user_id_v3', newUserId);
+      localStorage.setItem(ACTIVE_SESSION_TOKEN_KEY, newSessionToken);
     } catch {}
+    if (isSupabaseConfigured() && newUserId) {
+      supabaseService.registerActiveSession(newUserId, newSessionToken).catch(() => {});
+    }
     notify(
       'success',
       'Bem-vindo ao FutPlay Lite!',

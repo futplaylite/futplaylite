@@ -174,6 +174,17 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     }
   }, []);
 
+  // Notificação caso a sessão anterior tenha sido desconectada por login simultâneo em outro aparelho
+  useEffect(() => {
+    try {
+      const conflictMsg = sessionStorage.getItem('futplay_session_conflict_notice');
+      if (conflictMsg) {
+        setLoginError(conflictMsg);
+        sessionStorage.removeItem('futplay_session_conflict_notice');
+      }
+    } catch {}
+  }, []);
+
   const normalizeCode = (code?: string) =>
     (code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 
