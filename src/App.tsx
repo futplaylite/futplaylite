@@ -55,16 +55,16 @@ const MainMobileShell: React.FC = () => {
     clearNotification,
     sumulaStopwatch,
     isCloudSyncReady,
+    logoutUser,
   } = useLeague();
 
   const [isSplashFinished, setIsSplashFinished] = useState<boolean>(false);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      return (
-        localStorage.getItem('futplay_lite_auth_session_v3') === 'true' &&
-        Boolean(currentUser.id)
-      );
+      const hasSession = localStorage.getItem('futplay_lite_auth_session_v3') === 'true';
+      const storedUserId = localStorage.getItem('futplay_lite_active_user_id_v3');
+      return Boolean(hasSession && storedUserId && currentUser.id && storedUserId === currentUser.id);
     } catch {
       return false;
     }
@@ -75,8 +75,19 @@ const MainMobileShell: React.FC = () => {
     try {
       const hasSession = localStorage.getItem('futplay_lite_auth_session_v3') === 'true';
       const storedUserId = localStorage.getItem('futplay_lite_active_user_id_v3');
-      if (hasSession && (currentUser.id || storedUserId)) {
+
+      if (!hasSession || !storedUserId) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      // Se temos sessão ativa e o currentUser bate com o storedUserId: autenticado!
+      if (currentUser.id && currentUser.id === storedUserId) {
         setIsAuthenticated(true);
+      } else if (currentUser.id && currentUser.id !== storedUserId) {
+        // SEGURANÇA MÁXIMA: Impede terminantemente abrir ou exibir conta de outro usuário
+        console.warn('Inconsistência de sessão: currentUser não coincide com o usuário autenticado.');
+        setIsAuthenticated(false);
       }
     } catch {}
   }, [currentUser.id]);
@@ -643,22 +654,7 @@ const MainMobileShell: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => {
-                        try {
-                          localStorage.removeItem('futplay_lite_auth_session_v1');
-                          localStorage.removeItem('futplay_lite_auth_session_v2');
-                          localStorage.removeItem('futplay_lite_auth_session_v3');
-                          localStorage.removeItem('futplay_lite_active_user_id_v3');
-                          sessionStorage.removeItem('futplay_nav_active_tab_v1');
-                          sessionStorage.removeItem('futplay_nav_show_finance_v1');
-                          sessionStorage.removeItem('futplay_nav_match_id_v1');
-                          sessionStorage.removeItem('futplay_nav_player_id_v1');
-                          sessionStorage.removeItem('futplay_finance_subtab_v1');
-                          sessionStorage.removeItem('futplay_matches_sumula_view_v1');
-                          sessionStorage.removeItem('futplay_matches_sumula_id_v1');
-                        } catch {
-                          // Ignore
-                        }
-                        clearNotification();
+                        logoutUser();
                         setShowMonthlyFeesPage(false);
                         setActiveTab('dashboard');
                         setIsAuthenticated(false);

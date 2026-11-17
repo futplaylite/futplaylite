@@ -131,21 +131,19 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         return true;
       }
 
-      // 2. Match por telefone/WhatsApp
+      // 2. Match por telefone/WhatsApp (estritamente com no mínimo 8 dígitos para evitar falsos positivos)
       if (digits.length >= 8) {
         const userPhoneDigits = (u.whatsappNumber || '').replace(/\D/g, '');
-        if (userPhoneDigits) {
-          if (
-            userPhoneDigits === digits ||
-            userPhoneDigits.endsWith(digits) ||
-            digits.endsWith(userPhoneDigits)
-          ) {
+        if (userPhoneDigits.length >= 8) {
+          const uLast8 = userPhoneDigits.slice(-8);
+          const inLast8 = digits.slice(-8);
+          if (userPhoneDigits === digits || uLast8 === inLast8) {
             return true;
           }
         }
 
         // Se cadastrou com celular direto
-        if (u.email.toLowerCase().startsWith(digits)) {
+        if (u.email && u.email.toLowerCase().startsWith(`${digits}@`)) {
           return true;
         }
       }

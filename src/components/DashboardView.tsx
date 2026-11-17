@@ -29,7 +29,7 @@ import {
   X,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
-import { Match, MatchStatus } from '../types/league';
+import { Match, MatchStatus, PlayerProfile } from '../types/league';
 import { TeamCrestBadge } from './TeamCrestBadge';
 import { PlayerRatingModal } from './PlayerRatingModal';
 import { ShareCardModal } from './ShareCardModal';
@@ -278,7 +278,51 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     notify,
   } = useLeague();
 
-  const activeProfile = currentPlayerProfile || profiles[0];
+  // Perfil ativo estritamente do próprio usuário logado; NUNCA usar fallback de outro atleta (como profiles[0])
+  const activeProfile: PlayerProfile = useMemo(() => {
+    if (currentPlayerProfile) {
+      return currentPlayerProfile;
+    }
+    const isCoachOrOwner = Boolean(
+      currentUser?.role === 'coach' ||
+      currentUser?.role === 'admin' ||
+      currentUser?.isTeamOwner
+    );
+    const fallbackName =
+      (currentUser?.email && !currentUser.email.includes('@celular.futplay.com')
+        ? currentUser.email.split('@')[0]
+        : '') ||
+      (currentUser?.whatsappNumber ? `Atleta ${currentUser.whatsappNumber.slice(-4)}` : '') ||
+      (isCoachOrOwner ? 'Treinador' : 'Meu Perfil');
+
+    return {
+      id: currentUser?.id || 'profile-fallback',
+      userId: currentUser?.id || '',
+      displayName: fallbackName,
+      fullNamePrivate: fallbackName,
+      avatarColor: '#126B46',
+      cityId: selectedCityId || '11111111-1111-4111-8111-111111111101',
+      neighborhood: 'Centro',
+      position: 'atacante',
+      dominantFoot: 'direito',
+      profileVisibility: 'publico',
+      currentRating: 1000,
+      ratingUncertainty: 100,
+      isProvisional: true,
+      currentDivisionId: '22222222-2222-4222-8222-222222222201',
+      totalValidatedMatches: 0,
+      isTeamOwner: Boolean(currentUser?.isTeamOwner),
+      teamName: currentUser?.teamName,
+      teamCrestUrl: currentUser?.teamCrestUrl,
+      teamCity: currentUser?.teamCity || 'Planalto - BA',
+      teamModality: currentUser?.teamModality,
+      teamInviteCode: currentUser?.teamInviteCode,
+      experimentalPositionScore: null,
+      badges: [],
+      createdAt: currentUser?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }, [currentPlayerProfile, currentUser, selectedCityId]);
   const activeCity =
     cities.find((c) => c.id === selectedCityId) || cities[0];
 

@@ -138,12 +138,12 @@ export const supabaseService = {
         data = res.data;
       } else if (digits.length >= 8) {
         // Tenta buscar por whatsapp_number (apenas dígitos para não quebrar parser do PostgREST com parênteses) ou email gerado
-        const last8 = digits.length > 8 ? digits.slice(-8) : digits;
+        const last8 = digits.slice(-8);
+        const last9 = digits.length >= 9 ? digits.slice(-9) : last8;
         const orFilter = [
-          `email.ilike.${digits}%`,
+          `email.ilike.${digits}@%`,
           `whatsapp_number.eq.${digits}`,
-          `whatsapp_number.ilike.%${digits}%`,
-          `whatsapp_number.ilike.%${last8}`,
+          `whatsapp_number.ilike.%${last9}`,
         ].join(',');
 
         const res = await supabase
@@ -157,7 +157,7 @@ export const supabaseService = {
           const fallbackRes = await supabase
             .from('users')
             .select('*')
-            .ilike('email', `${digits}%`)
+            .ilike('email', `${digits}@%`)
             .limit(1)
             .maybeSingle();
           data = fallbackRes.data;
@@ -178,7 +178,7 @@ export const supabaseService = {
       }
 
       // Busca por apelido / display_name do atleta se ainda não encontrou por e-mail ou celular
-      if (!data && trimmed) {
+      if (!data && trimmed && !isEmail && digits.length < 8 && trimmed.length >= 2) {
         const { data: profMatch } = await supabase
           .from('player_profiles')
           .select('user_id')

@@ -182,6 +182,7 @@ interface LeagueContextValue extends LeagueState {
   setSelectedCityId: (cityId: string) => void;
   setSelectedSeasonId: (seasonId: string) => void;
   switchActiveUser: (userId: string) => void;
+  logoutUser: () => void;
   setActiveUserWithData: (user: User, profile?: PlayerProfile) => void;
   removeLocalUserSilently: (userId: string) => void;
   clearNotification: () => void;
@@ -621,6 +622,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   const [state, setState] = useState<LeagueState>(getInitialState);
   const [currentUserId, setCurrentUserId] = useState<string>(() => {
     try {
+      const isAuth = localStorage.getItem('futplay_lite_auth_session_v3') === 'true';
+      if (!isAuth) return '';
       const stored = localStorage.getItem(ACTIVE_USER_STORAGE_KEY);
       if (stored) return stored;
       return '';
@@ -895,10 +898,20 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
                 ? 'coach'
                 : loc?.role || ru.role || 'player';
 
+            // Se o usuário local tinha ID temporário mas foi vinculado ao Supabase pelo e-mail,
+            // migra o currentUserId para o ID oficial do Supabase
+            if (loc && currentUserId && loc.id === currentUserId && loc.id !== ru.id) {
+              setCurrentUserId(ru.id);
+              try {
+                localStorage.setItem(ACTIVE_USER_STORAGE_KEY, ru.id);
+                localStorage.setItem('futplay_lite_active_user_id_v3', ru.id);
+              } catch {}
+            }
+
             return {
               ...loc,
               ...ru,
-              id: loc?.id || ru.id,
+              id: ru.id,
               teamName: team || loc?.teamName || ru.teamName,
               teamCrestUrl: crest || loc?.teamCrestUrl || ru.teamCrestUrl,
               teamCity: loc?.teamCity || ru.teamCity,
@@ -910,8 +923,19 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           });
 
           // Preserva localmente apenas o próprio usuário logado caso não tenha vindo da nuvem
+          const activeSessId =
+            currentUserId ||
+            (typeof window !== 'undefined'
+              ? localStorage.getItem(ACTIVE_USER_STORAGE_KEY) || ''
+              : '');
           const unmatchedUsers = prev.users.filter(
-            (u) => !matchedUserIds.has(u.id) && Boolean(currentUserId && u.id === currentUserId)
+            (u) =>
+              !matchedUserIds.has(u.id) &&
+              Boolean(
+                activeSessId &&
+                  (u.id === activeSessId ||
+                    (u.email && u.email.toLowerCase() === activeSessId.toLowerCase()))
+              )
           );
           mergedUsers = [...remoteMerged, ...unmatchedUsers];
         }
@@ -1047,9 +1071,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             return {
               ...loc,
               ...rp,
-              id: loc?.id || rp.id,
-              userId: loc?.userId || rp.userId,
-              displayName: loc?.displayName || rp.displayName,
+              id: rp.id,
+              userId: rp.userId || loc?.userId,
+              displayName: rp.displayName || loc?.displayName,
               teamName: team || loc?.teamName || rp.teamName,
               teamCrestUrl: crest || loc?.teamCrestUrl || rp.teamCrestUrl,
               teamCity: loc?.teamCity || rp.teamCity,
@@ -1067,12 +1091,20 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           // Atletas que foram excluídos ou que não existem no banco de dados
           // NÃO devem reaparecer no app após puxar a lista remota.
           // Preserva localmente APENAS o próprio atleta logado caso sua conta seja recém-criada.
+          const activeSessId =
+            currentUserId ||
+            (typeof window !== 'undefined'
+              ? localStorage.getItem(ACTIVE_USER_STORAGE_KEY) || ''
+              : '');
           const unmatchedLocal: PlayerProfile[] = prev.profiles
             .filter(
               (lp) =>
                 !matchedLocalIds.has(lp.id) &&
                 !adminIds.has(lp.userId) &&
-                Boolean(currentUserId && (lp.userId === currentUserId || lp.id === currentUserId))
+                Boolean(
+                  activeSessId &&
+                    (lp.userId === activeSessId || lp.id === activeSessId)
+                )
             )
             .map((lp) => {
               const team = (lp.teamName || '').trim();
@@ -1563,9 +1595,20 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const clearNotification = () => setNotification(null);
 
+  // Busca o usuário logado estritamente pela chave de sessão ativa.
+  // JAMAIS faz fallback para state.users[0], evitando contaminação cruzada de contas!
+  const effectiveAuthId =
+    currentUserId ||
+    (typeof window !== 'undefined' && localStorage.getItem('futplay_lite_auth_session_v3') === 'true'
+      ? localStorage.getItem(ACTIVE_USER_STORAGE_KEY) || ''
+      : '');
+
+  const matchedCurrentUser = effectiveAuthId
+    ? state.users.find((u) => u.id === effectiveAuthId)
+    : undefined;
+
   const rawCurrentUser: User =
-    (currentUserId ? state.users.find((u) => u.id === currentUserId) : undefined) ||
-    state.users[0] ||
+    matchedCurrentUser ||
     ({
       id: '',
       email: '',
@@ -1660,9 +1703,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [state.seasonEntries, state.profiles, adminUserIds]);
 
   const currentPlayerProfile =
-    currentUser.role === 'admin'
+    currentUser.role === 'admin' || !currentUser.id
       ? undefined
-      : athleteProfiles.find((p: PlayerProfile) => p.userId === currentUser.id);
+      : athleteProfiles.find(
+          (p: PlayerProfile) =>
+            p.userId === currentUser.id || p.id === currentUser.id
+        );
 
   const recordAuditLog: LeagueContextValue['recordAuditLog'] = (params) => {
     const now = new Date().toISOString();
@@ -1749,6 +1795,25 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         `Papel ativo no servidor: ${target.role.toUpperCase()} (${target.email})`
       );
     }
+  };
+
+  const logoutUser = () => {
+    setCurrentUserId('');
+    try {
+      localStorage.removeItem('futplay_lite_auth_session_v1');
+      localStorage.removeItem('futplay_lite_auth_session_v2');
+      localStorage.removeItem('futplay_lite_auth_session_v3');
+      localStorage.removeItem('futplay_lite_active_user_id_v3');
+      localStorage.removeItem(ACTIVE_USER_STORAGE_KEY);
+      sessionStorage.removeItem('futplay_nav_active_tab_v1');
+      sessionStorage.removeItem('futplay_nav_show_finance_v1');
+      sessionStorage.removeItem('futplay_nav_match_id_v1');
+      sessionStorage.removeItem('futplay_nav_player_id_v1');
+      sessionStorage.removeItem('futplay_finance_subtab_v1');
+      sessionStorage.removeItem('futplay_matches_sumula_view_v1');
+      sessionStorage.removeItem('futplay_matches_sumula_id_v1');
+    } catch {}
+    clearNotification();
   };
 
   const setActiveUserWithData = (user: User, profile?: PlayerProfile) => {
@@ -4763,6 +4828,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         setSelectedCityId,
         setSelectedSeasonId,
         switchActiveUser,
+        logoutUser,
         setActiveUserWithData,
         removeLocalUserSilently,
         clearNotification,

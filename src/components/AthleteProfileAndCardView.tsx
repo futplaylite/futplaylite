@@ -83,7 +83,7 @@ export const AthleteProfileAndCardView: React.FC<
   } = useLeague();
 
   const [inspectedPlayerId, setInspectedPlayerId] = useState<string>(
-    initialPlayerId || currentPlayerProfile?.id || profiles[0].id
+    initialPlayerId || currentPlayerProfile?.id || ''
   );
 
   useEffect(() => {
@@ -102,7 +102,9 @@ export const AthleteProfileAndCardView: React.FC<
   const [activeSubTab, setActiveSubTab] = useState<'card' | 'edit_self'>('card');
 
   const targetProfile =
-    profiles.find((p) => p.id === inspectedPlayerId) || profiles[0];
+    (inspectedPlayerId ? profiles.find((p) => p.id === inspectedPlayerId) : undefined) ||
+    currentPlayerProfile ||
+    profiles[0];
 
   const isOwnProfile = currentPlayerProfile?.id === targetProfile.id;
 
