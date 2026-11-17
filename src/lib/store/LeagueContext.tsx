@@ -1074,10 +1074,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           localStorage.setItem('futplay_team_crests_v1', JSON.stringify(mergedCrests));
         } catch {}
 
-        // 5. Marca todas as contas remotas confirmadas no Supabase como primeiro acesso concluído
+        // 5. Marca contas remotas confirmadas no Supabase como primeiro acesso concluído APENAS se já possuem time, são donos ou administradores
         if (remoteUsers) {
           remoteUsers.forEach((ru) => {
-            markFirstAccessCompletedInStorage(ru.id, ru.email, ru.whatsappNumber);
+            const hasTeam = Boolean(
+              (ru.teamName && ru.teamName !== 'Meu Time' && ru.teamName !== 'Sem Time') ||
+              ru.teamInviteCode
+            );
+            if (ru.role === 'admin' || ru.isTeamOwner || ru.role === 'coach' || hasTeam) {
+              markFirstAccessCompletedInStorage(ru.id, ru.email, ru.whatsappNumber);
+            }
           });
         }
 
@@ -1492,9 +1498,6 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       onboardingStep: 1,
     } as User);
   const completedSet = getCompletedFirstAccessSet();
-  const isExplicitlyInOnboarding =
-    rawCurrentUser.onboardingCompleted === false &&
-    (rawCurrentUser.onboardingStep || 1) < 4;
 
   const digits = (rawCurrentUser.whatsappNumber || '').replace(/\D/g, '');
   const hasLinkedTeam = Boolean(
@@ -1504,16 +1507,19 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       rawCurrentUser.teamInviteCode
   );
 
+  const isOwnerOrCoach = Boolean(rawCurrentUser.isTeamOwner || rawCurrentUser.role === 'coach');
+  const isAdminUser = rawCurrentUser.role === 'admin';
+
+  // Um usuário só pula o onboarding se for admin, dono de time/treinador, ou tiver time vinculado.
+  // Atletas sem time DEVEM passar pelos passos iniciais (escolher foto/nome e entrar no time com código)
   const isAlreadyCompleted =
     Boolean(rawCurrentUser.id) &&
-    (rawCurrentUser.role === 'admin' ||
-      rawCurrentUser.isTeamOwner === true ||
-      rawCurrentUser.role === 'coach' ||
+    (isAdminUser ||
+      isOwnerOrCoach ||
       hasLinkedTeam ||
-      (!isExplicitlyInOnboarding &&
-        (rawCurrentUser.onboardingCompleted === true ||
-          (rawCurrentUser.onboardingStep || 1) >= 4 ||
-          completedSet.has(rawCurrentUser.id.toLowerCase()) ||
+      (rawCurrentUser.onboardingCompleted === true &&
+        (rawCurrentUser.onboardingStep || 1) >= 4 &&
+        (completedSet.has(rawCurrentUser.id.toLowerCase()) ||
           (rawCurrentUser.email && completedSet.has(rawCurrentUser.email.toLowerCase())) ||
           (digits && (completedSet.has(digits) || completedSet.has(`${digits}@celular.futplay.com`))))));
 
@@ -1523,13 +1529,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         role:
           rawCurrentUser.role === 'admin'
             ? 'admin'
-            : rawCurrentUser.isTeamOwner || rawCurrentUser.role === 'coach'
+            : isOwnerOrCoach
             ? 'coach'
             : rawCurrentUser.role || 'player',
         onboardingCompleted: true,
         onboardingStep: 4,
       }
-    : rawCurrentUser;
+    : {
+        ...rawCurrentUser,
+        onboardingCompleted: false,
+        onboardingStep: rawCurrentUser.onboardingStep || 1,
+      };
 
   // Contas de administradores nunca participam de jogos e não aparecem em nenhuma lista de atletas
   const adminUserIds = useMemo(() => {
@@ -1623,7 +1633,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   const switchActiveUser = (userId: string) => {
     const target = state.users.find((u) => u.id === userId);
     if (target) {
-      markFirstAccessCompletedInStorage(target.id, target.email, target.whatsappNumber);
+      const hasTeam = Boolean(
+        (target.teamName && target.teamName !== 'Meu Time' && target.teamName !== 'Sem Time') ||
+        target.teamInviteCode
+      );
+      if (target.role === 'admin' || target.isTeamOwner || target.role === 'coach' || hasTeam) {
+        markFirstAccessCompletedInStorage(target.id, target.email, target.whatsappNumber);
+      }
       setCurrentUserId(target.id);
       try {
         localStorage.setItem(ACTIVE_USER_STORAGE_KEY, target.id);
@@ -1658,7 +1674,6 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const setActiveUserWithData = (user: User, profile?: PlayerProfile) => {
-    markFirstAccessCompletedInStorage(user.id, user.email, user.whatsappNumber);
     const now = new Date().toISOString();
     const loginLog: AuditLog = {
       id: `audit-login-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1675,7 +1690,11 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     setState((prev) => {
       const userIdx = prev.users.findIndex((u) => u.id === user.id);
       const newUsers = [...prev.users];
-      const isOwner = user.isTeamOwner !== undefined ? user.isTeamOwner : (userIdx >= 0 ? prev.users[userIdx].isTeamOwner : false);
+      const prevU = userIdx >= 0 ? newUsers[userIdx] : undefined;
+      const isOwner = user.isTeamOwner !== undefined
+        ? user.isTeamOwner
+        : (prevU ? prevU.isTeamOwner : Boolean(profile?.isTeamOwner));
+
       const effectiveRole: UserRole =
         user.role === 'admin'
           ? 'admin'
@@ -1683,29 +1702,51 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           ? 'coach'
           : user.role || 'player';
 
-      if (userIdx >= 0) {
-        const prevU = newUsers[userIdx];
-        newUsers[userIdx] = {
-          ...prevU,
-          ...user,
-          role: effectiveRole,
-          teamName: user.teamName || prevU.teamName,
-          teamCrestUrl: user.teamCrestUrl || prevU.teamCrestUrl,
-          teamCity: user.teamCity || prevU.teamCity,
-          teamModality: user.teamModality || prevU.teamModality,
-          teamInviteCode: user.teamInviteCode || prevU.teamInviteCode,
-          isTeamOwner: isOwner,
-          onboardingCompleted: true,
-          onboardingStep: 4,
-        };
+      const finalTeamName = user.teamName || profile?.teamName || prevU?.teamName;
+      const finalTeamCode = user.teamInviteCode || profile?.teamInviteCode || prevU?.teamInviteCode;
+      const hasTeam = Boolean(
+        (finalTeamName && finalTeamName !== 'Meu Time' && finalTeamName !== 'Sem Time') ||
+        finalTeamCode
+      );
+
+      // Conclui onboarding APENAS se for admin, dono de time, já tiver time vinculado,
+      // ou se o usuário já tiver completado explicitamente os passos antes
+      const isCompleted =
+        effectiveRole === 'admin' ||
+        isOwner ||
+        hasTeam ||
+        (user.onboardingCompleted === true && (user.onboardingStep || 1) >= 4) ||
+        (prevU?.onboardingCompleted === true && (prevU?.onboardingStep || 1) >= 4);
+
+      const finalOnboardingCompleted = isCompleted;
+      const finalOnboardingStep = isCompleted
+        ? 4
+        : (user.onboardingStep || prevU?.onboardingStep || 1);
+
+      if (finalOnboardingCompleted) {
+        markFirstAccessCompletedInStorage(user.id, user.email, user.whatsappNumber);
       } else {
-        newUsers.push({
-          ...user,
-          role: effectiveRole,
-          isTeamOwner: isOwner,
-          onboardingCompleted: true,
-          onboardingStep: 4,
-        });
+        unmarkFirstAccessCompletedInStorage(user.id, user.email, user.whatsappNumber);
+      }
+
+      const updatedUser: User = {
+        ...(prevU || {}),
+        ...user,
+        role: effectiveRole,
+        teamName: finalTeamName,
+        teamCrestUrl: user.teamCrestUrl || profile?.teamCrestUrl || prevU?.teamCrestUrl,
+        teamCity: user.teamCity || profile?.teamCity || prevU?.teamCity,
+        teamModality: user.teamModality || profile?.teamModality || prevU?.teamModality,
+        teamInviteCode: finalTeamCode,
+        isTeamOwner: isOwner,
+        onboardingCompleted: finalOnboardingCompleted,
+        onboardingStep: finalOnboardingStep,
+      };
+
+      if (userIdx >= 0) {
+        newUsers[userIdx] = updatedUser;
+      } else {
+        newUsers.push(updatedUser);
       }
 
       let newProfiles = [...prev.profiles];

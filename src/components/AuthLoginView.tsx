@@ -275,13 +275,25 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           ? existingUser.isTeamOwner
           : Boolean(localUser?.isTeamOwner || matchedProfile?.isTeamOwner || localProfile?.isTeamOwner);
 
+      const finalTeamName = existingUser.teamName || localUser?.teamName || matchedProfile?.teamName || localProfile?.teamName;
+      const finalTeamCode = existingUser.teamInviteCode || localUser?.teamInviteCode || matchedProfile?.teamInviteCode || localProfile?.teamInviteCode;
+      const hasTeam = Boolean(
+        (finalTeamName && finalTeamName !== 'Meu Time' && finalTeamName !== 'Sem Time') ||
+        finalTeamCode
+      );
+      const isCompleted =
+        existingUser.role === 'admin' ||
+        isOwner ||
+        hasTeam ||
+        (existingUser.onboardingCompleted === true && (existingUser.onboardingStep || 1) >= 4);
+
       const finalUserToActivate: User = {
         ...existingUser,
-        teamName: existingUser.teamName || localUser?.teamName || matchedProfile?.teamName || localProfile?.teamName,
+        teamName: finalTeamName,
         teamCrestUrl: existingUser.teamCrestUrl || localUser?.teamCrestUrl || matchedProfile?.teamCrestUrl || localProfile?.teamCrestUrl,
         teamCity: existingUser.teamCity || localUser?.teamCity || matchedProfile?.teamCity || localProfile?.teamCity,
         teamModality: existingUser.teamModality || localUser?.teamModality || matchedProfile?.teamModality || localProfile?.teamModality,
-        teamInviteCode: existingUser.teamInviteCode || localUser?.teamInviteCode || matchedProfile?.teamInviteCode || localProfile?.teamInviteCode,
+        teamInviteCode: finalTeamCode,
         isTeamOwner: isOwner,
         role:
           existingUser.role === 'admin'
@@ -289,8 +301,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             : isOwner || existingUser.role === 'coach'
             ? 'coach'
             : existingUser.role || 'player',
-        onboardingCompleted: true,
-        onboardingStep: 4,
+        onboardingCompleted: isCompleted,
+        onboardingStep: isCompleted ? 4 : (existingUser.onboardingStep || 1),
       };
 
       const finalProfileToActivate: PlayerProfile | undefined = matchedProfile

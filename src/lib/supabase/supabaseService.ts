@@ -82,6 +82,12 @@ export const supabaseService = {
             ? 'coach'
             : u.role || 'player';
 
+        const hasTeam = Boolean(
+          (u.team_name && u.team_name !== 'Meu Time' && u.team_name !== 'Sem Time') ||
+          u.team_invite_code
+        );
+        const isCompleted = isOwner || hasTeam || role === 'admin';
+
         return {
           id: u.id,
           email: u.email,
@@ -95,8 +101,8 @@ export const supabaseService = {
           role,
           status: u.status || 'ativa',
           createdAt: u.created_at,
-          onboardingCompleted: true,
-          onboardingStep: 4,
+          onboardingCompleted: isCompleted,
+          onboardingStep: isCompleted ? 4 : 1,
         };
       });
     } catch (err) {
@@ -198,6 +204,12 @@ export const supabaseService = {
           ? 'coach'
           : data.role || 'player';
 
+      const hasTeam = Boolean(
+        (data.team_name && data.team_name !== 'Meu Time' && data.team_name !== 'Sem Time') ||
+        data.team_invite_code
+      );
+      const isCompleted = isOwner || hasTeam || userRole === 'admin';
+
       const user: User = {
         id: data.id,
         email: data.email,
@@ -211,8 +223,8 @@ export const supabaseService = {
         role: userRole,
         status: data.status || 'ativa',
         createdAt: data.created_at,
-        onboardingCompleted: true,
-        onboardingStep: 4,
+        onboardingCompleted: isCompleted,
+        onboardingStep: isCompleted ? 4 : 1,
       };
 
       // 2. Busca perfil de atleta vinculado
