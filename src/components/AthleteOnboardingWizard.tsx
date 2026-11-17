@@ -150,7 +150,8 @@ const TransparentTeamShieldSvg: React.FC<{
 };
 
 /**
- * Redimensiona a foto de perfil para 320x320.
+ * Redimensiona a foto de perfil para 256x256 em JPEG de qualidade reduzida
+ * (leve: poucos KB em vez de ~250 KB, para não pesar o tráfego do Supabase).
  */
 function resizeImageToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -161,7 +162,7 @@ function resizeImageToDataUrl(file: File): Promise<string> {
       img.onerror = () => reject(new Error('Formato de imagem inválido.'));
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const size = 320;
+        const size = 256;
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext('2d');
@@ -170,12 +171,16 @@ function resizeImageToDataUrl(file: File): Promise<string> {
           return;
         }
 
+        // Fundo branco: JPEG não tem transparência
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, size, size);
+
         const minSide = Math.min(img.width, img.height);
         const sx = (img.width - minSide) / 2;
         const sy = (img.height - minSide) / 2;
 
         ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-        resolve(canvas.toDataURL('image/png'));
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
       };
       img.src = reader.result as string;
     };
