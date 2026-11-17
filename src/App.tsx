@@ -493,9 +493,9 @@ const MainMobileShell: React.FC = () => {
                 aria-label="Ir para o Início"
               >
                 <img
-                  src="/images/futplay-crest.jpg"
+                  src="/images/futplay-crest.png"
                   alt="FutPlay Lite"
-                  className="object-contain drop-shadow-sm shrink-0 rounded-full"
+                  className="object-contain drop-shadow-sm shrink-0"
                   style={{ width: 38, height: 38 }}
                 />
               </button>
