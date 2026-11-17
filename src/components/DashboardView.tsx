@@ -319,6 +319,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const [storedSumulas, setStoredSumulas] = useState<SumulaData[]>(getStoredSumulas);
   const [presenceFeedback, setPresenceFeedback] = useState<string | null>(null);
 
+  // Dia da semana reconhecido automaticamente através da data digitada/selecionada
+  const recognizedWeekday = useMemo(() => {
+    if (!editDate) return 'Selecione uma data';
+    try {
+      const [year, month, day] = editDate.split('-').map(Number);
+      if (!year || !month || !day) return 'Data inválida';
+      const d = new Date(year, month - 1, day, 12, 0, 0);
+      const weekday = d.toLocaleDateString('pt-BR', { weekday: 'long' });
+      return weekday.charAt(0).toUpperCase() + weekday.slice(1);
+    } catch {
+      return 'Data inválida';
+    }
+  }, [editDate]);
+
   // Mantém a lista de súmulas atualizada no dashboard quando houver sincronização remota ou local
   useEffect(() => {
     const handleSumulasChanged = () => {
@@ -2026,50 +2040,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveSchedule} className="space-y-3.5">
-              {/* Atalhos Rápidos por Dia Semanal */}
-              <div>
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  Dia Semanal de Baba:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleSetPresetDate('sabado')}
-                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 transition active:scale-95 cursor-pointer"
-                  >
-                    Sábado
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetPresetDate('domingo')}
-                    className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100 transition active:scale-95 cursor-pointer"
-                  >
-                    Domingo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetPresetDate('quarta')}
-                    className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-800 hover:bg-blue-100 transition active:scale-95 cursor-pointer"
-                  >
-                    Quarta
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetPresetDate('sexta')}
-                    className="rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-bold text-purple-800 hover:bg-purple-100 transition active:scale-95 cursor-pointer"
-                  >
-                    Sexta
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSetPresetDate('hoje')}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-800 hover:bg-slate-100 transition active:scale-95 cursor-pointer"
-                  >
-                    Hoje!
-                  </button>
-                </div>
-              </div>
-
               {/* Data da Pelada */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -2082,6 +2052,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   onChange={(e) => setEditDate(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-extrabold text-slate-900 focus:border-emerald-600 focus:bg-white focus:outline-none"
                 />
+              </div>
+
+              {/* Dia da Semana Reconhecido Automaticamente */}
+              <div>
+                <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block mb-1">
+                  Dia da Semana Reconhecido:
+                </span>
+                <div className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/80 p-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white font-bold shrink-0 shadow-2xs">
+                    <Calendar className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-black text-emerald-950 uppercase">
+                      {recognizedWeekday}
+                    </div>
+                    <div className="text-[10px] font-semibold text-emerald-700 truncate">
+                      Identificado automaticamente pela data escolhida
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Horário de Início */}
