@@ -96,8 +96,9 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
   const myExistingEval = (peerEvaluations || []).find(
     (e) =>
       (e.evaluatorId === currentUser?.id ||
-        e.evaluatorId === currentPlayerProfile?.id) &&
-      e.targetPlayerId === player.id
+        (currentPlayerProfile && e.evaluatorId === currentPlayerProfile.id) ||
+        (currentPlayerProfile?.userId && e.evaluatorId === currentPlayerProfile.userId)) &&
+      (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId))
   );
 
   // Inicializa notas individuais do avaliador:
@@ -145,7 +146,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
   // Todas as avaliações ativas de outros atletas para este jogador
   const allTargetEvals = (peerEvaluations || []).filter(
     (e) =>
-      e.targetPlayerId === player.id &&
+      (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId)) &&
       (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
   );
 

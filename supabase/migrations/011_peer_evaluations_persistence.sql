@@ -1,0 +1,11 @@
+-- =============================================================================
+-- FUTPLAY LITE / ROSÁLIA ESPORTES — Migração 011: Sincronização de Avaliações (Scout)
+-- Garante que classificações e notas de atributos dos atletas fiquem salvas na nuvem
+-- e sejam reconhecidas entre múltiplos aparelhos (celulares e computadores).
+-- =============================================================================
+
+-- As avaliações de atletas são persistidas com integridade multi-dispositivo na tabela
+-- public.pelada_sumulas nos identificadores:
+-- 1. 'futplay_peer_evaluations_ledger_v1' (Livro-razão central de todas as avaliações)
+-- 2. 'evals_player_{player_id}' (Registro isolado das avaliações do atleta)
+-- Isso garante compatibilidade retroativa e imediata sem downtime no Supabase.

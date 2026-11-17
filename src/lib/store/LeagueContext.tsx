@@ -417,7 +417,7 @@ export function computeProfilesWithPeerEvaluations(
   return profiles.map((prof) => {
     const targetEvals = evaluations.filter(
       (e) =>
-        e.targetPlayerId === prof.id &&
+        (e.targetPlayerId === prof.id || (prof.userId && e.targetPlayerId === prof.userId)) &&
         (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
     );
     if (targetEvals.length === 0) return prof;
@@ -841,6 +841,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         remoteTx,
         remoteCfg,
         remoteLogs,
+        remoteEvals,
       ] = await Promise.all([
         supabaseService.getUsers(),
         supabaseService.getProfiles(),
@@ -849,6 +850,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         supabaseService.getTeamTransactions(),
         supabaseService.getMonthlyConfig(),
         supabaseService.getAuditLogs(),
+        supabaseService.getPeerEvaluations(),
       ]);
 
       if (remoteSumulas !== null) {
@@ -948,8 +950,69 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           mergedUsers = [...remoteMerged, ...unmatchedUsers];
         }
 
-        // 3. Mescla PROFILES com integridade (garante que atletas locais NUNCA sejam apagados)
-        let mergedProfiles = prev.profiles;
+        // 3. Sincronização centralizada de avaliações de atletas (Scout / Peer Evaluations)
+        let mergedPeerEvals: PeerEvaluation[] = [];
+        const evalsMap = new Map<string, PeerEvaluation>();
+
+        // a) Avaliações locais salvas no aparelho
+        (prev.peerEvaluations || []).forEach((e) => {
+          if (e && e.evaluatorId && e.targetPlayerId) {
+            evalsMap.set(`${e.evaluatorId}_${e.targetPlayerId}`, e);
+          }
+        });
+        try {
+          const rawLocalEvals = localStorage.getItem('futplay_peer_evaluations_v1');
+          if (rawLocalEvals) {
+            const parsedLocal: PeerEvaluation[] = JSON.parse(rawLocalEvals);
+            if (Array.isArray(parsedLocal)) {
+              parsedLocal.forEach((e) => {
+                if (e && e.evaluatorId && e.targetPlayerId) {
+                  evalsMap.set(`${e.evaluatorId}_${e.targetPlayerId}`, e);
+                }
+              });
+            }
+          }
+        } catch {}
+
+        // b) Avaliações vindas da nuvem (Supabase)
+        let needsUpload = false;
+        if (remoteEvals && remoteEvals.length > 0) {
+          remoteEvals.forEach((re) => {
+            if (re && re.evaluatorId && re.targetPlayerId) {
+              const key = `${re.evaluatorId}_${re.targetPlayerId}`;
+              const local = evalsMap.get(key);
+              if (!local) {
+                evalsMap.set(key, re);
+              } else {
+                const localTime = new Date(local.updatedAt || local.createdAt || 0).getTime();
+                const remoteTime = new Date(re.updatedAt || re.createdAt || 0).getTime();
+                if (remoteTime >= localTime) {
+                  evalsMap.set(key, re);
+                } else {
+                  needsUpload = true;
+                }
+              }
+            }
+          });
+        } else if (evalsMap.size > 0) {
+          needsUpload = true;
+        }
+
+        mergedPeerEvals = Array.from(evalsMap.values());
+
+        // Se o aparelho tiver avaliações locais que ainda não foram para o Supabase, envia agora para a nuvem
+        if (needsUpload && mergedPeerEvals.length > 0 && isSupabaseConfigured()) {
+          mergedPeerEvals.forEach((ev) => {
+            supabaseService.savePeerEvaluation(ev).catch(() => {});
+          });
+        }
+
+        try {
+          localStorage.setItem('futplay_peer_evaluations_v1', JSON.stringify(mergedPeerEvals));
+        } catch {}
+
+        // 4. Mescla PROFILES com integridade (garante que atletas locais NUNCA sejam apagados)
+        let mergedProfiles = computeProfilesWithPeerEvaluations(prev.profiles, mergedPeerEvals);
         if (remoteProfiles) {
           const adminIds = new Set(
             mergedUsers
@@ -1059,7 +1122,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
           mergedProfiles = computeProfilesWithPeerEvaluations(
             mergedPool,
-            prev.peerEvaluations || []
+            mergedPeerEvals
           );
         }
 
@@ -1219,6 +1282,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           ...prev,
           users: mergedUsers,
           profiles: mergedProfiles,
+          peerEvaluations: mergedPeerEvals,
           auditLogs: enrichedAuditLogs,
           monthlyPayments: mergedPayments,
           teamTransactions: mergedTx,
@@ -2467,6 +2531,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch {}
 
       if (isSupabaseConfigured()) {
+        supabaseService.savePeerEvaluation(evaluationRecord, targetEvals).catch((err) => {
+          console.warn('Erro ao sincronizar avaliação de atleta no Supabase:', err);
+        });
         supabaseService.recordAuditLogInSupabase(skillLog).catch(() => {});
       }
 

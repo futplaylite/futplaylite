@@ -659,8 +659,9 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                       const hasEvaluated = (peerEvaluations || []).some(
                         (e) =>
                           (e.evaluatorId === currentUser.id ||
-                            e.evaluatorId === currentPlayerProfile?.id) &&
-                          e.targetPlayerId === player.id
+                            (currentPlayerProfile && e.evaluatorId === currentPlayerProfile.id) ||
+                            (currentPlayerProfile?.userId && e.evaluatorId === currentPlayerProfile.userId)) &&
+                          (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId))
                       );
                       const stars = getPlayerDisplayStars(player);
                       const votesCount = player.skills?.totalVotes || 0;
@@ -898,8 +899,10 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
         const myEval = (peerEvaluations || []).find(
           (e) =>
             (e.evaluatorId === currentUser.id ||
-              e.evaluatorId === currentPlayerProfile?.id) &&
-            e.targetPlayerId === ratingModalPlayer.id
+              (currentPlayerProfile && e.evaluatorId === currentPlayerProfile.id) ||
+              (currentPlayerProfile?.userId && e.evaluatorId === currentPlayerProfile.userId)) &&
+            (e.targetPlayerId === ratingModalPlayer.id ||
+              (ratingModalPlayer.userId && e.targetPlayerId === ratingModalPlayer.userId))
         );
 
         const initialSkills = myEval

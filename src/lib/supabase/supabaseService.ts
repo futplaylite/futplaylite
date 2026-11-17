@@ -3,6 +3,7 @@ import {
   AuditLog,
   DominantFoot,
   MonthlyPaymentRecord,
+  PeerEvaluation,
   PeladaMonthlyConfig,
   PlayerPosition,
   PlayerProfile,
@@ -26,6 +27,7 @@ export function generateUUID(): string {
 
 let monthlyLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
 let auditLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
+let peerEvaluationsWriteQueue: Promise<boolean> = Promise.resolve(true);
 
 /**
  * Serviço de sincronização e comunicação com a API do Supabase.
@@ -1590,6 +1592,149 @@ export const supabaseService = {
       return await queuedWrite;
     } catch (err) {
       console.warn('Exceção ao salvar log de auditoria no Supabase:', err);
+      return false;
+    }
+  },
+
+  /**
+   * Busca todas as avaliações de atletas (Scout / Peer Evaluations) sincronizadas na nuvem
+   */
+  async getPeerEvaluations(): Promise<PeerEvaluation[] | null> {
+    if (!isSupabaseConfigured() || !supabase) return null;
+    try {
+      const evalsMap = new Map<string, PeerEvaluation>();
+
+      // 1. Busca do registro centralizado de avaliações em pelada_sumulas
+      const { data: centralRow } = await supabase
+        .from('pelada_sumulas')
+        .select('*')
+        .eq('id', 'futplay_peer_evaluations_ledger_v1')
+        .maybeSingle();
+
+      if (centralRow && centralRow.data) {
+        const parsed = (centralRow.data as unknown as { evaluations?: PeerEvaluation[] }) || {};
+        const list = Array.isArray(parsed.evaluations) ? parsed.evaluations : [];
+        list.forEach((e) => {
+          if (e && e.targetPlayerId && e.evaluatorId) {
+            evalsMap.set(`${e.evaluatorId}_${e.targetPlayerId}`, e);
+          }
+        });
+      }
+
+      // 2. Busca também registros individuais por atleta (evals_player_*) para tolerância máxima
+      const { data: playerRows } = await supabase
+        .from('pelada_sumulas')
+        .select('*')
+        .eq('status', 'player_evaluations')
+        .limit(300);
+
+      if (playerRows && playerRows.length > 0) {
+        playerRows.forEach((row: any) => {
+          const rowData = (row.data as unknown as { evaluations?: PeerEvaluation[] }) || {};
+          const rowList = Array.isArray(rowData.evaluations) ? rowData.evaluations : [];
+          rowList.forEach((e) => {
+            if (e && e.targetPlayerId && e.evaluatorId) {
+              const key = `${e.evaluatorId}_${e.targetPlayerId}`;
+              if (!evalsMap.has(key)) {
+                evalsMap.set(key, e);
+              } else {
+                const existing = evalsMap.get(key)!;
+                if (new Date(e.updatedAt || 0) > new Date(existing.updatedAt || 0)) {
+                  evalsMap.set(key, e);
+                }
+              }
+            }
+          });
+        });
+      }
+
+      return Array.from(evalsMap.values());
+    } catch (err) {
+      console.warn('Exceção ao buscar avaliações no Supabase:', err);
+      return null;
+    }
+  },
+
+  /**
+   * Salva e sincroniza uma avaliação de atleta no Supabase em tempo real
+   */
+  async savePeerEvaluation(
+    evaluation: PeerEvaluation,
+    allEvalsForPlayer?: PeerEvaluation[]
+  ): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
+    try {
+      const writeEvals = async (): Promise<boolean> => {
+        if (!supabase) return false;
+        const nowIso = new Date().toISOString();
+
+        // 1. Atualiza registro individual do atleta avaliado
+        if (evaluation.targetPlayerId) {
+          const playerKey = `evals_player_${evaluation.targetPlayerId}`;
+          const targetList = allEvalsForPlayer || [evaluation];
+
+          await supabase.from('pelada_sumulas').upsert(
+            {
+              id: playerKey,
+              team_name: 'Atleta',
+              status: 'player_evaluations',
+              match_date: null,
+              start_time: null,
+              data: {
+                targetPlayerId: evaluation.targetPlayerId,
+                evaluations: targetList,
+                lastUpdated: nowIso,
+              } as unknown as Record<string, unknown>,
+              last_updated: nowIso,
+            },
+            { onConflict: 'id' }
+          );
+        }
+
+        // 2. Atualiza livro-razão central de todas as avaliações
+        const { data: centralRow } = await supabase
+          .from('pelada_sumulas')
+          .select('*')
+          .eq('id', 'futplay_peer_evaluations_ledger_v1')
+          .maybeSingle();
+
+        const existingData = (centralRow?.data as unknown as { evaluations?: PeerEvaluation[] }) || {};
+        const existingList = Array.isArray(existingData.evaluations) ? existingData.evaluations : [];
+
+        const evalsMap = new Map<string, PeerEvaluation>();
+        existingList.forEach((e) => {
+          if (e && e.evaluatorId && e.targetPlayerId) {
+            evalsMap.set(`${e.evaluatorId}_${e.targetPlayerId}`, e);
+          }
+        });
+        evalsMap.set(`${evaluation.evaluatorId}_${evaluation.targetPlayerId}`, evaluation);
+
+        const updatedList = Array.from(evalsMap.values());
+
+        const { error: upsertErr } = await supabase.from('pelada_sumulas').upsert(
+          {
+            id: 'futplay_peer_evaluations_ledger_v1',
+            team_name: 'Sistema',
+            status: 'peer_evaluations',
+            match_date: null,
+            start_time: null,
+            data: {
+              evaluations: updatedList,
+              lastUpdated: nowIso,
+            } as unknown as Record<string, unknown>,
+            last_updated: nowIso,
+          },
+          { onConflict: 'id' }
+        );
+
+        return !upsertErr;
+      };
+
+      const queuedWrite = peerEvaluationsWriteQueue.then(writeEvals, writeEvals);
+      peerEvaluationsWriteQueue = queuedWrite.catch(() => false);
+      return await queuedWrite;
+    } catch (err) {
+      console.warn('Exceção ao salvar avaliação no Supabase:', err);
       return false;
     }
   },
