@@ -301,7 +301,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   });
 
-  const isCoach = currentUser?.role === 'coach' || currentUser?.isTeamOwner;
+  const isCoach =
+    currentUser?.role === 'coach' ||
+    currentUser?.role === 'admin' ||
+    currentUser?.isTeamOwner === true ||
+    currentPlayerProfile?.isTeamOwner === true ||
+    currentUser?.id === 'user-paredao';
   const isAdmin = currentUser?.role === 'admin';
   const canRenewSuperCapasPhoto = isCoach || isAdmin;
 
@@ -573,13 +578,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const isPeladaToday = peladaConfig.date === todayDateStr;
 
-  // Mapeamento de Jogos Oficiais por data (YYYY-MM-DD)
+  // Mapeamento de Jogos Oficiais por data (YYYY-MM-DD) exclusivo do time do usuário
   const officialMatchesByDate = useMemo(() => {
     const map = new Map<string, Match[]>();
     if (!matches || !Array.isArray(matches)) return map;
 
     for (const m of matches) {
       if (m.status === 'cancelada' || m.status === 'anulada') continue;
+
+      // Card restrito a exibir partidas do seu próprio time
+      if (userTeamNormalized && userTeamNormalized !== 'meu time' && userTeamNormalized !== 'sem time') {
+        const homeNorm = normalizeText(m.homeTeamName || '');
+        const awayNorm = normalizeText(m.awayTeamName || '');
+        if (homeNorm !== userTeamNormalized && awayNorm !== userTeamNormalized) continue;
+      }
+
       let dStr = '';
       if (m.scheduledAt) {
         if (m.scheduledAt.includes('T')) {
@@ -597,7 +610,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       }
     }
     return map;
-  }, [matches]);
+  }, [matches, userTeamNormalized, normalizeText]);
 
   const todayOfficialMatches = officialMatchesByDate.get(todayDateStr) || [];
 
@@ -764,10 +777,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const base = new Date();
     base.setHours(12, 0, 0, 0);
 
-    // Conjunto de datas de súmulas cadastradas
+    // Conjunto de datas de súmulas cadastradas pertencentes ao time do usuário
     const sumulaDates = new Set<string>();
     try {
-      for (const s of storedSumulas) {
+      for (const s of myTeamSumulas) {
         if (s.matchDate) {
           const parts = s.matchDate.split('/');
           if (parts.length === 3) {
@@ -899,6 +912,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     () => formatPeladaDateExtended(peladaConfig.date),
     [peladaConfig.date]
   );
+
+  // Data formatada do jogo/pelada mais próximo para exibição no card
+  const nextGameFormattedDate = useMemo(() => {
+    try {
+      const [year, month, day] = peladaConfig.date.split('-').map(Number);
+      const d = new Date(year, month - 1, day, 12, 0, 0);
+      const weekdayShort = d
+        .toLocaleDateString('pt-BR', { weekday: 'short' })
+        .replace('.', '')
+        .toUpperCase();
+      const dd = String(day).padStart(2, '0');
+      const mm = String(month).padStart(2, '0');
+      return `${dd}/${mm} (${weekdayShort})`;
+    } catch {
+      return peladaConfig.date;
+    }
+  }, [peladaConfig.date]);
 
 
 
@@ -1062,8 +1092,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setShowEditScheduleModal(false);
   };
 
-  // Atalhos de datas no modal de edição
-  const handleSetPresetDate = (type: 'sabado' | 'quarta' | 'hoje') => {
+  // Atalhos de datas no modal de edição (dias semanais do baba)
+  const handleSetPresetDate = (type: 'sabado' | 'domingo' | 'quarta' | 'sexta' | 'hoje') => {
     const now = new Date();
     if (type === 'hoje') {
       const yyyy = now.getFullYear();
@@ -1072,7 +1102,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       setEditDate(`${yyyy}-${mm}-${dd}`);
       return;
     }
-    const targetDayOfWeek = type === 'sabado' ? 6 : 3;
+    const dayMap: Record<string, number> = {
+      domingo: 0,
+      quarta: 3,
+      sexta: 5,
+      sabado: 6,
+    };
+    const targetDayOfWeek = dayMap[type] ?? 6;
     const currentDay = now.getDay();
     let daysUntil = (targetDayOfWeek - currentDay + 7) % 7;
     if (daysUntil === 0) daysUntil = 7;
@@ -1553,32 +1589,30 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-blue-500/20 blur-2xl pointer-events-none" />
         <div className="absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-indigo-500/15 blur-2xl pointer-events-none" />
 
-        {/* Topo Compacto do Card: Data Atual e Controles de Navegação */}
+        {/* Topo Compacto do Card: Data Atual e Ações */}
         <div className="relative z-10 flex items-center justify-between pb-1.5 border-b border-white/10">
           <div className="flex items-center gap-1.5 text-xs font-black text-white uppercase tracking-wider">
             <Calendar className="h-3.5 w-3.5 text-amber-300 shrink-0" />
             <span>{compactTodayFormatted}</span>
           </div>
 
-          {/* Botões de Rolagem do Carrossel */}
-          <div className="flex items-center gap-1">
+          {/* Botão para o Treinador Ajustar Data e Dia Semanal do Baba */}
+          {isCoach && (
             <button
               type="button"
-              onClick={() => handleScrollCarousel('left')}
-              className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-white transition active:scale-90"
-              title="Ver dias anteriores"
+              onClick={() => {
+                setEditDate(peladaConfig.date);
+                setEditTime(peladaConfig.time);
+                setEditVenue(peladaConfig.venueName);
+                setShowEditScheduleModal(true);
+              }}
+              className="flex items-center gap-1 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-300/40 px-2.5 py-0.5 text-[10px] font-black transition active:scale-95 cursor-pointer shadow-2xs"
+              title="Ajustar data e dia semanal do baba"
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
+              <Calendar className="h-3 w-3 text-amber-300" />
+              <span>Editar Baba</span>
             </button>
-            <button
-              type="button"
-              onClick={() => handleScrollCarousel('right')}
-              className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-white transition active:scale-90"
-              title="Ver próximos dias"
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          )}
         </div>
 
         {/* Carrossel de Dias: Deslize com o Toque/Mouse diretamente nos Números com Efeito de Zoom no Centro */}
@@ -1932,102 +1966,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             )
           ) : (
             /* SE NÃO FOR O DIA DA PELADA -> Exibe detalhes da próxima pelada */
-            <div className="mt-2.5 grid grid-cols-2 gap-2 rounded-xl bg-white/10 border border-white/15 p-2 text-center font-mono">
-              <div>
-                <div className="text-[9px] text-blue-200 uppercase tracking-wider font-sans">
-                  Próxima Pelada
+            <div className="mt-2.5 rounded-xl bg-white/10 border border-white/15 p-2.5 text-center font-mono">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-[9px] text-blue-200 uppercase tracking-wider font-sans">
+                    Próxima Pelada
+                  </div>
+                  <div className="text-sm font-black text-amber-300 mt-0.5 truncate">
+                    {nextGameFormattedDate}
+                  </div>
+                  <div className="text-[9px] text-blue-300 font-sans mt-0.5">
+                    {countdown.days > 0 ? (countdown.days === 1 ? 'Amanhã' : `Em ${countdown.days} dias`) : 'Hoje!'}
+                  </div>
                 </div>
-                <div className="text-sm font-black text-white mt-0.5">
-                  {countdown.days > 0 ? (countdown.days === 1 ? '1 dia' : `${countdown.days} dias`) : 'Em breve'}
-                </div>
-              </div>
-              <div>
-                <div className="text-[9px] text-blue-200 uppercase tracking-wider font-sans">
-                  Horário
-                </div>
-                <div className="text-sm font-black text-white mt-0.5">
-                  {peladaConfig.time}h
+                <div>
+                  <div className="text-[9px] text-blue-200 uppercase tracking-wider font-sans">
+                    Horário
+                  </div>
+                  <div className="text-sm font-black text-white mt-0.5">
+                    {peladaConfig.time}h
+                  </div>
+                  <div className="text-[9px] text-blue-200 font-sans mt-0.5 truncate" title={peladaConfig.venueName}>
+                    {peladaConfig.venueName}
+                  </div>
                 </div>
               </div>
             </div>
           )}
-
-          {/* Feedback temporário de presença */}
-          {presenceFeedback && (
-            <div className="mt-2 rounded-lg bg-emerald-500/20 border border-emerald-400/40 px-3 py-1.5 text-center text-[11px] font-bold text-emerald-200 animate-fadeIn">
-              {presenceFeedback}
-            </div>
-          )}
-
-          {/* Espaço Reservado com Design para Confirmados e Confirmação de Presença */}
-          <div className="mt-2.5 rounded-xl bg-white/10 border border-white/15 p-2.5 text-left">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold text-white">
-                <Users className="h-3.5 w-3.5 text-blue-200" />
-                <span>Confirmados na Pelada</span>
-              </div>
-              <span className="rounded-full bg-white/20 border border-white/30 px-2 py-0.5 text-[10px] font-mono font-black text-white">
-                👥 {confirmedCount} Confirmados
-              </span>
-            </div>
-
-            {/* Botão Interativo: Para atletas confirma presença; Para admin abre a súmula */}
-            {isAdmin ? (
-              <button
-                type="button"
-                onClick={() => onNavigate('matches')}
-                className="mt-2 w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-black bg-purple-600 hover:bg-purple-500 text-white shadow-sm transition-all active:scale-[0.98] cursor-pointer"
-              >
-                <ShieldCheck className="h-4 w-4 text-purple-200" />
-                <span>Gerenciar Súmula da Partida (Admin)</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleToggleMyPresence}
-                className={`mt-2 w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-black transition-all active:scale-[0.98] shadow-sm cursor-pointer ${
-                  isMyPresenceConfirmed
-                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-950/40 ring-1 ring-emerald-300'
-                    : 'bg-white/15 hover:bg-white/25 text-white border border-white/25 hover:border-white/40'
-                }`}
-              >
-                {isMyPresenceConfirmed ? (
-                  <>
-                    <Check className="h-4 w-4 stroke-[3] text-white" />
-                    <span>Presença confirmada!</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="h-4 w-4 text-blue-200" />
-                    <span>Clique aqui para confirmar presença</span>
-                  </>
-                )}
-              </button>
-            )}
-
-            {/* Atalho Rápido para Financeiro do Time */}
-            <button
-              type="button"
-              onClick={() => {
-                if (onOpenFinancial) {
-                  onOpenFinancial();
-                } else if (onOpenMonthlyFees) {
-                  onOpenMonthlyFees();
-                } else {
-                  onNavigate('squad');
-                }
-              }}
-              className="mt-2 w-full flex items-center justify-between py-1.5 px-3 rounded-lg text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition active:scale-[0.98]"
-            >
-              <div className="flex items-center gap-1.5">
-                <Wallet className="h-3.5 w-3.5 text-emerald-400" />
-                <span>Financeiro</span>
-              </div>
-              <span className="text-emerald-300 font-mono text-[10px]">
-                Caixa & Extrato ›
-              </span>
-            </button>
-          </div>
         </div>
       </div>
       )}
@@ -2043,10 +2008,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wide">
-                    Ajustar Dia da Pelada
+                    Ajustar Data e Dia do Baba
                   </h3>
                   <p className="text-[10px] text-slate-500">
-                    Defina o dia e horário para a contagem regressiva
+                    Defina a data e dia semanal do baba do seu time
                   </p>
                 </div>
               </div>
@@ -2061,30 +2026,44 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveSchedule} className="space-y-3.5">
-              {/* Atalhos Rápidos */}
+              {/* Atalhos Rápidos por Dia Semanal */}
               <div>
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  Atalhos Rápidos:
+                  Dia Semanal de Baba:
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   <button
                     type="button"
                     onClick={() => handleSetPresetDate('sabado')}
-                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 transition"
+                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 transition active:scale-95 cursor-pointer"
                   >
-                    Próximo Sábado
+                    Sábado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPresetDate('domingo')}
+                    className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100 transition active:scale-95 cursor-pointer"
+                  >
+                    Domingo
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSetPresetDate('quarta')}
-                    className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-800 hover:bg-blue-100 transition"
+                    className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-800 hover:bg-blue-100 transition active:scale-95 cursor-pointer"
                   >
-                    Próxima Quarta
+                    Quarta
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetPresetDate('sexta')}
+                    className="rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-[11px] font-bold text-purple-800 hover:bg-purple-100 transition active:scale-95 cursor-pointer"
+                  >
+                    Sexta
                   </button>
                   <button
                     type="button"
                     onClick={() => handleSetPresetDate('hoje')}
-                    className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100 transition"
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-800 hover:bg-slate-100 transition active:scale-95 cursor-pointer"
                   >
                     Hoje!
                   </button>
@@ -2094,7 +2073,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {/* Data da Pelada */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Data da Próxima Pelada *
+                  Data do Próximo Baba *
                 </label>
                 <input
                   type="date"
