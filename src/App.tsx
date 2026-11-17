@@ -267,35 +267,48 @@ const MainMobileShell: React.FC = () => {
   // 0. TELA DE CARREGAMENTO DA NUVEM: Garante que nada abre incompleto ou sem time
   if (!isCloudSyncReady) {
     return (
-      <div className="fixed inset-0 z-50 flex min-h-screen w-full flex-col items-center justify-center bg-slate-950 px-6 text-white select-none">
-        <div className="absolute h-72 w-72 rounded-full bg-emerald-500/15 blur-3xl pointer-events-none" />
-        <div className="absolute h-60 w-60 rounded-full bg-blue-600/10 blur-2xl pointer-events-none" />
+      <div className="fixed inset-0 z-50 flex min-h-screen w-full flex-col items-center justify-center bg-gradient-to-b from-[#0B1736] via-[#070D1E] to-[#040814] px-6 text-white select-none">
+        {/* Efeitos de iluminação de fundo (Azul Real & Dourado Oficial) */}
+        <div className="absolute h-80 w-80 rounded-full bg-blue-600/20 blur-3xl pointer-events-none -top-10" />
+        <div className="absolute h-72 w-72 rounded-full bg-amber-400/15 blur-3xl pointer-events-none -bottom-10" />
 
-        <div className="relative flex flex-col items-center">
+        <div className="relative flex flex-col items-center w-full max-w-[380px]">
+          {/* Brasão Oficial com gradiente de borda Dourado & Azul */}
           <div className="relative mb-6">
-            <div className="absolute -inset-2 rounded-3xl bg-gradient-to-r from-blue-600 via-emerald-500 to-emerald-400 opacity-75 blur-md animate-pulse" />
-            <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-emerald-400/30 bg-slate-900 shadow-2xl">
-              <ShieldCheck className="h-12 w-12 text-emerald-400" />
+            <div className="absolute -inset-2.5 rounded-3xl bg-gradient-to-tr from-blue-600 via-amber-400 to-yellow-300 opacity-70 blur-md animate-pulse" />
+            <div className="relative flex h-24 w-24 items-center justify-center rounded-3xl border border-amber-400/40 bg-gradient-to-b from-[#0F204E] to-[#081129] shadow-[0_0_35px_rgba(234,179,8,0.25)]">
+              <ShieldCheck className="h-12 w-12 text-amber-400 drop-shadow-[0_2px_8px_rgba(234,179,8,0.4)]" />
             </div>
           </div>
 
-          <div className="text-center space-y-1.5">
+          {/* Tipografia Oficial: Branco, Azul e Dourado */}
+          <div className="text-center space-y-2">
             <h1 className="text-2xl font-black tracking-tight text-white flex items-center justify-center gap-2">
-              FUTPLAY <span className="rounded-full border border-emerald-500/40 bg-emerald-950/80 px-2.5 py-0.5 text-xs font-black text-emerald-400 uppercase tracking-widest">LITE</span>
+              FUTPLAY
+              <span className="rounded-full border border-amber-400/50 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 px-2.5 py-0.5 text-xs font-black text-amber-300 uppercase tracking-widest shadow-sm shadow-amber-500/20">
+                LITE
+              </span>
             </h1>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+            <p className="text-[11px] font-bold text-blue-200/80 uppercase tracking-widest">
               Liga de Futebol Amador · Planalto - BA
             </p>
           </div>
 
-          <div className="mt-8 flex flex-col items-center space-y-3">
-            <div className="flex items-center space-x-2.5 text-emerald-400">
-              <div className="h-4 w-4 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+          {/* Indicador de Sincronização em Tempo Real */}
+          <div className="mt-8 flex flex-col items-center space-y-3.5 w-full">
+            <div className="flex items-center space-x-2.5 text-amber-300">
+              <div className="h-4 w-4 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
               <span className="text-xs font-bold tracking-wide">
                 Carregando dados da nuvem...
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 text-center max-w-[260px]">
+
+            {/* Barra de carregamento com brilho Dourado e Azul */}
+            <div className="w-48 h-1 rounded-full bg-blue-950/80 border border-blue-800/40 overflow-hidden">
+              <div className="h-full w-full bg-gradient-to-r from-blue-500 via-amber-400 to-yellow-300 rounded-full animate-pulse" />
+            </div>
+
+            <p className="text-[11px] text-slate-300 text-center max-w-[270px] leading-relaxed">
               Atualizando elencos, times e partidas do servidor
             </p>
           </div>
