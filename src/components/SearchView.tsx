@@ -80,6 +80,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
   const filteredPlayers = useMemo(() => {
     return [...profiles]
       .filter((p) => {
+        if (p.displayName.trim().toLowerCase() === 'kiko') return false;
         if (!normalizedQuery) return true;
         return (
           p.displayName.toLowerCase().includes(normalizedQuery) ||

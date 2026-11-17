@@ -500,53 +500,11 @@ function getInitialState(): LeagueState {
 
       const allProfilesSource = [...rawProfiles, ...missingInitialProfiles];
 
-      // Mescla atletas de elenco dos times registrados em localStorage
-      try {
-        const rawTeams = localStorage.getItem('futplay_registered_teams_v1');
-        if (rawTeams) {
-          const parsedTeams = JSON.parse(rawTeams);
-          if (Array.isArray(parsedTeams)) {
-            parsedTeams.forEach((t: any) => {
-              if (t.roster && Array.isArray(t.roster)) {
-                t.roster.forEach((rm: any) => {
-                  if (rm && rm.id && !existingProfileIds.has(rm.id)) {
-                    allProfilesSource.push({
-                      id: rm.id,
-                      userId: rm.userId || rm.id,
-                      displayName: rm.displayName || rm.name || 'Atleta',
-                      avatarUrl: rm.avatarUrl,
-                      avatarColor: '#126B46',
-                      cityId: '11111111-1111-4111-8111-111111111101',
-                      neighborhood: rm.neighborhood || 'Centro',
-                      position: rm.position || 'atacante',
-                      dominantFoot: rm.dominantFoot || 'direito',
-                      profileVisibility: 'publico',
-                      teamName: t.name,
-                      teamCrestUrl: t.crestUrl,
-                      teamInviteCode: t.inviteCode,
-                      currentRating: rm.currentRating || 1000,
-                      ratingUncertainty: 100,
-                      isProvisional: true,
-                      currentDivisionId: 'div-geral',
-                      totalValidatedMatches: 0,
-                      experimentalPositionScore: null,
-                      badges: [],
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString(),
-                    } as PlayerProfile);
-                    existingProfileIds.add(rm.id);
-                  }
-                });
-              }
-            });
-          }
-        }
-      } catch {}
-
       let cleanProfiles: PlayerProfile[] = allProfilesSource
         .filter(
           (p) =>
             p.displayName.trim().toUpperCase() !== 'ADMIN' &&
+            p.displayName.trim().toLowerCase() !== 'kiko' &&
             p.id !== 'a0000000-0000-4000-8000-000000000002' &&
             p.userId !== 'a0000000-0000-4000-8000-000000000001'
         )
@@ -951,7 +909,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             };
           });
 
-          const unmatchedUsers = prev.users.filter((u) => !matchedUserIds.has(u.id));
+          // Preserva localmente apenas o próprio usuário logado caso não tenha vindo da nuvem
+          const unmatchedUsers = prev.users.filter(
+            (u) => !matchedUserIds.has(u.id) && Boolean(currentUserId && u.id === currentUserId)
+          );
           mergedUsers = [...remoteMerged, ...unmatchedUsers];
         }
 
@@ -1102,9 +1063,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             } as PlayerProfile;
           });
 
-          // PRESERVA TODOS OS ATLETAS LOCAIS QUE NÃO VIERAM DO SUPABASE
+          // O banco de dados Supabase é a fonte oficial da verdade da Liga.
+          // Atletas que foram excluídos ou que não existem no banco de dados
+          // NÃO devem reaparecer no app após puxar a lista remota.
+          // Preserva localmente APENAS o próprio atleta logado caso sua conta seja recém-criada.
           const unmatchedLocal: PlayerProfile[] = prev.profiles
-            .filter((lp) => !matchedLocalIds.has(lp.id) && !adminIds.has(lp.userId))
+            .filter(
+              (lp) =>
+                !matchedLocalIds.has(lp.id) &&
+                !adminIds.has(lp.userId) &&
+                Boolean(currentUserId && (lp.userId === currentUserId || lp.id === currentUserId))
+            )
             .map((lp) => {
               const team = (lp.teamName || '').trim();
               const crest = lp.teamCrestUrl || (team ? crestCatalog.get(team.toLowerCase()) : undefined);
