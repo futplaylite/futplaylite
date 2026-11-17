@@ -1072,48 +1072,58 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
           </div>
 
           {/* Integração Inteligente com Mensalidades: Card Informativo */}
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 shadow-2xs flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
+          <div className="rounded-2xl border border-emerald-200/90 bg-gradient-to-r from-emerald-50 via-white to-emerald-50/60 p-3 shadow-2xs flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold shrink-0 shadow-2xs">
                 <CreditCard className="h-4 w-4" />
               </div>
-              <div>
-                {isCoachOrAdmin && (
-                  <div className="text-[10px] font-black uppercase tracking-wider text-emerald-800">
-                    Mensalidades de {formatYearMonth(selectedMonth)}
-                  </div>
-                )}
-                <div className={`text-xs font-bold text-slate-800 ${isCoachOrAdmin ? 'mt-0.5' : ''}`}>
+
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-wider text-emerald-800 truncate">
+                  Mensalidades de {formatYearMonth(selectedMonth)}
+                </div>
+
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-mono text-base sm:text-lg font-black text-emerald-700 tracking-tight leading-none">
+                    {isCoachOrAdmin ? (
+                      `R$ ${monthlyStats.totalPaidAmount},00`
+                    ) : isMyGoalkeeper ? (
+                      'R$ 0,00'
+                    ) : (
+                      `R$ ${monthlyConfig?.monthlyAmount || 30},00`
+                    )}
+                  </span>
+
                   {isCoachOrAdmin ? (
-                    <>
-                      <span className="font-mono font-black text-emerald-700">
-                        R$ {monthlyStats.totalPaidAmount},00
-                      </span>{' '}
-                      arrecadados ({monthlyStats.paidCount} de {monthlyStats.payingCount} pagantes)
-                    </>
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                      {monthlyStats.paidCount}/{monthlyStats.payingCount} pagos
+                    </span>
                   ) : isMyGoalkeeper ? (
-                    <span className="text-sky-700 font-black">
-                      🧤 Goleiro • Isento de mensalidade
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-sky-100 text-sky-800 text-[10px] font-black">
+                      Isento
+                    </span>
+                  ) : isMyPaid ? (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                      Quitado
                     </span>
                   ) : (
-                    <span className={isMyPaid ? 'text-emerald-700 font-black' : 'text-rose-600 font-black'}>
-                      {isMyPaid ? '🟢 Quitado neste mês' : '🔴 Pendente de pagamento'}
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[10px] font-black">
+                      Pendente
                     </span>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setActiveTab('mensalidades')}
-                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition active:scale-95 cursor-pointer shadow-2xs flex items-center gap-1"
-              >
-                <span>{isCoachOrAdmin ? 'Ver Status' : 'Minha Mensalidade'}</span>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('mensalidades')}
+              className="h-7 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] transition active:scale-95 cursor-pointer shadow-2xs flex items-center gap-0.5 shrink-0"
+              title="Acessar mensalidades"
+            >
+              <span>Ver</span>
+              <ChevronRight className="h-3 w-3" />
+            </button>
           </div>
 
           {/* Barra de Ações: Botão Novo Lançamento (Apenas Treinador) + Filtros de Tipo */}
