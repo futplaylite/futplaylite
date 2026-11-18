@@ -463,6 +463,7 @@ export const supabaseService = {
     user: User;
     profile: PlayerProfile;
     password?: string;
+    birthDate?: string;
   }): Promise<{ success: boolean; error?: string }> {
     if (!isSupabaseConfigured() || !supabase) {
       return { success: false, error: 'Supabase não configurado' };
@@ -691,6 +692,15 @@ export const supabaseService = {
         // Ignora se season_entries falhar
       }
 
+      // 4. Salva a data de nascimento no cofre de segurança privado se fornecida
+      if (params.birthDate) {
+        try {
+          await this.setUserBirthDate(params.birthDate, cleanDigits);
+        } catch (birthErr) {
+          console.warn('Aviso ao salvar data de nascimento de segurança:', birthErr);
+        }
+      }
+
       return { success: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -838,17 +848,180 @@ export const supabaseService = {
   },
 
   /**
+   * Salva a data de nascimento no cofre de credenciais de segurança privadas (private.user_security_credentials).
+   * Nunca salva em user_metadata nem expõe publicamente.
+   */
+  async setUserBirthDate(birthDate: string, phoneDigits?: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      return { success: false, error: 'Supabase não configurado.' };
+    }
+    try {
+      const { error } = await supabase.rpc('set_user_birth_date_authenticated', {
+        p_birth_date: birthDate,
+        p_phone_digits: phoneDigits || null,
+      });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  /**
+   * Consulta a própria data de nascimento configurada no cofre privado.
+   */
+  async getMyBirthDate(): Promise<string | null> {
+    if (!isSupabaseConfigured() || !supabase) return null;
+    try {
+      const { data, error } = await supabase.rpc('get_my_birth_date_authenticated');
+      if (error || !data) return null;
+      return String(data);
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Recupera a senha esquecida validando telefone e data de nascimento no backend.
+   * Utiliza Edge Function com fallback para RPC protegida.
+   * Aplica rate-limiting contra força bruta e mensagens genéricas para evitar enumeração.
+   */
+  async recoverPasswordWithBirthdate(params: {
+    phone: string;
+    birthDate: string;
+    newPassword: string;
+    clientFingerprint?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      return { success: false, error: 'Supabase não configurado.' };
+    }
+    const cleanPhone = params.phone.replace(/\D/g, '');
+    const cleanDate = params.birthDate.trim();
+    const cleanPass = params.newPassword.trim();
+
+    if (!cleanPhone || cleanPhone.length < 8) {
+      return { success: false, error: 'Informe um número de telefone válido.' };
+    }
+    if (!cleanDate) {
+      return { success: false, error: 'Informe sua data de nascimento.' };
+    }
+    if (cleanPass.length < 6) {
+      return { success: false, error: 'A nova senha deve ter no mínimo 6 caracteres.' };
+    }
+
+    try {
+      // 1. Tenta invocar Edge Function oficial 'recover-password'
+      try {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('recover-password', {
+          body: {
+            phone: cleanPhone,
+            birthDate: cleanDate,
+            newPassword: cleanPass,
+          },
+        });
+        if (!edgeErr && edgeData?.success) {
+          return { success: true };
+        }
+        if (edgeErr && edgeErr.message && !edgeErr.message.includes('Failed to send a request') && !edgeErr.message.includes('FunctionsFetchError')) {
+          return { success: false, error: edgeData?.error || edgeErr.message };
+        }
+      } catch {
+        // Fallback para RPC direta caso Edge Function local não esteja ativa
+      }
+
+      // 2. Fallback direto para a RPC protegida
+      const fingerprint =
+        params.clientFingerprint ||
+        (typeof window !== 'undefined' ? window.location.host : 'client-web');
+
+      const { data, error } = await supabase.rpc('recover_account_password_with_birthdate', {
+        p_phone: cleanPhone,
+        p_birth_date: cleanDate,
+        p_new_password: cleanPass,
+        p_client_fingerprint: fingerprint,
+      });
+
+      if (error) {
+        if (error.message.includes('BLOQUEIO_TEMPORARIO')) {
+          return {
+            success: false,
+            error: 'Número excessivo de tentativas incorretas. Tente novamente em alguns minutos.',
+          };
+        }
+        return {
+          success: false,
+          error: 'Dados de identificação incorretos. Verifique o telefone e a data de nascimento.',
+        };
+      }
+
+      if (data && data.success === false) {
+        return {
+          success: false,
+          error: data.error || 'Dados de identificação incorretos.',
+        };
+      }
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  /**
    * Atualiza a senha do usuário autenticado diretamente através do Supabase Auth GoTrue.
    * Se must_reset_password for verdadeiro, conclui também a liberação auditada via RPC.
+   * Suporta validação da senha atual pelo Supabase Auth.
    */
-  async updatePassword(userId: string, newPassword: string): Promise<boolean> {
-    if (!isSupabaseConfigured() || !supabase || !newPassword) return false;
+  async updatePassword(
+    userIdOrParams:
+      | string
+      | {
+          userId: string;
+          newPassword: string;
+          currentPassword?: string;
+          userEmail?: string;
+        },
+    newPasswordParam?: string
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      return { success: false, error: 'Supabase não configurado.' };
+    }
+
+    let newPassword = '';
+    let currentPassword: string | undefined;
+    let userEmail: string | undefined;
+
+    if (typeof userIdOrParams === 'object') {
+      newPassword = (userIdOrParams.newPassword || '').trim();
+      currentPassword = userIdOrParams.currentPassword?.trim();
+      userEmail = userIdOrParams.userEmail?.trim();
+    } else {
+      newPassword = (newPasswordParam || '').trim();
+    }
+
+    if (!newPassword || newPassword.length < 4) {
+      return { success: false, error: 'A nova senha deve ter no mínimo 4 caracteres.' };
+    }
+
     try {
+      // Valida senha atual no Supabase Auth se fornecida
+      if (currentPassword && userEmail) {
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: userEmail.toLowerCase(),
+          password: currentPassword,
+        });
+        if (signInErr) {
+          return { success: false, error: 'A senha atual informada está incorreta.' };
+        }
+      }
+
       const res = await this.completeMandatoryPasswordReset(newPassword);
-      return res.success;
+      return res;
     } catch (err) {
       console.warn('Erro ao atualizar senha no Supabase:', err);
-      return false;
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   },
 

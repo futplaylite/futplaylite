@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowRight,
+  Calendar,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -117,13 +118,22 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     notify,
   } = useLeague();
 
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot_password'>('login');
 
   // Login states (E-mail ou Telefone)
   const [loginIdentifier, setLoginIdentifier] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string>('');
+
+  // Estados de Recuperação de Senha Esquecida
+  const [recoveryPhone, setRecoveryPhone] = useState<string>('');
+  const [recoveryBirthDate, setRecoveryBirthDate] = useState<string>('');
+  const [recoveryNewPassword, setRecoveryNewPassword] = useState<string>('');
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState<string>('');
+  const [showRecoveryNewPass, setShowRecoveryNewPass] = useState<boolean>(false);
+  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState<string>('');
+  const [isRecovering, setIsRecovering] = useState<boolean>(false);
 
   // Estados de Redefinição Obrigatória de Senha (Etapa 5 / Supabase Auth)
   const [mustResetPassword, setMustResetPassword] = useState<boolean>(false);
@@ -137,6 +147,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [regName, setRegName] = useState<string>('');
   const [regIdentifier, setRegIdentifier] = useState<string>('');
   const [regConfirmIdentifier, setRegConfirmIdentifier] = useState<string>('');
+  const [regBirthDate, setRegBirthDate] = useState<string>('');
   const [regPassword, setRegPassword] = useState<string>('');
   const [regConfirmPassword, setRegConfirmPassword] = useState<string>('');
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
@@ -569,6 +580,59 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     }
   };
 
+  const handleRecoverPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setRecoverySuccessMsg('');
+
+    const cleanPhone = recoveryPhone.replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length < 8) {
+      setLoginError('Informe o número de telefone celular cadastrado com DDD.');
+      return;
+    }
+
+    if (!recoveryBirthDate) {
+      setLoginError('Informe a data de nascimento cadastrada.');
+      return;
+    }
+
+    if (recoveryNewPassword.length < 6) {
+      setLoginError('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    if (recoveryNewPassword !== recoveryConfirmPassword) {
+      setLoginError('A confirmação da nova senha não confere com a nova senha digitada.');
+      return;
+    }
+
+    setIsRecovering(true);
+    try {
+      const res = await supabaseService.recoverPasswordWithBirthdate({
+        phone: cleanPhone,
+        birthDate: recoveryBirthDate,
+        newPassword: recoveryNewPassword,
+      });
+
+      setIsRecovering(false);
+      if (!res.success) {
+        setLoginError(res.error || 'Dados de identificação incorretos.');
+        return;
+      }
+
+      setRecoverySuccessMsg('Senha redefinida com sucesso! Você já pode fazer login com a nova senha.');
+      setMode('login');
+      setLoginIdentifier(recoveryPhone);
+      setLoginPassword('');
+      setRecoveryNewPassword('');
+      setRecoveryConfirmPassword('');
+      notify('success', 'Senha Redefinida', 'Sua senha foi redefinida com sucesso. Faça login agora.');
+    } catch (err) {
+      setIsRecovering(false);
+      setLoginError(err instanceof Error ? err.message : 'Falha ao redefinir senha.');
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -775,6 +839,19 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
       return;
     }
 
+    if (!regBirthDate.trim()) {
+      setLoginError('Informe sua data de nascimento para segurança da conta.');
+      return;
+    }
+
+    const birthDateObj = new Date(regBirthDate);
+    const today = new Date();
+    const age = today.getFullYear() - birthDateObj.getFullYear();
+    if (isNaN(birthDateObj.getTime()) || birthDateObj >= today || age < 5 || age > 120) {
+      setLoginError('Data de nascimento inválida. A idade deve estar entre 5 e 120 anos.');
+      return;
+    }
+
     if (regPassword.trim().length < 4) {
       setLoginError('Crie uma senha com pelo menos 4 caracteres.');
       return;
@@ -940,6 +1017,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             user: supUser,
             profile: supProfile,
             password: regPassword.trim(),
+            birthDate: regBirthDate.trim(),
           });
           if (!supSync.success) {
             console.error('Falha de sincronização no Supabase:', supSync.error);
@@ -1181,6 +1259,22 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                 </div>
               </div>
 
+              <div className="flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('forgot_password');
+                    setLoginError('');
+                    setRecoverySuccessMsg('');
+                    const clean = loginIdentifier.replace(/\D/g, '');
+                    setRecoveryPhone(clean.length >= 8 ? formatIdentifierInput(clean) : '');
+                  }}
+                  className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
+
               <button
                 type="submit"
                 disabled={isSubmitting}
@@ -1215,6 +1309,130 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                   className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                 >
                   Criar minha conta
+                </button>
+              </div>
+            </form>
+          ) : mode === 'forgot_password' ? (
+            /* FORMULÁRIO DE RECUPERAÇÃO DE SENHA ESQUECIDA */
+            <form onSubmit={handleRecoverPassword} noValidate className="space-y-3.5">
+              <div className="text-center pb-1">
+                <h3 className="text-sm font-bold text-slate-800">Recuperação de Acesso</h3>
+                <p className="text-[11px] text-slate-500">
+                  Informe o telefone e a data de nascimento cadastrados para criar uma nova senha.
+                </p>
+              </div>
+
+              {recoverySuccessMsg && (
+                <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>{recoverySuccessMsg}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Telefone Cadastrado (com DDD)
+                </label>
+                <div className="relative">
+                  <Phone className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    required
+                    value={recoveryPhone}
+                    onChange={(e) => setRecoveryPhone(formatIdentifierInput(e.target.value))}
+                    placeholder="(77) 99999-8888"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Data de Nascimento Cadastrada
+                </label>
+                <div className="relative">
+                  <Calendar className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="date"
+                    required
+                    value={recoveryBirthDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setRecoveryBirthDate(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nova Senha (mínimo 6 caracteres)
+                </label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type={showRecoveryNewPass ? 'text' : 'password'}
+                    required
+                    value={recoveryNewPassword}
+                    onChange={(e) => setRecoveryNewPassword(e.target.value)}
+                    placeholder="Digite a nova senha"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRecoveryNewPass((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                  >
+                    {showRecoveryNewPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Confirmar Nova Senha
+                </label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="password"
+                    required
+                    value={recoveryConfirmPassword}
+                    onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+                    placeholder="Repita a nova senha"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isRecovering}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-xs font-bold text-white shadow-sm hover:bg-blue-700 active:scale-[0.99] transition cursor-pointer disabled:opacity-60"
+              >
+                {isRecovering ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Validando e redefinindo...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Redefinir Senha</span>
+                    <ShieldCheck className="h-4 w-4" />
+                  </>
+                )}
+              </button>
+
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setLoginError('');
+                    setRecoverySuccessMsg('');
+                  }}
+                  className="text-xs font-bold text-slate-600 hover:text-blue-600 hover:underline cursor-pointer"
+                >
+                  ← Voltar para o Login
                 </button>
               </div>
             </form>
@@ -1308,6 +1526,26 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
                     Você usará este e-mail ou número de telefone para entrar na sua conta.
                   </p>
                 )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Data de Nascimento <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Calendar className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="date"
+                    required
+                    value={regBirthDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setRegBirthDate(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3.5 py-2.5 text-xs font-medium text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                </div>
+                <p className="mt-1 text-[10px] text-slate-500">
+                  🔒 Armazenada em cofre privado para segurança e recuperação de senha.
+                </p>
               </div>
 
               <div>

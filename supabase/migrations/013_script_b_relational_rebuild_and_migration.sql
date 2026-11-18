@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS public.team_schedules (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now()
 );
 
+-- Se existir a tabela legada de texto criada na migração 008, substitui pela modelagem relacional
+DROP TABLE IF EXISTS public.team_financial_transactions CASCADE;
 CREATE TABLE IF NOT EXISTS public.team_financial_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     legacy_tx_id TEXT UNIQUE,

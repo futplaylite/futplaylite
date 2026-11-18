@@ -382,41 +382,6 @@ export const AthleteProfileAndCardView: React.FC<
         return;
       }
 
-      let isCurrentValid = false;
-      try {
-        const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
-        const expected =
-          stored[currentUser.id] ||
-          (currentUser.email ? stored[currentUser.email.toLowerCase()] : undefined) ||
-          (currentUser.whatsappNumber ? stored[currentUser.whatsappNumber.replace(/\D/g, '')] : undefined);
-        if (expected && expected === currentPass.trim()) {
-          isCurrentValid = true;
-        }
-      } catch {
-        // Ignora
-      }
-
-      if (!isCurrentValid && isSupabaseConfigured() && supabase) {
-        try {
-          const { data: userRow } = await supabase
-            .from('users')
-            .select('password_hash')
-            .eq('id', currentUser.id)
-            .maybeSingle();
-
-          if (userRow?.password_hash && userRow.password_hash === currentPass.trim()) {
-            isCurrentValid = true;
-          }
-        } catch {
-          // Ignora
-        }
-      }
-
-      if (!isCurrentValid) {
-        setEditError('A senha atual informada está incorreta.');
-        return;
-      }
-
       if (newPass.trim().length < 4) {
         setEditError('A nova senha deve ter no mínimo 4 caracteres.');
         return;
@@ -428,8 +393,26 @@ export const AthleteProfileAndCardView: React.FC<
       }
 
       setIsSaving(true);
-      if (isSupabaseConfigured()) {
-        await supabaseService.updatePassword(currentUser.id, newPass.trim());
+
+      const userEmail =
+        currentUser.email ||
+        (currentUser.whatsappNumber
+          ? `${currentUser.whatsappNumber.replace(/\D/g, '')}@celular.futplay.com`
+          : '');
+
+      if (isSupabaseConfigured() && userEmail) {
+        const updateRes = await supabaseService.updatePassword({
+          userId: currentUser.id,
+          newPassword: newPass.trim(),
+          currentPassword: currentPass.trim(),
+          userEmail,
+        });
+
+        if (!updateRes.success) {
+          setIsSaving(false);
+          setEditError(updateRes.error || 'A senha atual informada está incorreta.');
+          return;
+        }
       }
     }
 
