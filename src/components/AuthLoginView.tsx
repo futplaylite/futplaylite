@@ -65,10 +65,10 @@ function processCrestTransparentPng(file: File): Promise<string> {
       const img = new Image();
       img.onerror = () => reject(new Error('Formato de imagem inválido.'));
       img.onload = () => {
-        const maxDim = 320;
+        const maxDim = 140;
         const scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
 
         const canvas = document.createElement('canvas');
         canvas.width = w;
@@ -81,6 +81,13 @@ function processCrestTransparentPng(file: File): Promise<string> {
 
         ctx.clearRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
+        try {
+          const webp = canvas.toDataURL('image/webp', 0.65);
+          if (webp.startsWith('data:image/webp')) {
+            resolve(webp);
+            return;
+          }
+        } catch {}
         resolve(canvas.toDataURL('image/png'));
       };
       img.src = reader.result as string;

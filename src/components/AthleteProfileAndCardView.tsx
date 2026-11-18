@@ -41,8 +41,8 @@ function resizeImageToDataUrl(file: File): Promise<string> {
       img.onerror = () => reject(new Error('Formato de imagem inválido.'));
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        // Foto de perfil leve (JPEG 256x256, qualidade reduzida) para não pesar o tráfego do Supabase
-        const size = 256;
+        // Foto de perfil ultra leve (JPEG 160x160, qualidade 60%) para não pesar o tráfego do Supabase (< 15 KB)
+        const size = 160;
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext('2d');
@@ -57,7 +57,7 @@ function resizeImageToDataUrl(file: File): Promise<string> {
         const sx = (img.width - minSide) / 2;
         const sy = (img.height - minSide) / 2;
         ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
       };
       img.src = reader.result as string;
     };
