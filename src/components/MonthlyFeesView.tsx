@@ -353,10 +353,11 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   const coachProfile = useMemo(() => {
     return (
       profiles.find((p) => {
-        if (!p.isTeamOwner) return false;
+        const isCoachOrOwner = Boolean(p.isTeamOwner || p.role === 'coach' || p.isCoach);
+        if (!isCoachOrOwner) return false;
         if (!userTeamNormalized) return true;
         return normalize(p.teamName || '') === userTeamNormalized;
-      }) || profiles.find((p) => p.isTeamOwner)
+      }) || profiles.find((p) => p.isTeamOwner || p.role === 'coach' || p.isCoach)
     );
   }, [profiles, userTeamNormalized]);
 

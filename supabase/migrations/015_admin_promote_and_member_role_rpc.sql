@@ -49,6 +49,40 @@ $$;
 REVOKE ALL ON FUNCTION private.is_platform_admin() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION private.is_platform_admin() TO authenticated, service_role;
 
+-- 3.1. Função aprimorada para verificação de permissões de dono do time:
+-- Treinadores (coach) e membros com permissão esportiva ou financeira possuem TODAS as permissões de dono do time
+CREATE OR REPLACE FUNCTION private.is_team_owner(p_team_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = ''
+AS $$
+    SELECT COALESCE(
+        (
+            SELECT EXISTS (
+                SELECT 1
+                FROM public.team_memberships tm
+                JOIN public.teams t ON t.id = tm.team_id
+                JOIN public.users u ON u.id = tm.user_id
+                WHERE tm.user_id = auth.uid()
+                  AND auth.uid() IS NOT NULL
+                  AND tm.team_id = p_team_id
+                  AND p_team_id IS NOT NULL
+                  AND tm.status = 'active'
+                  AND (tm.is_owner = true OR tm.can_manage_sport = true OR tm.can_manage_finance = true OR u.role = 'coach')
+                  AND t.status = 'active'
+                  AND u.status = 'ativa'
+                  AND u.must_reset_password = false
+            )
+        ),
+        false
+    );
+$$;
+
+REVOKE ALL ON FUNCTION private.is_team_owner(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.is_team_owner(UUID) TO authenticated, service_role;
+
 -- 4. RPC Oficial: public.admin_set_player_role_authenticated
 CREATE OR REPLACE FUNCTION public.admin_set_player_role_authenticated(
     p_target_user_id UUID,
@@ -158,10 +192,10 @@ BEGIN
         ON CONFLICT (txid, operation, target_id) DO NOTHING;
     END IF;
 
-    -- 4.8. Atualiza public.users
+    -- 4.8. Atualiza public.users (Treinador recebe todas as permissões de dono do time)
     UPDATE public.users
     SET role = p_new_role,
-        is_team_owner = CASE WHEN v_is_coach THEN true ELSE (is_team_owner AND p_new_role <> 'player') END,
+        is_team_owner = CASE WHEN v_is_coach THEN true ELSE (CASE WHEN p_new_role = 'player' AND NOT COALESCE(v_membership.is_owner, false) THEN false ELSE is_team_owner END) END,
         updated_at = pg_catalog.now()
     WHERE id = v_real_user_id;
 
@@ -169,12 +203,13 @@ BEGIN
     IF v_target_profile.id IS NOT NULL THEN
         UPDATE public.player_profiles
         SET role = p_new_role,
-            is_team_owner = CASE WHEN v_is_coach THEN true ELSE (is_team_owner AND p_new_role <> 'player') END,
+            is_team_owner = CASE WHEN v_is_coach THEN true ELSE (CASE WHEN p_new_role = 'player' AND NOT COALESCE(v_membership.is_owner, false) THEN false ELSE is_team_owner END) END,
             updated_at = pg_catalog.now()
         WHERE id = v_target_profile.id;
     END IF;
 
     -- 4.10. Atualiza ou vincula em public.team_memberships
+    -- Treinadores recebem todas as permissões de dono (can_manage_sport = true e can_manage_finance = true)
     IF v_membership.id IS NOT NULL THEN
         UPDATE public.team_memberships
         SET can_manage_sport = CASE WHEN v_membership.is_owner THEN true ELSE v_manage_sport END,
@@ -225,9 +260,10 @@ BEGIN
         'player_id', v_target_profile.id,
         'new_role', p_new_role,
         'is_coach', v_is_coach,
+        'is_team_owner', v_is_coach,
         'can_manage_sport', v_manage_sport,
         'can_manage_finance', v_manage_finance,
-        'message', 'Cargo e permissões atualizados com sucesso no Supabase.'
+        'message', 'Cargo e todas as permissões de dono do time atualizados com sucesso no Supabase.'
     );
 END;
 $$;

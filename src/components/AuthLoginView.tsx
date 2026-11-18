@@ -705,10 +705,30 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         ? profiles.find((p) => p.userId === localUser.id)
         : undefined;
 
+      let roleOverrides: Record<string, { role: UserRole; isTeamOwner: boolean }> = {};
+      try {
+        const saved = localStorage.getItem('futplay_role_overrides_v1');
+        if (saved) roleOverrides = JSON.parse(saved);
+      } catch {}
+
+      const ro =
+        (existingUser.id ? roleOverrides[existingUser.id] : undefined) ||
+        (localUser?.id ? roleOverrides[localUser.id] : undefined) ||
+        (matchedProfile?.id ? roleOverrides[matchedProfile.id] : undefined);
+
       const isOwner =
-        existingUser.isTeamOwner !== undefined
-          ? existingUser.isTeamOwner
-          : Boolean(localUser?.isTeamOwner || matchedProfile?.isTeamOwner || localProfile?.isTeamOwner);
+        ro?.role === 'coach' ||
+        ro?.isTeamOwner === true ||
+        existingUser.role === 'coach' ||
+        existingUser.isTeamOwner === true ||
+        Boolean(localUser?.isTeamOwner || localUser?.role === 'coach' || matchedProfile?.isTeamOwner || matchedProfile?.role === 'coach' || localProfile?.isTeamOwner);
+
+      const finalRole: UserRole =
+        existingUser.role === 'admin' || localUser?.role === 'admin'
+          ? 'admin'
+          : isOwner || existingUser.role === 'coach' || ro?.role === 'coach'
+          ? 'coach'
+          : existingUser.role || localUser?.role || 'player';
 
       const finalTeamName = existingUser.teamName || localUser?.teamName || matchedProfile?.teamName || localProfile?.teamName;
       const finalTeamCode = existingUser.teamInviteCode || localUser?.teamInviteCode || matchedProfile?.teamInviteCode || localProfile?.teamInviteCode;
@@ -717,7 +737,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         finalTeamCode
       );
       const isCompleted =
-        existingUser.role === 'admin' ||
+        finalRole === 'admin' ||
         isOwner ||
         hasTeam ||
         (existingUser.onboardingCompleted === true && (existingUser.onboardingStep || 1) >= 4);
@@ -729,13 +749,8 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         teamCity: existingUser.teamCity || localUser?.teamCity || matchedProfile?.teamCity || localProfile?.teamCity,
         teamModality: existingUser.teamModality || localUser?.teamModality || matchedProfile?.teamModality || localProfile?.teamModality,
         teamInviteCode: finalTeamCode,
-        isTeamOwner: isOwner,
-        role:
-          existingUser.role === 'admin'
-            ? 'admin'
-            : isOwner || existingUser.role === 'coach'
-            ? 'coach'
-            : existingUser.role || 'player',
+        isTeamOwner: finalRole === 'admin' ? false : (finalRole === 'coach' ? true : isOwner),
+        role: finalRole,
         onboardingCompleted: isCompleted,
         onboardingStep: isCompleted ? 4 : (existingUser.onboardingStep || 1),
       };
@@ -763,9 +778,18 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
               matchedProfile.teamInviteCode ||
               localProfile?.teamInviteCode ||
               finalUserToActivate.teamInviteCode,
-            isTeamOwner: isOwner,
+            role: finalRole,
+            isCoach: finalRole === 'coach',
+            isTeamOwner: finalRole === 'admin' ? false : (finalRole === 'coach' ? true : isOwner),
           }
-        : localProfile;
+        : localProfile
+        ? {
+            ...localProfile,
+            role: finalRole,
+            isCoach: finalRole === 'coach',
+            isTeamOwner: finalRole === 'admin' ? false : (finalRole === 'coach' ? true : isOwner),
+          }
+        : undefined;
 
       await supabaseService.registerActiveSession(finalUserToActivate.id);
       setActiveUserWithData(finalUserToActivate, finalProfileToActivate);

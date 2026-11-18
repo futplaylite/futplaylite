@@ -34,6 +34,7 @@ const MODALITY_LABELS: Record<TeamModality, string> = {
 export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
   const {
     profiles,
+    users,
     seasonEntries,
     cities,
     selectedCityId,
@@ -52,6 +53,8 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     currentUser?.role === 'coach' ||
     currentUser?.isTeamOwner === true ||
     currentPlayerProfile?.isTeamOwner === true ||
+    currentPlayerProfile?.role === 'coach' ||
+    currentPlayerProfile?.isCoach === true ||
     currentUser?.role === 'admin';
 
   // Atualiza imediatamente os dados com a nuvem na montagem do elenco
@@ -60,6 +63,21 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
       refreshLeagueData();
     }
   }, []);
+
+  // Re-sincroniza caso haja evento de promoção de treinadores pelo admin
+  useEffect(() => {
+    const handleRoleChanged = () => {
+      if (refreshLeagueData) {
+        refreshLeagueData();
+      }
+    };
+    window.addEventListener('futplay_roles_changed', handleRoleChanged);
+    window.addEventListener('futplay_player_stats_changed', handleRoleChanged);
+    return () => {
+      window.removeEventListener('futplay_roles_changed', handleRoleChanged);
+      window.removeEventListener('futplay_player_stats_changed', handleRoleChanged);
+    };
+  }, [refreshLeagueData]);
 
   const getCachedTeamCrest = (teamName?: string): string | undefined => {
     if (!teamName) return undefined;
@@ -117,19 +135,23 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     `${activeCity.name}/${activeCity.stateCode}`;
 
   // Perfil dos técnicos da equipe (cada time pode ter mais de um treinador)
-  const teamCoaches = profiles.filter(
-    (p) =>
-      p.teamName &&
-      userTeamName !== 'Meu Time' &&
-      p.teamName.toLowerCase() === userTeamName.toLowerCase() &&
-      (p.role === 'coach' || p.isTeamOwner)
-  );
+  const teamCoaches = useMemo(() => {
+    return profiles.filter((p) => {
+      if (!p.teamName || userTeamName === 'Meu Time') return false;
+      const matchesTeam = p.teamName.trim().toLowerCase() === userTeamName.trim().toLowerCase();
+      if (!matchesTeam) return false;
+      const isUserCoach = users.some(
+        (u) => (u.id === p.userId || u.id === p.id) && (u.role === 'coach' || u.isTeamOwner)
+      );
+      return p.role === 'coach' || p.isCoach === true || p.isTeamOwner === true || isUserCoach;
+    });
+  }, [profiles, userTeamName, users]);
 
   const coachName =
     teamCoaches.length > 0
       ? teamCoaches.map((c) => c.displayName).join(', ')
       : isCoach
-      ? currentPlayerProfile?.displayName || currentUser?.email.split('@')[0]
+      ? currentPlayerProfile?.displayName || currentUser?.email.split('@')[0] || 'Treinador'
       : 'Comissão Técnica';
 
   const teamModality: TeamModality =
@@ -213,14 +235,29 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
     });
 
     if (matches.length > 0) {
-      return matches.sort((a, b) => a.displayName.localeCompare(b.displayName, 'pt-BR'));
+      return matches.sort((a, b) => {
+        const aIsCoach = Boolean(
+          a.role === 'coach' ||
+          a.isCoach === true ||
+          a.isTeamOwner === true ||
+          users.some((u) => (u.id === a.userId || u.id === a.id) && (u.role === 'coach' || u.isTeamOwner))
+        );
+        const bIsCoach = Boolean(
+          b.role === 'coach' ||
+          b.isCoach === true ||
+          b.isTeamOwner === true ||
+          users.some((u) => (u.id === b.userId || u.id === b.id) && (u.role === 'coach' || u.isTeamOwner))
+        );
+        if (aIsCoach !== bIsCoach) return bIsCoach ? 1 : -1;
+        return a.displayName.localeCompare(b.displayName, 'pt-BR');
+      });
     }
 
     if (currentPlayerProfile) {
       return [currentPlayerProfile];
     }
     return [];
-  }, [profiles, userTeamName, teamInviteCode, currentPlayerProfile]);
+  }, [profiles, userTeamName, teamInviteCode, currentPlayerProfile, users]);
 
   const counts = useMemo(() => {
     return {
@@ -568,11 +605,20 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                         <span className="text-xs font-bold text-slate-900 truncate uppercase">
                           {player.displayName}
                         </span>
-                        {(player.isTeamOwner || player.role === 'coach') && (
-                          <span className="rounded bg-amber-100 text-amber-800 text-[9px] font-black px-1.5 py-0.2 uppercase">
-                            Técnico
-                          </span>
-                        )}
+                        {(() => {
+                          const isPlayerCoach = Boolean(
+                            player.isTeamOwner ||
+                            player.role === 'coach' ||
+                            player.isCoach === true ||
+                            users.some((u) => (u.id === player.userId || u.id === player.id) && (u.role === 'coach' || u.isTeamOwner))
+                          );
+                          return isPlayerCoach ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide shadow-2xs">
+                              <span>📋</span>
+                              <span>Treinador</span>
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
                       <div className="text-[10px] text-slate-500 truncate">
                         <span>{positionLabel}</span>

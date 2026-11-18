@@ -266,13 +266,22 @@ export const AdminAndHomologationView: React.FC<
       actorName: currentPlayerProfile?.displayName || currentUser?.email || 'Administrador',
     });
 
-    // Sincroniza imediatamente com a RPC segura de promoção no Supabase
-    const targetUserId = editingPlayer.userId || editingPlayer.id;
+    // Sincroniza imediatamente com a RPC segura de promoção no Supabase e cofre local
+    const matchingUser = users.find(
+      (u) =>
+        u.id === editingPlayer.userId ||
+        u.id === editingPlayer.id ||
+        (u.email && editingPlayer.userId && u.email.toLowerCase() === editingPlayer.userId.toLowerCase())
+    );
+    const targetUserId = matchingUser?.id || editingPlayer.userId || editingPlayer.id;
+
     if (targetUserId && (editForm.memberRole === 'coach' || editForm.memberRole === 'player')) {
       supabaseService
         .adminSetPlayerRole({
           targetUserId,
           newRole: editForm.memberRole,
+          canManageSport: editForm.memberRole === 'coach',
+          canManageFinance: editForm.memberRole === 'coach',
           reason: editForm.reason.trim() || defaultReason,
         })
         .then((res: { success: boolean; error?: string }) => {
@@ -821,8 +830,8 @@ export const AdminAndHomologationView: React.FC<
                                 <span className="inline-block rounded bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.2 capitalize">
                                   {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
                                 </span>
-                                {player.role === 'coach' || player.isTeamOwner ? (
-                                  <span className="rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 text-[9px] font-black uppercase flex items-center gap-0.5">
+                                {player.role === 'coach' || player.isCoach === true || player.isTeamOwner === true || users.some((u) => (u.id === player.userId || u.id === player.id) && (u.role === 'coach' || u.isTeamOwner)) ? (
+                                  <span className="rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 text-[9px] font-black uppercase flex items-center gap-0.5 shadow-2xs">
                                     📋 Treinador
                                   </span>
                                 ) : (
@@ -916,8 +925,8 @@ export const AdminAndHomologationView: React.FC<
                             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-700 capitalize">
                               {player.position === 'goleiro' ? '🧤 Goleiro' : player.position}
                             </span>
-                            {player.role === 'coach' || player.isTeamOwner ? (
-                              <span className="rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-[9px] font-black uppercase flex items-center gap-0.5">
+                            {player.role === 'coach' || player.isCoach === true || player.isTeamOwner === true || users.some((u) => (u.id === player.userId || u.id === player.id) && (u.role === 'coach' || u.isTeamOwner)) ? (
+                              <span className="rounded bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.5 text-[9px] font-black uppercase flex items-center gap-0.5 shadow-2xs">
                                 📋 Treinador
                               </span>
                             ) : (
@@ -1758,7 +1767,7 @@ export const AdminAndHomologationView: React.FC<
 
                   <p className="text-[10px] text-slate-500 leading-relaxed">
                     {editForm.memberRole === 'coach'
-                      ? '✅ Membro promovido a Treinador. Terá acesso à comissão técnica, gestão de súmulas e controle de mensalidades do time. Cada time pode ter mais de um treinador.'
+                      ? '✅ Membro promovido a Treinador. Terá TODAS as permissões de dono do time (edição da equipe, comissão técnica, gestão de súmulas, mensalidades e caixa). Cada time pode ter mais de um treinador.'
                       : 'Membro registrado como atleta regular do elenco.'}
                   </p>
                 </div>
