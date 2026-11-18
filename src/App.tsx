@@ -148,9 +148,21 @@ const MainMobileShell: React.FC = () => {
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Fecha o menu de opções do perfil ao pressionar Escape
+  // Fecha o menu de opções do perfil ao clicar fora ou pressionar Escape
   useEffect(() => {
     if (!showProfileMenu) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(target) &&
+        profileButtonRef.current &&
+        !profileButtonRef.current.contains(target)
+      ) {
+        setShowProfileMenu(false);
+      }
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -158,8 +170,15 @@ const MainMobileShell: React.FC = () => {
       }
     };
 
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown, { passive: true });
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [showProfileMenu]);
   const [matchIdToOpen, setMatchIdToOpen] = useState<string | undefined>(() => {
     try {
@@ -504,20 +523,14 @@ const MainMobileShell: React.FC = () => {
 
               {/* Menu Suspenso do Perfil (Calibrado para Celular) */}
               {showProfileMenu && (
-                <>
-                  {/* Backdrop para fechar o menu ao tocar fora */}
-                  <div
-                    className="fixed inset-0 z-40 bg-black/25 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowProfileMenu(false);
-                    }}
-                    aria-hidden="true"
-                  />
-                  <div
-                    ref={profileMenuRef}
-                    className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xl transition-all text-slate-800"
-                  >
+                <div
+                  ref={profileMenuRef}
+                  className="absolute right-0 top-12 z-[100] w-64 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-2xl ring-1 ring-black/10 transition-all text-slate-800"
+                  style={{
+                    backgroundColor: '#ffffff',
+                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.15)',
+                  }}
+                >
                   {/* Cabeçalho do Perfil Compacto */}
                   <div className="flex items-center gap-2.5 border-b border-slate-100 pb-2">
                     {userAvatarUrl ? (
@@ -555,7 +568,7 @@ const MainMobileShell: React.FC = () => {
                   </div>
 
                   {/* Ações Rápidas Reorganizadas */}
-                  <div className="py-1.5 space-y-0.5">
+                  <div className="py-1.5 space-y-1">
                     {isAdmin ? (
                       <button
                         type="button"
@@ -563,13 +576,13 @@ const MainMobileShell: React.FC = () => {
                           setShowProfileMenu(false);
                           handleNavigate('admin');
                         }}
-                        className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 transition text-left cursor-pointer"
+                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 active:bg-purple-200 transition text-left cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
                           <ShieldCheck className="h-4 w-4 text-purple-600" />
                           <span>Painel do Administrador</span>
                         </div>
-                        <span className="font-mono text-[9px] font-black text-purple-700 bg-purple-200/80 px-1.5 py-0.2 rounded-full">
+                        <span className="font-mono text-[9px] font-black text-purple-700 bg-purple-200/80 px-1.5 py-0.5 rounded-full">
                           ADMIN
                         </span>
                       </button>
@@ -584,9 +597,9 @@ const MainMobileShell: React.FC = () => {
                             handleNavigate('squad');
                           }
                         }}
-                        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition text-left cursor-pointer"
+                        className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition text-left cursor-pointer"
                       >
-                        <UserCircle2 className="h-3.5 w-3.5 text-blue-600" />
+                        <UserCircle2 className="h-4 w-4 text-blue-600" />
                         <span>Meu Perfil & Card</span>
                       </button>
                     )}
@@ -598,13 +611,13 @@ const MainMobileShell: React.FC = () => {
                           setShowProfileMenu(false);
                           setShowMonthlyFeesPage(true);
                         }}
-                        className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition text-left cursor-pointer"
+                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition text-left cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <Wallet className="h-3.5 w-3.5 text-emerald-600" />
+                          <Wallet className="h-4 w-4 text-emerald-600" />
                           <span>Financeiro</span>
                         </div>
-                        <span className="font-mono text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                        <span className="font-mono text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
                           Caixa & Extrato
                         </span>
                       </button>
@@ -622,15 +635,14 @@ const MainMobileShell: React.FC = () => {
                         setIsAuthenticated(false);
                         setShowProfileMenu(false);
                       }}
-                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition text-left cursor-pointer"
+                      className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 active:bg-rose-100 transition text-left cursor-pointer"
                     >
-                      <LogOut className="h-3.5 w-3.5 text-slate-500" />
+                      <LogOut className="h-4 w-4 text-rose-500" />
                       <span>Sair da Conta</span>
                     </button>
                   </div>
                 </div>
-              </>
-            )}
+              )}
             </div>
           </div>
           )}
