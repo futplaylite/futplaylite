@@ -525,6 +525,9 @@ const MainMobileShell: React.FC = () => {
               {showProfileMenu && (
                 <div
                   ref={profileMenuRef}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
                   className="absolute right-0 top-12 z-[100] w-64 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-2xl ring-1 ring-black/10 transition-all text-slate-800"
                   style={{
                     backgroundColor: '#ffffff',
