@@ -780,7 +780,18 @@ BEGIN
             RAISE EXCEPTION 'IMUTABILIDADE_VIOLADA: Registros legados em pelada_sumulas estão congelados para migração.';
         END IF;
         IF OLD.status = 'finalizada' AND NOT private.is_platform_admin() THEN
-            RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Súmula finalizada é imutável.';
+            IF EXISTS (
+                SELECT 1 FROM private.trusted_rpc_locks l
+                WHERE l.txid = pg_catalog.txid_current()
+                  AND l.target_id = NEW.id
+                  AND l.actor_id = auth.uid()
+                  AND l.operation = 'reopen_sumula'
+            ) THEN
+                -- Permite a reabertura auditada exclusivamente quando iniciada pela RPC oficial
+                NULL;
+            ELSE
+                RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Súmula finalizada é imutável. Utilize a operação oficial de reabertura auditada.';
+            END IF;
         END IF;
         IF NEW.team_id IS DISTINCT FROM OLD.team_id THEN
             RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Não é permitido transferir uma súmula para outra equipe.';

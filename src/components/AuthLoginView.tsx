@@ -125,6 +125,14 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string>('');
 
+  // Estados de Redefinição Obrigatória de Senha (Etapa 5 / Supabase Auth)
+  const [mustResetPassword, setMustResetPassword] = useState<boolean>(false);
+  const [newResetPassword, setNewResetPassword] = useState<string>('');
+  const [confirmResetPassword, setConfirmResetPassword] = useState<string>('');
+  const [showResetPassword, setShowResetPassword] = useState<boolean>(false);
+  const [pendingUserToActivate, setPendingUserToActivate] = useState<User | null>(null);
+  const [pendingProfileToActivate, setPendingProfileToActivate] = useState<PlayerProfile | undefined>(undefined);
+
   // Register states
   const [regName, setRegName] = useState<string>('');
   const [regIdentifier, setRegIdentifier] = useState<string>('');
@@ -516,6 +524,51 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     });
   };
 
+  const handleCompletePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    const newPass = newResetPassword.trim();
+    if (newPass.length < 6) {
+      setLoginError('A nova senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+    if (newPass !== confirmResetPassword.trim()) {
+      setLoginError('A confirmação da nova senha não confere com a nova senha digitada.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const res = await supabaseService.completeMandatoryPasswordReset(newPass);
+      if (!res.success) {
+        setIsSubmitting(false);
+        setLoginError(res.error || 'Falha ao redefinir credenciais no banco de dados.');
+        return;
+      }
+
+      setIsSubmitting(false);
+      setMustResetPassword(false);
+
+      if (pendingUserToActivate) {
+        await supabaseService.registerActiveSession(pendingUserToActivate.id);
+        setActiveUserWithData(pendingUserToActivate, pendingProfileToActivate);
+        try {
+          localStorage.setItem('futplay_lite_auth_session_v3', 'true');
+          localStorage.setItem('futplay_lite_active_user_id_v3', pendingUserToActivate.id);
+        } catch {}
+        notify(
+          'success',
+          'Senha Redefinida com Sucesso!',
+          'Sua conta foi ativada com segurança e está pronta para uso.'
+        );
+        onAuthenticated();
+      }
+    } catch (err) {
+      setIsSubmitting(false);
+      setLoginError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -543,45 +596,31 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     let matchedProfile: PlayerProfile | undefined;
     let supabaseChecked = false;
 
-    // 1. Consulta SEMPRE o Supabase primeiro como fonte oficial da verdade
+    // 1. Autentica no Supabase Auth oficial (GoTrue + verificação de flag de redefinição)
     if (isSupabaseConfigured()) {
       try {
-        const remoteMatch = await supabaseService.findUserByIdentifier(trimmed);
-        supabaseChecked = true;
-        if (remoteMatch) {
-          existingUser = remoteMatch.user;
-          matchedProfile = remoteMatch.profile;
+        const authResult = await supabaseService.signInWithSupabaseAuth(trimmed, loginPassword);
+        if (!authResult.success) {
+          setIsSubmitting(false);
+          setLoginError(authResult.error || 'Credenciais inválidas.');
+          return;
+        }
 
-          // Se tiver senha salva no banco Supabase, valida
-          if (remoteMatch.password && remoteMatch.password !== loginPassword.trim()) {
-            setIsSubmitting(false);
-            setLoginError('Senha incorreta para este usuário.');
-            return;
-          }
+        if (authResult.mustResetPassword && authResult.user) {
+          setIsSubmitting(false);
+          setPendingUserToActivate(authResult.user);
+          setPendingProfileToActivate(authResult.profile);
+          setMustResetPassword(true);
+          return;
+        }
 
-          // Cache local da senha para acesso offline
-          try {
-            const stored = JSON.parse(
-              localStorage.getItem('futplay_user_passwords') || '{}'
-            );
-            stored[existingUser.id] = loginPassword.trim();
-            if (digits) stored[digits] = loginPassword.trim();
-            if (existingUser.email) {
-              stored[existingUser.email.toLowerCase()] = loginPassword.trim();
-            }
-            localStorage.setItem('futplay_user_passwords', JSON.stringify(stored));
-          } catch {
-            // Ignora falha local
-          }
-        } else {
-          // Se o Supabase respondeu e a conta não existe mais lá, limpa eventual rastro local
-          const staleLocal = findUserByIdentifier(trimmed);
-          if (staleLocal) {
-            removeLocalUserSilently(staleLocal.id);
-          }
+        if (authResult.user) {
+          existingUser = authResult.user;
+          matchedProfile = authResult.profile;
+          supabaseChecked = true;
         }
       } catch (err) {
-        console.warn('Falha ao consultar Supabase no login:', err);
+        console.warn('Falha ao autenticar no Supabase Auth:', err);
       }
     }
 
@@ -596,23 +635,6 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     setIsSubmitting(false);
 
     if (existingUser) {
-      // Valida senha se houver cadastrada localmente
-      try {
-        const stored = JSON.parse(
-          localStorage.getItem('futplay_user_passwords') || '{}'
-        );
-        const expected =
-          stored[existingUser.id] ||
-          (digits ? stored[digits] : undefined) ||
-          stored[existingUser.email?.toLowerCase()];
-        if (expected && expected !== loginPassword.trim()) {
-          setLoginError('Senha incorreta para este usuário.');
-          return;
-        }
-      } catch {
-        // Ignora falha local
-      }
-
       // Ativa o usuário e perfil no estado da liga e persiste sessão, preservando dados do time
       const localUser = findUserByIdentifier(trimmed);
       const localProfile = localUser
@@ -681,6 +703,7 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
           }
         : localProfile;
 
+      await supabaseService.registerActiveSession(finalUserToActivate.id);
       setActiveUserWithData(finalUserToActivate, finalProfileToActivate);
       try {
         localStorage.setItem('futplay_lite_auth_session_v3', 'true');
@@ -885,21 +908,6 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
     });
 
     if (created) {
-      // Salva a senha com segurança localmente para próximos logins offline
-      try {
-        const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
-        stored[created.userId] = regPassword.trim();
-        if (digits) {
-          stored[digits] = regPassword.trim();
-        }
-        if (finalEmail) {
-          stored[finalEmail.toLowerCase()] = regPassword.trim();
-        }
-        localStorage.setItem('futplay_user_passwords', JSON.stringify(stored));
-      } catch {
-        // Ignora falha local
-      }
-
       // Sincroniza e aguarda explicitamente o salvamento no Supabase
       if (isSupabaseConfigured()) {
         const supUser: User = {
@@ -1051,7 +1059,77 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
             </div>
           )}
 
-          {mode === 'login' ? (
+          {mustResetPassword ? (
+            /* FORMULÁRIO DE REDEFINIÇÃO OBRIGATÓRIA DE SENHA (ETAPA 5) */
+            <form onSubmit={handleCompletePasswordReset} noValidate className="space-y-4">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 space-y-1.5">
+                <div className="flex items-center gap-2 text-amber-900 font-extrabold text-xs">
+                  <ShieldCheck className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span>Redefinição Obrigatória de Senha</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Por diretriz de integridade e segurança da liga, sua conta requer a definição de uma nova senha pessoal definitiva (mínimo 6 caracteres).
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nova Senha Definitiva
+                </label>
+                <div className="relative">
+                  <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type={showResetPassword ? 'text' : 'password'}
+                    required
+                    autoFocus
+                    value={newResetPassword}
+                    onChange={(e) => setNewResetPassword(e.target.value)}
+                    placeholder="Mínimo 6 caracteres"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPassword(!showResetPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showResetPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Confirmar Nova Senha
+                </label>
+                <div className="relative">
+                  <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type={showResetPassword ? 'text' : 'password'}
+                    required
+                    value={confirmResetPassword}
+                    onChange={(e) => setConfirmResetPassword(e.target.value)}
+                    placeholder="Redigite a nova senha"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-10 py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none transition"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmitting || newResetPassword.length < 6 || newResetPassword !== confirmResetPassword}
+                className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-800 py-3 text-xs font-black uppercase text-white shadow-md hover:from-blue-700 hover:to-blue-900 disabled:opacity-50 cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Salvar Senha & Ativar Conta</span>
+                  </>
+                )}
+              </button>
+            </form>
+          ) : mode === 'login' ? (
             /* FORMULÁRIO DE LOGIN COM E-MAIL OU TELEFONE E SENHA */
             <form onSubmit={handleLogin} noValidate className="space-y-3.5">
               <div>

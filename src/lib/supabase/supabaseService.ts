@@ -130,20 +130,30 @@ export const supabaseService = {
   },
 
   /**
-   * Localiza usuário pelo e-mail ou telefone diretamente no Supabase para autenticação
+   * Localiza usuário pelo e-mail, telefone ou ID diretamente no Supabase para exibição de perfil.
+   * Não retorna hash de senha por segurança arquitetural.
    */
   async findUserByIdentifier(
     identifier: string
-  ): Promise<{ user: User; password?: string; profile?: PlayerProfile } | null> {
+  ): Promise<{ user: User; profile?: PlayerProfile; mustResetPassword?: boolean } | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     const trimmed = identifier.trim().toLowerCase();
     const digits = trimmed.replace(/\D/g, '');
     const isEmail = trimmed.includes('@');
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed);
 
     try {
       let data: any = null;
 
-      if (isEmail) {
+      if (isUuid) {
+        const res = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', trimmed)
+          .limit(1)
+          .maybeSingle();
+        data = res.data;
+      } else if (isEmail) {
         const res = await supabase
           .from('users')
           .select('*')
@@ -301,12 +311,148 @@ export const supabaseService = {
 
       return {
         user,
-        password: data.password_hash || undefined,
         profile,
+        mustResetPassword: Boolean(data.must_reset_password),
       };
     } catch (err) {
       console.warn('Exceção ao buscar usuário no Supabase:', err);
       return null;
+    }
+  },
+
+  /**
+   * Realiza login oficial através do Supabase Auth (GoTrue), validando credenciais com bcrypt.
+   * Suporta e-mail direto, número de celular/WhatsApp ou apelido esportivo.
+   */
+  async signInWithSupabaseAuth(
+    identifier: string,
+    password: string
+  ): Promise<{
+    success: boolean;
+    user?: User;
+    profile?: PlayerProfile;
+    mustResetPassword?: boolean;
+    error?: string;
+  }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      return { success: false, error: 'Supabase não está configurado.' };
+    }
+
+    const trimmed = identifier.trim().toLowerCase();
+    const digits = trimmed.replace(/\D/g, '');
+    const isEmail = trimmed.includes('@');
+
+    try {
+      // 1. Identifica o e-mail canônico para autenticação no Supabase Auth
+      let emailToAuth = trimmed;
+      if (!isEmail) {
+        if (digits.length >= 8) {
+          const { data: uMatch } = await supabase
+            .from('users')
+            .select('email, whatsapp_number')
+            .or(`whatsapp_number.eq.${digits},whatsapp_number.ilike.%${digits.slice(-8)}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (uMatch?.email) {
+            emailToAuth = uMatch.email.toLowerCase();
+          } else {
+            emailToAuth = `${digits}@celular.futplay.com`;
+          }
+        } else {
+          const { data: prof } = await supabase
+            .from('player_profiles')
+            .select('user_id')
+            .ilike('display_name', trimmed)
+            .limit(1)
+            .maybeSingle();
+
+          if (prof?.user_id) {
+            const { data: u } = await supabase
+              .from('users')
+              .select('email')
+              .eq('id', prof.user_id)
+              .limit(1)
+              .maybeSingle();
+            if (u?.email) {
+              emailToAuth = u.email.toLowerCase();
+            }
+          }
+        }
+      }
+
+      // 2. Chama a autenticação nativa do Supabase GoTrue
+      const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+        email: emailToAuth,
+        password: password.trim(),
+      });
+
+      if (authErr) {
+        return {
+          success: false,
+          error:
+            authErr.message.includes('Invalid login credentials')
+              ? 'Credenciais inválidas. Verifique seu e-mail/celular e senha.'
+              : authErr.message,
+        };
+      }
+
+      if (!authData.user) {
+        return { success: false, error: 'Usuário não encontrado no serviço de autenticação.' };
+      }
+
+      // 3. Carrega os dados do usuário e perfil do banco de dados
+      const lookup = await this.findUserByIdentifier(authData.user.id);
+      if (!lookup || !lookup.user) {
+        return { success: false, error: 'Perfil de usuário não encontrado no banco de dados.' };
+      }
+
+      return {
+        success: true,
+        user: lookup.user,
+        profile: lookup.profile,
+        mustResetPassword: lookup.mustResetPassword,
+      };
+    } catch (err) {
+      console.error('Exceção ao autenticar no Supabase Auth:', err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  },
+
+  /**
+   * Conclui a redefinição obrigatória de senha:
+   * 1. Atualiza a senha no Supabase Auth (GoTrue) de forma criptográfica (bcrypt);
+   * 2. Executa a RPC pública complete_mandatory_password_reset_authenticated() que valida
+   *    auth.users.encrypted_password e libera o flag must_reset_password no banco.
+   */
+  async completeMandatoryPasswordReset(newPassword: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      return { success: false, error: 'Supabase não configurado.' };
+    }
+
+    try {
+      // 1. Atualiza no Supabase Auth
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password: newPassword.trim(),
+      });
+      if (updateErr) {
+        return { success: false, error: `Erro ao atualizar senha no Supabase Auth: ${updateErr.message}` };
+      }
+
+      // 2. Chama a RPC que valida a integridade e remove must_reset_password
+      const { error: rpcErr } = await supabase.rpc(
+        'complete_mandatory_password_reset_authenticated'
+      );
+      if (rpcErr) {
+        return { success: false, error: `Falha ao homologar redefinição no banco: ${rpcErr.message}` };
+      }
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   },
 
@@ -338,7 +484,22 @@ export const supabaseService = {
       const userEmail = params.user.email.toLowerCase().trim();
       const cleanDigits = params.user.whatsappNumber?.replace(/\D/g, '');
 
-      // 0. Verifica se o usuário já existe no Supabase por e-mail ou celular para evitar conflito de chave única
+      // 0. Se forneceu senha, registra a conta no serviço oficial Supabase Auth (GoTrue com bcrypt)
+      if (params.password) {
+        try {
+          const { data: authData } = await supabase.auth.signUp({
+            email: userEmail,
+            password: params.password.trim(),
+          });
+          if (authData?.user?.id) {
+            finalUserId = authData.user.id;
+          }
+        } catch {
+          // Fallback para execução offline/mock
+        }
+      }
+
+      // 0.1. Verifica se o usuário já existe no Supabase por e-mail ou celular para evitar conflito de chave única
       try {
         let lookup = supabase.from('users').select('id, email, whatsapp_number').limit(1);
         if (cleanDigits && cleanDigits.length >= 8) {
@@ -359,7 +520,7 @@ export const supabaseService = {
         // Ignora erro no lookup prévio
       }
 
-      // 1. Inserir ou atualizar na tabela users (com fallback caso colunas estendidas ainda não existam)
+      // 1. Inserir ou atualizar na tabela users (SEM coluna legada password_hash)
       let uErr: any = null;
       const whatsappToStore = cleanDigits || params.user.whatsappNumber || null;
       const sanitizedRole =
@@ -373,7 +534,7 @@ export const supabaseService = {
         id: finalUserId,
         email: userEmail,
         whatsapp_number: whatsappToStore,
-        password_hash: params.password || null,
+        must_reset_password: false,
         role: sanitizedRole,
         status: params.user.status || 'ativa',
         updated_at: new Date().toISOString(),
@@ -404,7 +565,7 @@ export const supabaseService = {
           id: finalUserId,
           email: userEmail,
           whatsapp_number: whatsappToStore,
-          password_hash: params.password || null,
+          must_reset_password: false,
           role: sanitizedRole,
           status: params.user.status || 'ativa',
           updated_at: new Date().toISOString(),
@@ -677,24 +838,14 @@ export const supabaseService = {
   },
 
   /**
-   * Atualiza a senha do usuário no Supabase
+   * Atualiza a senha do usuário autenticado diretamente através do Supabase Auth GoTrue.
+   * Se must_reset_password for verdadeiro, conclui também a liberação auditada via RPC.
    */
   async updatePassword(userId: string, newPassword: string): Promise<boolean> {
-    if (!isSupabaseConfigured() || !supabase || !userId) return false;
+    if (!isSupabaseConfigured() || !supabase || !newPassword) return false;
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({
-          password_hash: newPassword,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId);
-
-      if (error) {
-        console.warn('Aviso ao atualizar senha no Supabase:', error);
-        return false;
-      }
-      return true;
+      const res = await this.completeMandatoryPasswordReset(newPassword);
+      return res.success;
     } catch (err) {
       console.warn('Erro ao atualizar senha no Supabase:', err);
       return false;
@@ -702,27 +853,27 @@ export const supabaseService = {
   },
 
   /**
-   * Registra a sessão ativa do usuário no Supabase para impedir login simultâneo em múltiplos aparelhos
+   * Registra ou rotaciona a sessão ativa do usuário autenticado chamando a RPC oficial
+   * register_or_rotate_active_session_authenticated.
+   * Não grava nada em pelada_sumulas.
    */
-  async registerActiveSession(userId: string, sessionToken: string): Promise<boolean> {
-    if (!isSupabaseConfigured() || !supabase || !userId || !sessionToken) return false;
+  async registerActiveSession(userId?: string, sessionToken?: string): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      const { error } = await supabase.from('pelada_sumulas').upsert({
-        id: `user_session_${userId}`,
-        status: 'active_session',
-        team_name: 'Auth',
-        created_by_user_id: userId,
-        created_by_name: 'Session Manager',
-        data: {
-          userId,
-          sessionToken,
-          updatedAt: new Date().toISOString(),
-        },
-        last_updated: new Date().toISOString(),
-      });
+      const devInfo = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 100) : 'web';
+      const { data, error } = await supabase.rpc(
+        'register_or_rotate_active_session_authenticated',
+        {
+          p_device_info: devInfo,
+          p_client_fingerprint: sessionToken || (typeof window !== 'undefined' ? window.location.host : 'client'),
+        }
+      );
       if (error) {
-        console.warn('Aviso ao registrar sessão ativa no Supabase:', error);
+        console.warn('Aviso ao registrar sessão ativa via RPC:', error);
         return false;
+      }
+      if (data?.active_session_id && typeof localStorage !== 'undefined') {
+        localStorage.setItem('futplay_lite_active_session_token_v1', data.active_session_id);
       }
       return true;
     } catch (err) {
@@ -732,36 +883,65 @@ export const supabaseService = {
   },
 
   /**
-   * Consulta o token de sessão ativo atual do usuário no Supabase
+   * Consulta o token de sessão ativo atual do usuário diretamente da tabela user_sessions
    */
   async getActiveSessionToken(userId: string): Promise<string | null> {
     if (!isSupabaseConfigured() || !supabase || !userId) return null;
     try {
       const { data, error } = await supabase
-        .from('pelada_sumulas')
-        .select('data')
-        .eq('id', `user_session_${userId}`)
+        .from('user_sessions')
+        .select('active_session_id')
+        .eq('user_id', userId)
         .maybeSingle();
 
       if (error || !data) return null;
-      const sessionData = data.data as unknown as { sessionToken?: string } | null;
-      return sessionData?.sessionToken || null;
+      return data.active_session_id || null;
     } catch {
       return null;
     }
   },
 
   /**
-   * Remove o registro de sessão ativa ao realizar logout manual
+   * Valida se a sessão do aparelho atual continua ativa ou se foi substituída por outro login.
+   * Utiliza a RPC oficial validate_active_session_authenticated.
    */
-  async clearActiveSession(userId: string): Promise<boolean> {
-    if (!isSupabaseConfigured() || !supabase || !userId) return false;
+  async validateActiveSession(
+    sessionId: string
+  ): Promise<{ valid: boolean; reason?: string }> {
+    if (!isSupabaseConfigured() || !supabase || !sessionId) {
+      return { valid: true };
+    }
     try {
-      const { error } = await supabase
-        .from('pelada_sumulas')
-        .delete()
-        .eq('id', `user_session_${userId}`);
-      return !error;
+      const { data, error } = await supabase.rpc(
+        'validate_active_session_authenticated',
+        { p_session_id: sessionId }
+      );
+      if (error) {
+        return { valid: false, reason: error.message };
+      }
+      return {
+        valid: Boolean(data?.valid),
+        reason: data?.reason,
+      };
+    } catch {
+      return { valid: true };
+    }
+  },
+
+  /**
+   * Remove o registro de sessão ativa e desloga do Supabase Auth
+   */
+  async clearActiveSession(userId?: string): Promise<boolean> {
+    if (!isSupabaseConfigured() || !supabase) return false;
+    try {
+      if (userId) {
+        await supabase
+          .from('user_sessions')
+          .delete()
+          .eq('user_id', userId);
+      }
+      await supabase.auth.signOut();
+      return true;
     } catch {
       return false;
     }
@@ -1048,65 +1228,30 @@ export const supabaseService = {
   },
 
   /**
-   * Busca os registros mensais de mensalidades (tabela oficial + fallback em pelada_sumulas)
+   * Busca os registros mensais de mensalidades exclusivamente da tabela oficial monthly_payments
    */
   async getMonthlyPayments(): Promise<MonthlyPaymentRecord[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
-      const mergedMap = new Map<string, MonthlyPaymentRecord>();
-      let hadSuccess = false;
-
-      // 1. Consulta tabela oficial monthly_payments
       const { data, error } = await supabase
         .from('monthly_payments')
-        .select('*');
-
-      if (!error && data) {
-        hadSuccess = true;
-        for (const item of data) {
-          const rec: MonthlyPaymentRecord = {
-            id: item.id,
-            playerId: item.player_id,
-            yearMonth: item.year_month.trim(),
-            isPaid: item.is_paid,
-            paidAt: item.paid_at || undefined,
-            amount: Number(item.amount),
-            confirmedBy: item.confirmed_by || undefined,
-            updatedAt: item.updated_at || item.paid_at || undefined,
-          };
-          mergedMap.set(rec.id, rec);
-        }
-      }
-
-      // 2. Consulta também livro de fallback em pelada_sumulas (usado automaticamente caso RLS bloqueie escrita anon)
-      const { data: ledgerRow, error: ledgerErr } = await supabase
-        .from('pelada_sumulas')
         .select('*')
-        .eq('id', 'monthly_payments_ledger_v1')
-        .maybeSingle();
+        .order('updated_at', { ascending: false });
 
-      if (!ledgerErr) {
-        hadSuccess = true;
-        const ledgerData = ledgerRow?.data as unknown as { payments?: MonthlyPaymentRecord[] } | null;
-        if (Array.isArray(ledgerData?.payments)) {
-          for (const item of ledgerData.payments) {
-            if (!item || !item.id) continue;
-            const existing = mergedMap.get(item.id);
-            if (!existing) {
-              mergedMap.set(item.id, item);
-            } else {
-              const existingTime = new Date(existing.updatedAt || existing.paidAt || 0).getTime();
-              const ledgerTime = new Date(item.updatedAt || item.paidAt || 0).getTime();
-              if (ledgerTime >= existingTime) {
-                mergedMap.set(item.id, item);
-              }
-            }
-          }
-        }
+      if (error || !data) {
+        return null;
       }
 
-      if (!hadSuccess) return null;
-      return Array.from(mergedMap.values());
+      return data.map((item) => ({
+        id: item.id,
+        playerId: item.player_id,
+        yearMonth: (item.year_month || '').trim(),
+        isPaid: Boolean(item.is_paid),
+        paidAt: item.paid_at || undefined,
+        amount: Number(item.amount),
+        confirmedBy: item.confirmed_by || undefined,
+        updatedAt: item.updated_at || item.paid_at || undefined,
+      }));
     } catch (err) {
       console.warn('Exceção ao buscar mensalidades do Supabase:', err);
       return null;
@@ -1114,15 +1259,11 @@ export const supabaseService = {
   },
 
   /**
-   * Salva ou atualiza o status de mensalidade de um atleta (com fallback automático se RLS bloquear anon)
+   * Salva ou atualiza o status de mensalidade de um atleta exclusivamente na tabela oficial monthly_payments
    */
   async upsertMonthlyPayment(record: MonthlyPaymentRecord): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     const nowIso = record.updatedAt || new Date().toISOString();
-    const recordWithUpdated: MonthlyPaymentRecord = {
-      ...record,
-      updatedAt: nowIso,
-    };
 
     try {
       const isUuid = Boolean(
@@ -1132,7 +1273,6 @@ export const supabaseService = {
           )
       );
 
-      // 1. Tenta salvar na tabela oficial monthly_payments
       const { error } = await supabase.from('monthly_payments').upsert(
         {
           id: record.id,
@@ -1147,50 +1287,7 @@ export const supabaseService = {
         { onConflict: 'id' }
       );
 
-      if (!error) return true;
-
-      console.warn('Fallback online para mensalidade (RLS/Schema):', error.message);
-
-      // 2. Fallback automático na tabela pelada_sumulas (enfileirado para evitar corrida em edições múltiplas)
-      const writeFallbackLedger = async (): Promise<boolean> => {
-        if (!supabase) return false;
-        const { data: existingRow } = await supabase
-          .from('pelada_sumulas')
-          .select('*')
-          .eq('id', 'monthly_payments_ledger_v1')
-          .maybeSingle();
-
-        const existingData =
-          (existingRow?.data as unknown as { payments?: MonthlyPaymentRecord[] }) || {};
-        const existingList = Array.isArray(existingData.payments) ? existingData.payments : [];
-        const updatedList = [
-          recordWithUpdated,
-          ...existingList.filter(
-            (item) =>
-              item.id !== record.id &&
-              !(item.playerId === record.playerId && item.yearMonth === record.yearMonth)
-          ),
-        ];
-
-        const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
-          {
-            id: 'monthly_payments_ledger_v1',
-            team_name: 'Mensalidades',
-            status: 'financial_ledger',
-            match_date: null,
-            start_time: null,
-            data: { payments: updatedList } as unknown as Record<string, unknown>,
-            last_updated: nowIso,
-          },
-          { onConflict: 'id' }
-        );
-
-        return !fallbackErr;
-      };
-
-      const queuedWrite = monthlyLedgerWriteQueue.then(writeFallbackLedger, writeFallbackLedger);
-      monthlyLedgerWriteQueue = queuedWrite.catch(() => false);
-      return await queuedWrite;
+      return !error;
     } catch (err) {
       console.error('Exceção ao sincronizar mensalidade com Supabase:', err);
       return false;
@@ -1198,37 +1295,11 @@ export const supabaseService = {
   },
 
   /**
-   * Busca as configurações da pelada (valor e chave PIX), isoladas por time quando informado.
+   * Busca as configurações da pelada (valor e chave PIX) da tabela pelada_monthly_configs
    */
   async getMonthlyConfig(teamName?: string): Promise<PeladaMonthlyConfig | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
-      const slug = (teamName || '')
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-
-      // 1. Se informou o time, busca a config específica deste time no livro-caixa em pelada_sumulas
-      if (slug && slug !== 'meu_time' && slug !== 'sem_time') {
-        const teamLedgerId = `monthly_config_ledger_${slug}`;
-        const { data: teamRow } = await supabase
-          .from('pelada_sumulas')
-          .select('*')
-          .eq('id', teamLedgerId)
-          .maybeSingle();
-
-        const teamData = teamRow?.data as unknown as { config?: PeladaMonthlyConfig } | null;
-        if (teamData?.config) {
-          return teamData.config;
-        }
-      }
-
-      let tableCfg: PeladaMonthlyConfig | null = null;
-      let tableUpdated = 0;
-
       const { data, error } = await supabase
         .from('pelada_monthly_configs')
         .select('*')
@@ -1236,43 +1307,22 @@ export const supabaseService = {
         .limit(1)
         .maybeSingle();
 
-      if (!error && data) {
-        tableCfg = {
-          monthlyAmount: Number(data.monthly_amount),
-          dueDay: data.due_day,
-          pixKey: data.pix_key,
-          pixKeyType: data.pix_key_type,
-          pixReceiverName: data.pix_receiver_name,
-        };
-        tableUpdated = new Date(data.updated_at || 0).getTime();
-      }
+      if (error || !data) return null;
 
-      // Verifica também o fallback em pelada_sumulas
-      const { data: ledgerRow } = await supabase
-        .from('pelada_sumulas')
-        .select('*')
-        .eq('id', 'monthly_config_ledger_v1')
-        .maybeSingle();
-
-      const ledgerData = ledgerRow?.data as unknown as {
-        config?: PeladaMonthlyConfig;
-      } | null;
-
-      if (ledgerData?.config) {
-        const ledgerUpdated = new Date(ledgerRow?.last_updated || 0).getTime();
-        if (!tableCfg || ledgerUpdated >= tableUpdated) {
-          return ledgerData.config;
-        }
-      }
-
-      return tableCfg;
+      return {
+        monthlyAmount: Number(data.monthly_amount),
+        dueDay: data.due_day,
+        pixKey: data.pix_key,
+        pixKeyType: data.pix_key_type,
+        pixReceiverName: data.pix_receiver_name,
+      };
     } catch {
       return null;
     }
   },
 
   /**
-   * Salva a configuração financeira da pelada (PIX e valor mensal), isolando por time.
+   * Salva a configuração financeira da pelada (PIX e valor mensal) na tabela pelada_monthly_configs
    */
   async saveMonthlyConfig(config: PeladaMonthlyConfig, teamName?: string): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
@@ -1287,18 +1337,7 @@ export const supabaseService = {
           : 'aleatoria';
 
       const nowIso = new Date().toISOString();
-      const slug = (teamName || '')
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-      const ledgerId = slug && slug !== 'meu_time' && slug !== 'sem_time'
-        ? `monthly_config_ledger_${slug}`
-        : 'monthly_config_ledger_v1';
 
-      // 1. Tenta salvar na tabela pelada_monthly_configs
       const { error } = await supabase.from('pelada_monthly_configs').upsert(
         {
           id: '33333333-3333-4333-8333-333333333301',
@@ -1312,21 +1351,7 @@ export const supabaseService = {
         { onConflict: 'id' }
       );
 
-      // 2. Salva sempre no ledger individualizado por time em pelada_sumulas
-      const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
-        {
-          id: ledgerId,
-          team_name: teamName || 'Config PIX',
-          status: 'financial_ledger',
-          match_date: null,
-          start_time: null,
-          data: { config, teamName: teamName || '' } as unknown as Record<string, unknown>,
-          last_updated: nowIso,
-        },
-        { onConflict: 'id' }
-      );
-
-      return !fallbackErr || !error;
+      return !error;
     } catch (err) {
       console.error('Erro ao salvar configuração de mensalidade no Supabase:', err);
       return false;
@@ -1334,54 +1359,33 @@ export const supabaseService = {
   },
 
   /**
-   * Busca a programação do baba/pelada agendada para o time no Supabase.
+   * Busca a programação do baba/pelada agendada da tabela team_schedules
    */
   async getTeamPeladaSchedule(teamName?: string): Promise<PeladaScheduleConfig | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
-      const slug = (teamName || '')
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-
-      // 1. Tenta buscar pelo ID específico do time
-      if (slug && slug !== 'meu_time' && slug !== 'sem_time') {
-        const teamLedgerId = `pelada_schedule_ledger_${slug}`;
-        const { data: teamRow } = await supabase
-          .from('pelada_sumulas')
-          .select('*')
-          .eq('id', teamLedgerId)
-          .maybeSingle();
-
-        const teamData = teamRow?.data as unknown as { schedule?: PeladaScheduleConfig } | null;
-        if (teamData?.schedule) {
-          return teamData.schedule;
-        }
-      }
-
-      // 2. Fallback geral caso não tenha configuração individualizada
-      const { data: defaultRow } = await supabase
-        .from('pelada_sumulas')
+      const { data, error } = await supabase
+        .from('team_schedules')
         .select('*')
-        .eq('id', 'pelada_schedule_ledger_v1')
+        .order('updated_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
-      const defaultData = defaultRow?.data as unknown as { schedule?: PeladaScheduleConfig } | null;
-      if (defaultData?.schedule) {
-        return defaultData.schedule;
-      }
+      if (error || !data) return null;
 
-      return null;
+      return {
+        date: data.scheduled_date || data.match_date || '',
+        time: data.start_time || '20:00',
+        venueName: data.venue_name || 'Arena',
+        neighborhood: data.neighborhood || 'Centro',
+      };
     } catch {
       return null;
     }
   },
 
   /**
-   * Salva a programação do baba/pelada para o time no Supabase (sincronização imediata para todos os usuários).
+   * Salva a programação do baba/pelada na tabela team_schedules
    */
   async saveTeamPeladaSchedule(
     teamName: string,
@@ -1389,37 +1393,16 @@ export const supabaseService = {
   ): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      const slug = (teamName || '')
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-
-      const ledgerId =
-        slug && slug !== 'meu_time' && slug !== 'sem_time'
-          ? `pelada_schedule_ledger_${slug}`
-          : 'pelada_schedule_ledger_v1';
-
       const nowIso = new Date().toISOString();
-
-      const { error } = await supabase.from('pelada_sumulas').upsert(
+      const { error } = await supabase.from('team_schedules').upsert(
         {
-          id: ledgerId,
-          team_name: teamName || 'Meu Time',
-          status: 'schedule_ledger',
-          match_date: config.date,
+          scheduled_date: config.date,
           start_time: config.time,
-          data: {
-            schedule: config,
-            teamName: teamName || '',
-          } as unknown as Record<string, unknown>,
-          last_updated: nowIso,
-        },
-        { onConflict: 'id' }
+          venue_name: config.venueName,
+          neighborhood: config.neighborhood,
+          updated_at: nowIso,
+        }
       );
-
       return !error;
     } catch (err) {
       console.error('Erro ao salvar agendamento do baba no Supabase:', err);
@@ -1428,26 +1411,35 @@ export const supabaseService = {
   },
 
   /**
-   * Salva a súmula da pelada online em tempo real no Supabase.
-   * Permite sincronização imediata com múltiplos aparelhos simultâneos.
+   * Salva a súmula da pelada na tabela pelada_sumulas.
+   * Apenas súmulas com status em_andamento ou finalizada são persistidas.
    */
   async savePeladaSumula(sumula: SumulaData): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      const { error } = await supabase.from('pelada_sumulas').upsert(
-        {
-          id: sumula.id,
-          team_name: sumula.teamName || 'Pelada',
-          status: sumula.status || 'em_andamento',
-          match_date: sumula.matchDate || null,
-          start_time: sumula.startTime || null,
-          created_by_user_id: sumula.createdByUserId || null,
-          created_by_name: sumula.createdByName || null,
-          data: sumula as unknown as Record<string, unknown>,
-          last_updated: sumula.lastUpdated || new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      const nowIso = new Date().toISOString();
+      const isFinal = sumula.status === 'finalizada';
+
+      const payload: Record<string, any> = {
+        id: sumula.id,
+        team_name: sumula.teamName || 'Pelada',
+        status: sumula.status || 'em_andamento',
+        match_date: sumula.matchDate || null,
+        start_time: sumula.startTime || null,
+        created_by_user_id: sumula.createdByUserId || null,
+        created_by_name: sumula.createdByName || null,
+        data: sumula as unknown as Record<string, unknown>,
+        last_updated: sumula.lastUpdated || nowIso,
+      };
+
+      if (isFinal) {
+        payload.finalized_at = nowIso;
+        if (sumula.createdByUserId) {
+          payload.finalized_by = sumula.createdByUserId;
+        }
+      }
+
+      const { error } = await supabase.from('pelada_sumulas').upsert(payload, { onConflict: 'id' });
 
       if (error) {
         console.warn('Erro ao salvar súmula no Supabase:', error);
@@ -1461,7 +1453,30 @@ export const supabaseService = {
   },
 
   /**
-   * Busca todas as súmulas registradas no Supabase ordenadas pela mais recente.
+   * Reabre uma súmula finalizada de forma auditada através da RPC oficial
+   * reopen_pelada_sumula_authenticated (exclusivo para treinadores do time ou admin da plataforma).
+   */
+  async reopenPeladaSumula(sumulaId: string, reason: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase || !sumulaId) {
+      return { success: false, error: 'Parâmetros inválidos.' };
+    }
+    try {
+      const { error } = await supabase.rpc('reopen_pelada_sumula_authenticated', {
+        p_sumula_id: sumulaId,
+        p_reason: reason.trim(),
+      });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  /**
+   * Busca todas as súmulas de partidas reais no Supabase ordenadas pela mais recente.
+   * Filtra estritamente status esportivos: em_andamento e finalizada.
    */
   async getPeladaSumulas(): Promise<SumulaData[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
@@ -1469,7 +1484,7 @@ export const supabaseService = {
       const { data, error } = await supabase
         .from('pelada_sumulas')
         .select('*')
-        .neq('status', 'financial_ledger')
+        .in('status', ['em_andamento', 'finalizada', 'cancelada'])
         .order('last_updated', { ascending: false });
 
       if (error || !data) {
@@ -1477,33 +1492,20 @@ export const supabaseService = {
         return null;
       }
 
-      return data
-        .filter(
-          (row) =>
-            row.status !== 'financial_ledger' &&
-            row.status !== 'schedule_ledger' &&
-            row.status !== 'audit_ledger' &&
-            row.status !== 'peer_evaluations' &&
-            !row.id?.startsWith('pelada_schedule_ledger_') &&
-            !row.id?.startsWith('finance_ledger_') &&
-            !row.id?.startsWith('monthly_') &&
-            !row.id?.startsWith('audit_logs_') &&
-            !row.id?.startsWith('futplay_peer_')
-        )
-        .map((row) => {
-          const full = (row.data as unknown as SumulaData) || ({} as SumulaData);
-          return {
-            ...full,
-            id: row.id || full.id,
-            teamName: row.team_name || full.teamName,
-            status: (row.status as 'em_andamento' | 'finalizada') || full.status || 'em_andamento',
-            matchDate: row.match_date || full.matchDate,
-            startTime: row.start_time || full.startTime,
-            createdByUserId: row.created_by_user_id || full.createdByUserId,
-            createdByName: row.created_by_name || full.createdByName,
-            lastUpdated: row.last_updated || full.lastUpdated || new Date().toISOString(),
-          };
-        });
+      return data.map((row) => {
+        const full = (row.data as unknown as SumulaData) || ({} as SumulaData);
+        return {
+          ...full,
+          id: row.id || full.id,
+          teamName: row.team_name || full.teamName,
+          status: (row.status as 'em_andamento' | 'finalizada') || full.status || 'em_andamento',
+          matchDate: row.match_date || full.matchDate,
+          startTime: row.start_time || full.startTime,
+          createdByUserId: row.created_by_user_id || full.createdByUserId,
+          createdByName: row.created_by_name || full.createdByName,
+          lastUpdated: row.last_updated || full.lastUpdated || new Date().toISOString(),
+        };
+      });
     } catch (err) {
       console.warn('Exceção ao buscar súmulas do Supabase:', err);
       return null;
@@ -1543,7 +1545,7 @@ export const supabaseService = {
   },
 
   /**
-   * Remove uma súmula do Supabase.
+   * Remove uma súmula do Supabase (apenas em_andamento permitido por RLS).
    */
   async deletePeladaSumula(sumulaId: string): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
@@ -1565,62 +1567,31 @@ export const supabaseService = {
   },
 
   /**
-   * Busca todas as transações financeiras (despesas e receitas) dos times no Supabase.
-   * Tenta primeiro na tabela dedicada; se ainda não existir, usa o livro-caixa sincronizado em pelada_sumulas.
+   * Busca todas as transações financeiras exclusivamente da tabela dedicada team_financial_transactions
    */
   async getTeamTransactions(): Promise<TeamTransaction[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
-      // 1. Tenta tabela dedicada team_financial_transactions
       const { data, error } = await supabase
         .from('team_financial_transactions')
         .select('*')
         .order('date', { ascending: false });
 
-      if (!error && data) {
-        return data.map((item) => ({
-          id: item.id,
-          teamName: item.team_name,
-          type: item.type,
-          category: item.category,
-          description: item.description,
-          amount: Number(item.amount),
-          date: item.date,
-          notes: item.notes || undefined,
-          createdByName: item.created_by_name || undefined,
-          createdByUserId: item.created_by_user_id || undefined,
-          createdAt: item.created_at,
-        }));
-      }
+      if (error || !data) return null;
 
-      // 2. Fallback automático na tabela pelada_sumulas (status = 'financial_ledger')
-      const { data: ledgerRows, error: ledgerErr } = await supabase
-        .from('pelada_sumulas')
-        .select('*')
-        .eq('status', 'financial_ledger');
-
-      if (ledgerErr || !ledgerRows) {
-        return null;
-      }
-
-      const collected: TeamTransaction[] = [];
-      const seenIds = new Set<string>();
-      for (const row of ledgerRows) {
-        const rawData = row.data as unknown as { transactions?: TeamTransaction[] } | null;
-        const list = Array.isArray(rawData?.transactions) ? rawData.transactions : [];
-        for (const tx of list) {
-          if (tx && tx.id && !seenIds.has(tx.id)) {
-            seenIds.add(tx.id);
-            collected.push(tx);
-          }
-        }
-      }
-
-      return collected.sort((a, b) => {
-        const tA = new Date(a.date || a.createdAt || 0).getTime();
-        const tB = new Date(b.date || b.createdAt || 0).getTime();
-        return tB - tA;
-      });
+      return data.map((item) => ({
+        id: item.id,
+        teamName: item.team_name,
+        type: item.type,
+        category: item.category,
+        description: item.description,
+        amount: Number(item.amount),
+        date: item.date,
+        notes: item.notes || undefined,
+        createdByName: item.created_by_name || undefined,
+        createdByUserId: item.created_by_user_id || undefined,
+        createdAt: item.created_at,
+      }));
     } catch (err) {
       console.warn('Exceção ao buscar transações financeiras no Supabase:', err);
       return null;
@@ -1628,12 +1599,11 @@ export const supabaseService = {
   },
 
   /**
-   * Salva uma transação financeira (receita/despesa) online no Supabase.
+   * Salva uma transação financeira exclusivamente na tabela dedicada team_financial_transactions
    */
   async saveTeamTransaction(tx: TeamTransaction): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      // 1. Tenta salvar na tabela dedicada
       const { error } = await supabase.from('team_financial_transactions').upsert(
         {
           id: tx.id,
@@ -1651,44 +1621,7 @@ export const supabaseService = {
         { onConflict: 'id' }
       );
 
-      if (!error) return true;
-
-      // 2. Fallback automático no livro-caixa em pelada_sumulas
-      const slug = (tx.teamName || 'meu_time')
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-      const ledgerId = `finance_ledger_${slug || 'meu_time'}`;
-
-      const { data: existingRow } = await supabase
-        .from('pelada_sumulas')
-        .select('*')
-        .eq('id', ledgerId)
-        .maybeSingle();
-
-      const existingData = (existingRow?.data as unknown as { transactions?: TeamTransaction[] }) || {};
-      const existingList = Array.isArray(existingData.transactions) ? existingData.transactions : [];
-      const merged = [tx, ...existingList.filter((item) => item.id !== tx.id)];
-
-      const { error: upsertErr } = await supabase.from('pelada_sumulas').upsert(
-        {
-          id: ledgerId,
-          team_name: tx.teamName || 'Meu Time',
-          status: 'financial_ledger',
-          match_date: null,
-          start_time: null,
-          created_by_user_id: tx.createdByUserId || null,
-          created_by_name: tx.createdByName || null,
-          data: { transactions: merged } as unknown as Record<string, unknown>,
-          last_updated: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
-
-      return !upsertErr;
+      return !error;
     } catch (err) {
       console.warn('Exceção ao salvar transação financeira no Supabase:', err);
       return false;
@@ -1696,119 +1629,72 @@ export const supabaseService = {
   },
 
   /**
-   * Remove uma transação financeira online no Supabase.
+   * Estorna uma transação financeira de forma auditada e com proteção contra duplicidade
+   */
+  async reverseTeamTransaction(txId: string, reason: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase || !txId) {
+      return { success: false, error: 'Parâmetros inválidos.' };
+    }
+    try {
+      const { error } = await supabase.rpc('reverse_team_financial_transaction_authenticated', {
+        p_original_tx_id: txId,
+        p_reason: reason.trim(),
+      });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  /**
+   * Remove uma transação financeira (ou estorna de forma auditada)
    */
   async deleteTeamTransaction(txId: string, teamName?: string): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      // 1. Tenta excluir na tabela dedicada
+      const revRes = await this.reverseTeamTransaction(txId, 'Exclusão solicitada pelo gestor financeiro');
+      if (revRes.success) return true;
+
       const { error } = await supabase
         .from('team_financial_transactions')
         .delete()
         .eq('id', txId);
-
-      if (!error) return true;
-
-      // 2. Fallback automático no livro-caixa em pelada_sumulas
-      const slug = (teamName || 'meu_time')
-        .trim()
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-      const ledgerId = `finance_ledger_${slug || 'meu_time'}`;
-
-      const { data: existingRow } = await supabase
-        .from('pelada_sumulas')
-        .select('*')
-        .eq('id', ledgerId)
-        .maybeSingle();
-
-      if (!existingRow) return true;
-
-      const existingData = (existingRow.data as unknown as { transactions?: TeamTransaction[] }) || {};
-      const existingList = Array.isArray(existingData.transactions) ? existingData.transactions : [];
-      const remaining = existingList.filter((item) => item.id !== txId);
-
-      const { error: upsertErr } = await supabase.from('pelada_sumulas').upsert(
-        {
-          id: ledgerId,
-          team_name: teamName || existingRow.team_name || 'Meu Time',
-          status: 'financial_ledger',
-          data: { transactions: remaining } as unknown as Record<string, unknown>,
-          last_updated: new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
-
-      return !upsertErr;
-    } catch (err) {
-      console.warn('Exceção ao excluir transação financeira no Supabase:', err);
+      return !error;
+    } catch {
       return false;
     }
   },
 
   /**
-   * Busca a lista de logs de auditoria sincronizados no Supabase (multi-aparelho)
+   * Busca a lista de logs de auditoria exclusivamente da tabela dedicada audit_logs
    */
   async getAuditLogs(): Promise<AuditLog[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
-
     try {
-      const mergedMap = new Map<string, AuditLog>();
-
-      // 1. Tenta buscar no livro de auditoria em pelada_sumulas
-      const { data: ledgerRow, error: ledgerErr } = await supabase
-        .from('pelada_sumulas')
+      const { data, error } = await supabase
+        .from('audit_logs')
         .select('*')
-        .eq('id', 'audit_logs_ledger_v1')
-        .maybeSingle();
+        .order('created_at', { ascending: false })
+        .limit(200);
 
-      if (!ledgerErr && ledgerRow) {
-        const ledgerData = (ledgerRow.data as unknown as { logs?: AuditLog[] }) || null;
-        if (Array.isArray(ledgerData?.logs)) {
-          for (const log of ledgerData.logs) {
-            if (log && log.id) {
-              mergedMap.set(log.id, log);
-            }
-          }
-        }
-      }
+      if (error || !data) return null;
 
-      // 2. Tenta também ler da tabela audit_logs (caso RLS permita leitura)
-      try {
-        const { data: tableLogs, error: tableErr } = await supabase
-          .from('audit_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(100);
-
-        if (!tableErr && tableLogs) {
-          for (const item of tableLogs as any[]) {
-            if (!mergedMap.has(item.id)) {
-              mergedMap.set(item.id, {
-                id: item.id,
-                actorUserId: item.actor_user_id,
-                actorName: item.actor_name || 'Usuário',
-                actorRole: item.actor_role,
-                actionType: item.action_type,
-                entityType: item.entity_type,
-                entityId: item.entity_id,
-                reason: item.reason,
-                beforeData: item.before_data,
-                afterData: item.after_data,
-                createdAt: item.created_at,
-              });
-            }
-          }
-        }
-      } catch {}
-
-      if (mergedMap.size === 0) return null;
-      const list = Array.from(mergedMap.values());
-      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      return list;
+      return data.map((item) => ({
+        id: item.id,
+        actorUserId: item.actor_user_id,
+        actorName: item.actor_name || 'Usuário',
+        actorRole: item.actor_role,
+        actionType: item.action_type,
+        entityType: item.entity_type,
+        entityId: item.entity_id,
+        reason: item.reason,
+        beforeData: item.before_data,
+        afterData: item.after_data,
+        createdAt: item.created_at,
+      }));
     } catch (err) {
       console.warn('Exceção ao buscar logs de auditoria no Supabase:', err);
       return null;
@@ -1816,77 +1702,30 @@ export const supabaseService = {
   },
 
   /**
-   * Registra um novo log de auditoria na nuvem para sincronização multi-aparelho
+   * Registra um novo log de auditoria exclusivamente na tabela audit_logs
    */
   async recordAuditLogInSupabase(log: AuditLog): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
-
     try {
-      const nowIso = new Date().toISOString();
+      const isUuid = (str?: string) =>
+        Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
 
-      // 1. Tenta gravar na tabela dedicada audit_logs se possível
-      try {
-        await supabase.from('audit_logs').insert([
-          {
-            id: generateUUID(),
-            actor_user_id: log.actorUserId,
-            actor_role: log.actorRole,
-            action_type: log.actionType,
-            entity_type: log.entityType,
-            entity_id: log.entityId && log.entityId.length === 36 ? log.entityId : generateUUID(),
-            reason: log.reason,
-            before_data: log.beforeData || null,
-            after_data: log.afterData || null,
-            created_at: log.createdAt || nowIso,
-          } as any,
-        ]);
-      } catch {}
-
-      // 2. Salva e propaga via pelada_sumulas com id='audit_logs_ledger_v1'
-      const writeFallbackLedger = async (): Promise<boolean> => {
-        if (!supabase) return false;
-
-        const { data: existingRow } = await supabase
-          .from('pelada_sumulas')
-          .select('*')
-          .eq('id', 'audit_logs_ledger_v1')
-          .maybeSingle();
-
-        const existingData = (existingRow?.data as unknown as { logs?: AuditLog[] }) || {};
-        const existingList = Array.isArray(existingData.logs) ? existingData.logs : [];
-
-        // Garantia de Conformidade com o Marco Civil da Internet (Art. 15, Lei 12.965/2014):
-        // Preserva integralmente todos os registros de no mínimo 180 dias (e até 5.000 entradas para auditoria estendida)
-        const minRetentionMs = 180 * 24 * 60 * 60 * 1000;
-        const nowMs = Date.now();
-        const combined = [log, ...existingList.filter((item) => item.id !== log.id)];
-        
-        // Mantém todos os logs dentro do período de retenção legal de 180 dias
-        const updatedList = combined.filter((item, idx) => {
-          if (idx < 500) return true;
-          const itemAgeMs = nowMs - new Date(item.createdAt || 0).getTime();
-          return itemAgeMs <= minRetentionMs;
-        }).slice(0, 5000);
-
-        const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
-          {
-            id: 'audit_logs_ledger_v1',
-            team_name: 'Sistema',
-            status: 'audit_ledger',
-            match_date: null,
-            start_time: null,
-            data: { logs: updatedList } as unknown as Record<string, unknown>,
-            last_updated: nowIso,
-          },
-          { onConflict: 'id' }
-        );
-
-        return !fallbackErr;
-      };
-
-      const queuedWrite = auditLedgerWriteQueue.then(writeFallbackLedger, writeFallbackLedger);
-      auditLedgerWriteQueue = queuedWrite.catch(() => false);
-      return await queuedWrite;
+      const { error } = await supabase.from('audit_logs').insert([
+        {
+          id: generateUUID(),
+          actor_user_id: isUuid(log.actorUserId) ? log.actorUserId : null,
+          actor_name: log.actorName || 'Usuário',
+          actor_role: log.actorRole || 'player',
+          action_type: log.actionType,
+          entity_type: log.entityType,
+          entity_id: log.entityId || 'global',
+          reason: log.reason || null,
+          before_data: log.beforeData || null,
+          after_data: log.afterData || null,
+          created_at: log.createdAt || new Date().toISOString(),
+        },
+      ]);
+      return !error;
     } catch (err) {
       console.warn('Exceção ao salvar log de auditoria no Supabase:', err);
       return false;
@@ -1894,58 +1733,31 @@ export const supabaseService = {
   },
 
   /**
-   * Busca todas as avaliações de atletas (Scout / Peer Evaluations) sincronizadas na nuvem
+   * Busca todas as avaliações de atletas exclusivamente da tabela normalizada peer_evaluations
    */
   async getPeerEvaluations(): Promise<PeerEvaluation[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
-      const evalsMap = new Map<string, PeerEvaluation>();
-
-      // 1. Busca do registro centralizado de avaliações em pelada_sumulas
-      const { data: centralRow } = await supabase
-        .from('pelada_sumulas')
+      const { data, error } = await supabase
+        .from('peer_evaluations')
         .select('*')
-        .eq('id', 'futplay_peer_evaluations_ledger_v1')
-        .maybeSingle();
+        .order('updated_at', { ascending: false });
 
-      if (centralRow && centralRow.data) {
-        const parsed = (centralRow.data as unknown as { evaluations?: PeerEvaluation[] }) || {};
-        const list = Array.isArray(parsed.evaluations) ? parsed.evaluations : [];
-        list.forEach((e) => {
-          if (e && e.targetPlayerId && e.evaluatorId) {
-            evalsMap.set(`${e.evaluatorId}_${e.targetPlayerId}`, e);
-          }
-        });
-      }
+      if (error || !data) return null;
 
-      // 2. Busca também registros individuais por atleta (evals_player_*) para tolerância máxima
-      const { data: playerRows } = await supabase
-        .from('pelada_sumulas')
-        .select('*')
-        .eq('status', 'player_evaluations')
-        .limit(300);
-
-      if (playerRows && playerRows.length > 0) {
-        playerRows.forEach((row: any) => {
-          const rowData = (row.data as unknown as { evaluations?: PeerEvaluation[] }) || {};
-          const rowList = Array.isArray(rowData.evaluations) ? rowData.evaluations : [];
-          rowList.forEach((e) => {
-            if (e && e.targetPlayerId && e.evaluatorId) {
-              const key = `${e.evaluatorId}_${e.targetPlayerId}`;
-              if (!evalsMap.has(key)) {
-                evalsMap.set(key, e);
-              } else {
-                const existing = evalsMap.get(key)!;
-                if (new Date(e.updatedAt || 0) > new Date(existing.updatedAt || 0)) {
-                  evalsMap.set(key, e);
-                }
-              }
-            }
-          });
-        });
-      }
-
-      return Array.from(evalsMap.values());
+      return data.map((row) => ({
+        id: row.id,
+        evaluatorId: row.evaluator_player_id || row.evaluator_user_id,
+        targetPlayerId: row.target_player_id,
+        finalizacao: row.finalizacao,
+        marcacao: row.marcacao,
+        passe: row.passe,
+        raca: row.raca,
+        drible: row.drible,
+        overall: Number(row.overall),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
     } catch (err) {
       console.warn('Exceção ao buscar avaliações no Supabase:', err);
       return null;
@@ -1953,7 +1765,9 @@ export const supabaseService = {
   },
 
   /**
-   * Salva e sincroniza uma avaliação de atleta no Supabase em tempo real
+   * Salva e sincroniza uma avaliação de atleta via RPC submit_peer_evaluation_authenticated
+   * ou diretamente na tabela normalizada peer_evaluations.
+   * Não grava nada em pelada_sumulas.
    */
   async savePeerEvaluation(
     evaluation: PeerEvaluation,
@@ -1961,78 +1775,96 @@ export const supabaseService = {
   ): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      const writeEvals = async (): Promise<boolean> => {
-        if (!supabase) return false;
-        const nowIso = new Date().toISOString();
-
-        // 1. Atualiza registro individual do atleta avaliado
-        if (evaluation.targetPlayerId) {
-          const playerKey = `evals_player_${evaluation.targetPlayerId}`;
-          const targetList = allEvalsForPlayer || [evaluation];
-
-          await supabase.from('pelada_sumulas').upsert(
-            {
-              id: playerKey,
-              team_name: 'Atleta',
-              status: 'player_evaluations',
-              match_date: null,
-              start_time: null,
-              data: {
-                targetPlayerId: evaluation.targetPlayerId,
-                evaluations: targetList,
-                lastUpdated: nowIso,
-              } as unknown as Record<string, unknown>,
-              last_updated: nowIso,
-            },
-            { onConflict: 'id' }
-          );
-        }
-
-        // 2. Atualiza livro-razão central de todas as avaliações
-        const { data: centralRow } = await supabase
-          .from('pelada_sumulas')
-          .select('*')
-          .eq('id', 'futplay_peer_evaluations_ledger_v1')
-          .maybeSingle();
-
-        const existingData = (centralRow?.data as unknown as { evaluations?: PeerEvaluation[] }) || {};
-        const existingList = Array.isArray(existingData.evaluations) ? existingData.evaluations : [];
-
-        const evalsMap = new Map<string, PeerEvaluation>();
-        existingList.forEach((e) => {
-          if (e && e.evaluatorId && e.targetPlayerId) {
-            evalsMap.set(`${e.evaluatorId}_${e.targetPlayerId}`, e);
-          }
+      if (
+        evaluation.targetPlayerId &&
+        evaluation.finalizacao !== undefined &&
+        evaluation.marcacao !== undefined &&
+        evaluation.passe !== undefined &&
+        evaluation.raca !== undefined &&
+        evaluation.drible !== undefined
+      ) {
+        const { error } = await supabase.rpc('submit_peer_evaluation_authenticated', {
+          p_target_player_id: evaluation.targetPlayerId,
+          p_finalizacao: evaluation.finalizacao,
+          p_marcacao: evaluation.marcacao,
+          p_passe: evaluation.passe,
+          p_raca: evaluation.raca,
+          p_drible: evaluation.drible,
         });
-        evalsMap.set(`${evaluation.evaluatorId}_${evaluation.targetPlayerId}`, evaluation);
+        if (!error) return true;
+      }
 
-        const updatedList = Array.from(evalsMap.values());
+      const computedOverall = Math.round(
+        ((evaluation.finalizacao + evaluation.marcacao + evaluation.passe + evaluation.raca + evaluation.drible) / 5.0) * 100
+      ) / 100;
 
-        const { error: upsertErr } = await supabase.from('pelada_sumulas').upsert(
-          {
-            id: 'futplay_peer_evaluations_ledger_v1',
-            team_name: 'Sistema',
-            status: 'peer_evaluations',
-            match_date: null,
-            start_time: null,
-            data: {
-              evaluations: updatedList,
-              lastUpdated: nowIso,
-            } as unknown as Record<string, unknown>,
-            last_updated: nowIso,
-          },
-          { onConflict: 'id' }
-        );
-
-        return !upsertErr;
-      };
-
-      const queuedWrite = peerEvaluationsWriteQueue.then(writeEvals, writeEvals);
-      peerEvaluationsWriteQueue = queuedWrite.catch(() => false);
-      return await queuedWrite;
+      const { error: tblErr } = await supabase.from('peer_evaluations').upsert({
+        evaluator_player_id: evaluation.evaluatorId,
+        target_player_id: evaluation.targetPlayerId,
+        finalizacao: evaluation.finalizacao,
+        marcacao: evaluation.marcacao,
+        passe: evaluation.passe,
+        raca: evaluation.raca,
+        drible: evaluation.drible,
+        overall: computedOverall,
+        updated_at: new Date().toISOString(),
+      });
+      return !tblErr;
     } catch (err) {
       console.warn('Exceção ao salvar avaliação no Supabase:', err);
       return false;
+    }
+  },
+
+  /**
+   * Emite um convite criptográfico de 128 bits para a equipe via RPC
+   */
+  async issueTeamInvite(
+    teamId: string,
+    expiresInHours = 48,
+    maxUses = 1
+  ): Promise<{ success: boolean; rawToken?: string; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase || !teamId) {
+      return { success: false, error: 'Parâmetros inválidos.' };
+    }
+    try {
+      const { data, error } = await supabase.rpc('issue_team_invite_authenticated', {
+        p_team_id: teamId,
+        p_expires_in_hours: expiresInHours,
+        p_max_uses: maxUses,
+      });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true, rawToken: data?.raw_token };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  /**
+   * Ingressa em uma equipe através de código de convite via RPC com bloqueio concorrente
+   */
+  async joinTeamWithInviteCode(
+    inviteCode: string
+  ): Promise<{ success: boolean; teamId?: string; teamName?: string; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase || !inviteCode) {
+      return { success: false, error: 'Código de convite não informado.' };
+    }
+    try {
+      const { data, error } = await supabase.rpc('join_team_with_invite_code_authenticated', {
+        p_raw_token: inviteCode.trim(),
+      });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return {
+        success: true,
+        teamId: data?.team_id,
+        teamName: data?.team_name,
+      };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   },
 };

@@ -518,6 +518,61 @@ WHERE ps.status NOT IN ('em_andamento', 'finalizada', 'cancelada')
    OR ps.id LIKE 'pelada_schedule_%'
    OR ps.id IN ('audit_logs_ledger_v1', 'futplay_peer_evaluations_ledger_v1');
 
+CREATE OR REPLACE FUNCTION private.trg_guard_pelada_sumulas_security()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_db_role TEXT := current_user;
+    v_jwt_role TEXT := COALESCE(pg_catalog.current_setting('request.jwt.claim.role', true), '');
+BEGIN
+    IF v_db_role IN ('postgres', 'supabase_admin', 'service_role') AND v_jwt_role NOT IN ('anon', 'authenticated') THEN
+        IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+    END IF;
+
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.team_id IS NULL OR NEW.status NOT IN ('em_andamento', 'finalizada', 'cancelada')
+           OR NEW.id LIKE 'evals_player_%' OR NEW.id LIKE 'user_session_%'
+           OR NEW.id LIKE 'finance_ledger_%' OR NEW.id LIKE 'monthly_%'
+           OR NEW.id LIKE 'audit_logs_%' OR NEW.id LIKE 'futplay_peer_%'
+           OR NEW.id LIKE 'pelada_schedule_%' THEN
+            RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: A tabela pelada_sumulas aceita exclusivamente súmulas reais vinculadas a um team_id.';
+        END IF;
+        RETURN NEW;
+    ELSIF TG_OP = 'UPDATE' THEN
+        IF OLD.status NOT IN ('em_andamento', 'finalizada', 'cancelada') THEN
+            RAISE EXCEPTION 'IMUTABILIDADE_VIOLADA: Registros legados em pelada_sumulas estão congelados para migração.';
+        END IF;
+        IF OLD.status = 'finalizada' AND NOT private.is_platform_admin() THEN
+            IF EXISTS (
+                SELECT 1 FROM private.trusted_rpc_locks l
+                WHERE l.txid = pg_catalog.txid_current()
+                  AND l.target_id = NEW.id
+                  AND l.actor_id = auth.uid()
+                  AND l.operation = 'reopen_sumula'
+            ) THEN
+                -- Permite a reabertura auditada exclusivamente quando iniciada pela RPC oficial
+                NULL;
+            ELSE
+                RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Súmula finalizada é imutável. Utilize a operação oficial de reabertura auditada.';
+            END IF;
+        END IF;
+        IF NEW.team_id IS DISTINCT FROM OLD.team_id THEN
+            RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Não é permitido transferir uma súmula para outra equipe.';
+        END IF;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        IF OLD.status NOT IN ('em_andamento') AND NOT private.is_platform_admin() THEN
+            RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Apenas súmulas em andamento podem ser excluídas.';
+        END IF;
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
 CREATE TRIGGER guard_pelada_sumulas_security_trg
     BEFORE INSERT OR UPDATE OR DELETE ON public.pelada_sumulas
     FOR EACH ROW
@@ -525,6 +580,8 @@ CREATE TRIGGER guard_pelada_sumulas_security_trg
 
 ALTER TABLE public.pelada_sumulas ADD COLUMN IF NOT EXISTS stats_applied BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.pelada_sumulas ADD COLUMN IF NOT EXISTS applied_snapshot JSONB;
+ALTER TABLE public.pelada_sumulas ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMPTZ;
+ALTER TABLE public.pelada_sumulas ADD COLUMN IF NOT EXISTS finalized_by UUID REFERENCES public.users(id) ON DELETE SET NULL;
 ALTER TABLE public.pelada_sumulas ALTER COLUMN team_id SET NOT NULL;
 ALTER TABLE public.pelada_sumulas DROP CONSTRAINT IF EXISTS chk_pelada_sumulas_valid_status;
 ALTER TABLE public.pelada_sumulas ADD CONSTRAINT chk_pelada_sumulas_valid_status
@@ -1078,6 +1135,8 @@ REVOKE ALL ON FUNCTION public.reverse_team_financial_transaction_authenticated(U
 GRANT EXECUTE ON FUNCTION public.reverse_team_financial_transaction_authenticated(UUID, TEXT) TO authenticated, service_role;
 
 -- 6.5. Conclusão de Redefinição Obrigatória de Senha (Etapa 5)
+--      Não confia apenas em chamada do cliente: comprova que auth.users.encrypted_password
+--      foi efetivamente alterada no Supabase Auth e não é mais o placeholder de migração!
 CREATE OR REPLACE FUNCTION public.complete_mandatory_password_reset_authenticated()
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -1086,9 +1145,21 @@ SET search_path = ''
 AS $$
 DECLARE
     v_user_id UUID := auth.uid();
+    v_encrypted_password TEXT;
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Sessão inválida.';
+    END IF;
+
+    -- Validação criptográfica no serviço canônico Supabase Auth (auth.users)
+    SELECT encrypted_password INTO v_encrypted_password
+    FROM auth.users
+    WHERE id = v_user_id;
+
+    IF v_encrypted_password IS NULL
+       OR v_encrypted_password = 'MUST_RESET_BCRYPT_HASH'
+       OR v_encrypted_password LIKE 'MUST_RESET%' THEN
+        RAISE EXCEPTION 'CREDENCIAIS_NAO_REDEFINIDAS: A senha ainda não foi alterada no serviço de autenticação do Supabase Auth. Conclua a redefinição de senha antes de ativar a conta.';
     END IF;
 
     INSERT INTO private.trusted_rpc_locks (txid, operation, target_id, actor_id)
@@ -1119,6 +1190,85 @@ $$;
 
 REVOKE ALL ON FUNCTION public.complete_mandatory_password_reset_authenticated() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.complete_mandatory_password_reset_authenticated() TO authenticated, service_role;
+
+-- 6.5b. Reabertura Controlada e Auditada de Súmula Finalizada (Etapa 7 / Crítica 5)
+CREATE OR REPLACE FUNCTION public.reopen_pelada_sumula_authenticated(
+    p_sumula_id TEXT,
+    p_reason TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_sumula RECORD;
+    v_is_staff BOOLEAN;
+    v_is_owner BOOLEAN;
+BEGIN
+    IF NOT private.is_active_verified_user() OR v_user_id IS NULL THEN
+        RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Usuário não autenticado ou com redefinição de senha pendente.';
+    END IF;
+
+    IF pg_catalog.length(pg_catalog.btrim(COALESCE(p_reason, ''))) < 10 THEN
+        RAISE EXCEPTION 'JUSTIFICATIVA_INSUFICIENTE: É obrigatório informar uma justificativa detalhada para a reabertura da súmula (mínimo 10 caracteres).';
+    END IF;
+
+    SELECT * INTO v_sumula
+    FROM public.pelada_sumulas
+    WHERE id = p_sumula_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'NAO_ENCONTRADO: Súmula % não encontrada.', p_sumula_id;
+    END IF;
+
+    IF v_sumula.status <> 'finalizada' THEN
+        RAISE EXCEPTION 'ESTADO_INVALIDO: Apenas súmulas com status "finalizada" podem ser reabertas.';
+    END IF;
+
+    v_is_owner := private.is_team_owner(v_sumula.team_id);
+    v_is_staff := private.is_platform_staff();
+
+    IF NOT (v_is_owner OR v_is_staff) THEN
+        RAISE EXCEPTION 'OPERACAO_NAO_AUTORIZADA: Apenas o proprietário da equipe ou moderador da plataforma pode reabrir uma súmula finalizada.';
+    END IF;
+
+    INSERT INTO private.trusted_rpc_locks (txid, operation, target_id, actor_id)
+    VALUES (pg_catalog.txid_current(), 'reopen_sumula', p_sumula_id, v_user_id)
+    ON CONFLICT (txid, operation, target_id) DO NOTHING;
+
+    UPDATE public.pelada_sumulas
+    SET status = 'em_andamento',
+        last_updated = pg_catalog.now()
+    WHERE id = p_sumula_id;
+
+    DELETE FROM private.trusted_rpc_locks
+    WHERE txid = pg_catalog.txid_current()
+      AND operation = 'reopen_sumula'
+      AND target_id = p_sumula_id;
+
+    PERFORM private.append_official_audit_log(
+        'SUMULA_REABERTA_PARA_CORRECAO',
+        'pelada_sumulas',
+        p_sumula_id,
+        'Súmula reaberta para correção. Justificativa: ' || pg_catalog.btrim(p_reason),
+        pg_catalog.jsonb_build_object('previous_status', 'finalizada', 'finalized_at', v_sumula.finalized_at),
+        pg_catalog.jsonb_build_object('new_status', 'em_andamento', 'reopened_by', v_user_id)
+    );
+
+    RETURN pg_catalog.jsonb_build_object(
+        'status', 'reopened',
+        'sumula_id', p_sumula_id,
+        'new_status', 'em_andamento',
+        'reopened_by', v_user_id
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.reopen_pelada_sumula_authenticated(TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.reopen_pelada_sumula_authenticated(TEXT, TEXT) TO authenticated, service_role;
 
 -- 6.6. Motor de Homologação Esportiva com Bloqueio Ordenado e private.trusted_rpc_locks (Etapa 8 e Teste 15)
 CREATE OR REPLACE FUNCTION public.process_validated_match(

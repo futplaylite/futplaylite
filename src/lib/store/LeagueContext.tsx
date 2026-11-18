@@ -1489,77 +1489,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const newRow = payload.new as { data?: unknown; id?: string; status?: string; team_name?: string };
 
-              // Verificação instantânea de sessão única via Realtime
               if (
                 newRow &&
-                newRow.id &&
-                currentUserId &&
-                newRow.id === `user_session_${currentUserId}`
-              ) {
-                const sessionPayload = newRow.data as { sessionToken?: string } | undefined;
-                const remoteToken = sessionPayload?.sessionToken;
-                const localToken = localStorage.getItem(ACTIVE_SESSION_TOKEN_KEY);
-                if (remoteToken && localToken && remoteToken !== localToken) {
-                  logoutUser('concurrent_session');
-                  notify(
-                    'error',
-                    'Sessão Desconectada!',
-                    'Sua conta foi conectada em outro aparelho. Não é permitido o uso simultâneo em múltiplos dispositivos.'
-                  );
-                  return;
-                }
-              }
-
-              if (newRow && newRow.id === 'audit_logs_ledger_v1' && newRow.data) {
-                const auditData = newRow.data as { logs?: AuditLog[] };
-                if (Array.isArray(auditData.logs)) {
-                  setState((prev) => {
-                    const map = new Map<string, AuditLog>();
-                    auditData.logs!.forEach((l) => map.set(l.id, l));
-                    (prev.auditLogs || []).forEach((l) => {
-                      if (!map.has(l.id)) map.set(l.id, l);
-                    });
-                    const list = Array.from(map.values());
-                    list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-                    return { ...prev, auditLogs: list };
-                  });
-                }
-              } else if (
-                newRow &&
                 newRow.data &&
-                (newRow.status === 'schedule_ledger' || newRow.id?.startsWith('pelada_schedule_ledger_'))
-              ) {
-                const schedData = newRow.data as { schedule?: PeladaScheduleConfig; teamName?: string };
-                if (schedData && schedData.schedule) {
-                  const teamSlug = (newRow.id || '').replace('pelada_schedule_ledger_', '');
-                  try {
-                    if (teamSlug) {
-                      localStorage.setItem(`futplay_pelada_schedule_${teamSlug}`, JSON.stringify(schedData.schedule));
-                    }
-                    localStorage.setItem('futplay_pelada_schedule_v1', JSON.stringify(schedData.schedule));
-                  } catch {}
-                  if (typeof window !== 'undefined') {
-                    window.dispatchEvent(
-                      new CustomEvent('futplay_pelada_schedule_changed', {
-                        detail: {
-                          teamSlug,
-                          teamName: schedData.teamName || newRow.team_name,
-                          schedule: schedData.schedule,
-                        },
-                      })
-                    );
-                  }
-                }
-              } else if (
-                newRow &&
-                newRow.data &&
-                newRow.status !== 'financial_ledger' &&
-                newRow.status !== 'audit_ledger' &&
-                newRow.status !== 'peer_evaluations' &&
-                !newRow.id?.startsWith('finance_ledger_') &&
-                !newRow.id?.startsWith('monthly_') &&
-                !newRow.id?.startsWith('audit_logs_') &&
-                !newRow.id?.startsWith('futplay_peer_')
+                (newRow.status === 'em_andamento' || newRow.status === 'finalizada' || newRow.status === 'cancelada')
               ) {
                 const updatedSumula = newRow.data as SumulaData;
                 const idx = list.findIndex((s) => s.id === updatedSumula.id);
@@ -1637,8 +1570,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const curLocal = localStorage.getItem(ACTIVE_SESSION_TOKEN_KEY);
         if (!curLocal || !currentUserId) return;
-        const remoteToken = await supabaseService.getActiveSessionToken(currentUserId);
-        if (remoteToken && remoteToken !== curLocal) {
+        const check = await supabaseService.validateActiveSession(curLocal);
+        if (!check.valid) {
           logoutUser('concurrent_session');
           notify(
             'error',
@@ -2622,30 +2555,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
-    // 2. Remove senhas, credenciais locais e histórico de primeiro acesso
+    // 2. Remove histórico de primeiro acesso
     unmarkFirstAccessCompletedInStorage(
       effectiveUserId,
       userToDelete?.email,
       userToDelete?.whatsappNumber
     );
-    try {
-      const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
-      delete stored[effectiveUserId];
-      delete stored[userIdToDelete];
-      if (profileToDelete) {
-        delete stored[profileToDelete.id];
-        delete stored[profileToDelete.userId];
-      }
-      if (userToDelete?.whatsappNumber) {
-        delete stored[userToDelete.whatsappNumber.replace(/\D/g, '')];
-      }
-      if (userToDelete?.email) {
-        delete stored[userToDelete.email.toLowerCase()];
-      }
-      localStorage.setItem('futplay_user_passwords', JSON.stringify(stored));
-    } catch {
-      // Ignore
-    }
 
     // 3. Se o usuário excluído for o ativo, limpa as sessões locais de login
     const isCurrentActive = effectiveUserId === currentUserId || userIdToDelete === currentUserId;

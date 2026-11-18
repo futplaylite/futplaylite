@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   UserCheck,
   Lock,
+  Unlock,
   ChevronDown,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
@@ -285,6 +286,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     profiles,
     currentPlayerProfile,
     finalizePeladaSumula,
+    notify,
   } = useLeague();
   const isCoachOrAdmin =
     currentUser?.role === 'admin' ||
@@ -292,6 +294,33 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     currentUser?.isTeamOwner === true;
 
   const [showFinalizeModal, setShowFinalizeModal] = useState<boolean>(false);
+  const [showReopenModal, setShowReopenModal] = useState<boolean>(false);
+  const [reopenReason, setReopenReason] = useState<string>('');
+  const [isReopening, setIsReopening] = useState<boolean>(false);
+
+  const handleReopenSumula = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (reopenReason.trim().length < 5) {
+      notify('error', 'Justificativa Obrigatória', 'Informe uma justificativa de no mínimo 5 caracteres para reabrir a súmula.');
+      return;
+    }
+    setIsReopening(true);
+    try {
+      const res = await supabaseService.reopenPeladaSumula(sumula.id, reopenReason.trim());
+      if (!res.success) {
+        setIsReopening(false);
+        notify('error', 'Operação Não Autorizada', res.error || 'Apenas o treinador do time ou admin da liga podem reabrir a súmula.');
+        return;
+      }
+      setIsReopening(false);
+      setShowReopenModal(false);
+      setSumula((prev) => ({ ...prev, status: 'em_andamento' }));
+      notify('success', 'Súmula Reaberta', 'A súmula foi reaberta com registro de auditoria e retornou ao modo de edição.');
+    } catch (err) {
+      setIsReopening(false);
+      notify('error', 'Erro ao Reabrir Súmula', err instanceof Error ? err.message : String(err));
+    }
+  };
   const isDeletedRef = useRef<boolean>(false);
   const userTeam = (currentUser?.teamName || currentPlayerProfile?.teamName || '').trim();
 
@@ -1190,14 +1219,27 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowReceiptModal(true)}
-              className="shrink-0 flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1.5 transition active:scale-95 cursor-pointer shadow-xs"
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              <span>Comprovante</span>
-            </button>
+            <div className="shrink-0 flex items-center gap-2">
+              {isCoachOrAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setShowReopenModal(true)}
+                  className="flex items-center gap-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] px-2.5 py-1.5 transition active:scale-95 cursor-pointer shadow-xs"
+                  title="Solicitar Reabertura Auditada"
+                >
+                  <Unlock className="h-3.5 w-3.5" />
+                  <span>Reabrir</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowReceiptModal(true)}
+                className="flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-2.5 py-1.5 transition active:scale-95 cursor-pointer shadow-xs"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                <span>Comprovante</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -2242,6 +2284,74 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
         <div className="fixed bottom-20 right-4 z-50 flex items-center gap-1.5 rounded-full bg-emerald-600 text-white px-3.5 py-1.5 text-xs font-bold shadow-lg animate-bounce transition">
           <CheckCircle2 className="h-4 w-4" />
           <span>Salvo Online</span>
+        </div>
+      )}
+
+      {/* Modal de Reabertura Auditada de Súmula */}
+      {showReopenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <form
+            onSubmit={handleReopenSumula}
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                <Unlock className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-black text-slate-900">
+                  Reabertura Auditada de Súmula
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Esta ação quebra o lacre de integridade esportiva da súmula de{' '}
+                  <span className="font-bold text-slate-800">
+                    {sumula.matchDate || 'data não informada'}
+                  </span>{' '}
+                  e gera um registro imutável em <code className="text-amber-700 font-mono">audit_logs</code>.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="reopenReason"
+                className="block text-xs font-bold text-slate-700"
+              >
+                Justificativa Obrigatória (mínimo 5 caracteres):
+              </label>
+              <textarea
+                id="reopenReason"
+                rows={3}
+                required
+                value={reopenReason}
+                onChange={(e) => setReopenReason(e.target.value)}
+                placeholder="Ex: Correção de gol atribuído a jogador incorreto no segundo tempo..."
+                className="w-full rounded-xl border border-slate-300 p-2.5 text-xs text-slate-800 focus:border-amber-600 focus:ring-1 focus:ring-amber-600 outline-none resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isReopening}
+                onClick={() => {
+                  setShowReopenModal(false);
+                  setReopenReason('');
+                }}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 active:scale-95 transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isReopening || reopenReason.trim().length < 5}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-amber-700 active:scale-95 transition disabled:opacity-50 cursor-pointer"
+              >
+                <Unlock className="h-3.5 w-3.5" />
+                {isReopening ? 'Reabrindo...' : 'Confirmar Reabertura'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

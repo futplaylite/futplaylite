@@ -431,15 +431,6 @@ export const AthleteProfileAndCardView: React.FC<
       if (isSupabaseConfigured()) {
         await supabaseService.updatePassword(currentUser.id, newPass.trim());
       }
-      try {
-        const stored = JSON.parse(localStorage.getItem('futplay_user_passwords') || '{}');
-        stored[currentUser.id] = newPass.trim();
-        if (currentUser.email) stored[currentUser.email.toLowerCase()] = newPass.trim();
-        if (currentUser.whatsappNumber) stored[currentUser.whatsappNumber.replace(/\D/g, '')] = newPass.trim();
-        localStorage.setItem('futplay_user_passwords', JSON.stringify(stored));
-      } catch {
-        // Ignora
-      }
     }
 
     // 3. Salva os dados do perfil (apelido, bairro, posição, pé dominante, foto, visibilidade)
