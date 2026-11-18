@@ -13,6 +13,7 @@ import {
   TeamModality,
   TeamTransaction,
   User,
+  UserRole,
 } from '../../types/league';
 
 export function generateUUID(): string {
@@ -33,7 +34,7 @@ export function generateUUID(): string {
  *  - foto de perfil: em segundo plano, apenas para quem mudou ou ainda não foi baixado
  */
 const PROFILE_LIGHT_COLUMNS =
-  'id, user_id, display_name, city_id, position, dominant_foot, profile_visibility, current_rating, rating_uncertainty, is_provisional, current_division_id, total_validated_matches, created_at, updated_at, team_name, team_city, team_modality, team_invite_code, is_team_owner';
+  'id, user_id, display_name, city_id, position, dominant_foot, profile_visibility, current_rating, rating_uncertainty, is_provisional, current_division_id, total_validated_matches, created_at, updated_at, team_name, team_city, team_modality, team_invite_code, is_team_owner, role';
 const USER_LIGHT_COLUMNS =
   'id, email, whatsapp_number, role, status, created_at, updated_at, team_name, team_city, team_modality, team_invite_code, is_team_owner';
 
@@ -784,10 +785,22 @@ export const supabaseService = {
       teamModality?: TeamModality;
       teamInviteCode?: string;
       isTeamOwner?: boolean;
+      role?: UserRole;
     }
   ): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase || !userId) return false;
     try {
+      // Se houver alteração de role (ex: coach ou player), utiliza a RPC oficial para manter integridade
+      if (updates.role !== undefined && (updates.role === 'coach' || updates.role === 'player' || updates.role === 'admin')) {
+        await this.adminSetPlayerRole({
+          targetUserId: userId,
+          newRole: updates.role,
+          canManageSport: updates.role === 'coach',
+          canManageFinance: updates.role === 'coach',
+          reason: 'Atualização de função via perfil do atleta',
+        }).catch(() => {});
+      }
+
       const payload: Record<string, any> = {
         updated_at: new Date().toISOString(),
       };
@@ -844,6 +857,47 @@ export const supabaseService = {
     } catch (err) {
       console.warn('Erro ao atualizar perfil no Supabase:', err);
       return false;
+    }
+  },
+
+  /**
+   * Promove ou altera o cargo de um atleta para Treinador (coach) ou Atleta (player) no Supabase.
+   * Invoca a RPC pública admin_set_player_role_authenticated que sincroniza de forma atômica
+   * e auditada as tabelas public.users, public.player_profiles e public.team_memberships.
+   */
+  async adminSetPlayerRole(params: {
+    targetUserId: string;
+    newRole: 'coach' | 'player' | 'admin';
+    canManageSport?: boolean;
+    canManageFinance?: boolean;
+    reason?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured() || !supabase) {
+      return { success: false, error: 'Supabase não configurado.' };
+    }
+    try {
+      const { data, error } = await supabase.rpc('admin_set_player_role_authenticated', {
+        p_target_user_id: params.targetUserId,
+        p_new_role: params.newRole,
+        p_can_manage_sport: params.canManageSport ?? (params.newRole === 'coach'),
+        p_can_manage_finance: params.canManageFinance ?? (params.newRole === 'coach'),
+        p_reason: params.reason || `Alteração de cargo para ${params.newRole} pelo Administrador`,
+      });
+
+      if (error) {
+        console.error('Erro ao alterar cargo do membro via RPC:', error);
+        return { success: false, error: error.message };
+      }
+
+      if (data && typeof data === 'object' && (data as any).success === false) {
+        return { success: false, error: (data as any).error || 'Operação rejeitada pelo backend.' };
+      }
+
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Exceção ao alterar cargo do membro no Supabase:', err);
+      return { success: false, error: msg };
     }
   },
 
@@ -1226,6 +1280,7 @@ export const supabaseService = {
 
     return athleteRows.map((p) => {
       const teamKey = (p.team_name || '').trim().toLowerCase();
+      const isCoachOrOwner = Boolean(p.role === 'coach' || p.is_team_owner);
       return {
         id: p.id,
         userId: p.user_id,
@@ -1235,7 +1290,9 @@ export const supabaseService = {
         teamCity: p.team_city || undefined,
         teamModality: p.team_modality || undefined,
         teamInviteCode: p.team_invite_code || undefined,
-        isTeamOwner: Boolean(p.is_team_owner),
+        isTeamOwner: isCoachOrOwner,
+        isCoach: isCoachOrOwner,
+        role: isCoachOrOwner ? 'coach' : ((p.role as UserRole) || 'player'),
         avatarColor: '#1D4ED8',
         cityId: p.city_id,
         neighborhood: 'Centro',

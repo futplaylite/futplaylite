@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { useLeague } from '../lib/store/LeagueContext';
+import { supabaseService } from '../lib/supabase/supabaseService';
 import { runPriorityHomologationTests } from '../lib/engine/homologationSuite';
 import {
   HomologationTestResult,
@@ -53,6 +54,7 @@ export const AdminAndHomologationView: React.FC<
     moderateMatchResolution,
     attemptDirectManipulationAttack,
     resetDemoDatabase,
+    refreshLeagueData,
   } = useLeague();
 
   const [subView, setSubView] = useState<'teams' | 'moderation' | 'audit' | 'homolog'>(
@@ -280,6 +282,23 @@ export const AdminAndHomologationView: React.FC<
       actorUserId: currentUser?.id || 'admin',
       actorName: currentPlayerProfile?.displayName || currentUser?.email || 'Administrador',
     });
+
+    // Sincroniza imediatamente com a RPC segura de promoção no Supabase
+    const targetUserId = editingPlayer.userId || editingPlayer.id;
+    if (targetUserId && (editForm.memberRole === 'coach' || editForm.memberRole === 'player')) {
+      supabaseService
+        .adminSetPlayerRole({
+          targetUserId,
+          newRole: editForm.memberRole,
+          reason: editForm.reason.trim() || defaultReason,
+        })
+        .then((res: { success: boolean; error?: string }) => {
+          if (res.success) {
+            refreshLeagueData().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
 
     if (ok) {
       setIsEditPasswordModalOpen(false);

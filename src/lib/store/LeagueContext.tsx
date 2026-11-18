@@ -955,13 +955,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
             if (team && crest) crestCatalog.set(team.toLowerCase(), crest);
 
-            const isOwner = loc?.isTeamOwner === true || ru.isTeamOwner === true;
+            const isOwner =
+              loc?.isTeamOwner === true ||
+              ru.isTeamOwner === true ||
+              ru.role === 'coach';
             const role =
               loc?.role === 'admin' || ru.role === 'admin'
                 ? 'admin'
-                : loc?.role === 'coach' || ru.role === 'coach' || isOwner
+                : ru.role === 'coach' || loc?.role === 'coach' || isOwner
                 ? 'coach'
-                : loc?.role || ru.role || 'player';
+                : ru.role || loc?.role || 'player';
 
             // Se o usuário local tinha ID temporário mas foi vinculado ao Supabase pelo e-mail,
             // migra o currentUserId para o ID oficial do Supabase
@@ -1158,7 +1161,22 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               loc?.teamModality ||
               'society';
 
-            const isOwner = loc?.isTeamOwner === true || rp.isTeamOwner === true || matchingUser?.isTeamOwner === true;
+            const isCoachOrOwner =
+              loc?.isCoach === true ||
+              loc?.role === 'coach' ||
+              rp.isCoach === true ||
+              rp.role === 'coach' ||
+              rp.isTeamOwner === true ||
+              matchingUser?.role === 'coach' ||
+              matchingUser?.isTeamOwner === true ||
+              loc?.isTeamOwner === true;
+
+            const effectiveRole: UserRole =
+              loc?.role === 'admin' || matchingUser?.role === 'admin'
+                ? 'admin'
+                : isCoachOrOwner
+                ? 'coach'
+                : rp.role || loc?.role || 'player';
 
             return {
               ...loc,
@@ -1171,7 +1189,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               teamCity: city,
               teamModality: modality,
               teamInviteCode: code,
-              isTeamOwner: isOwner,
+              isTeamOwner: isCoachOrOwner,
+              isCoach: isCoachOrOwner,
+              role: effectiveRole,
               skills: loc?.skills || rp.skills,
               overallStars: loc?.overallStars || rp.overallStars,
               createdAt: loc?.createdAt || rp.createdAt || new Date().toISOString(),
@@ -4958,6 +4978,20 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       supabaseService.recordAuditLogInSupabase(newAuditLog).catch(() => {});
       if (targetProfile.userId && profileUpdates) {
         supabaseService.updateProfile(targetProfile.userId, profileUpdates).catch(() => {});
+        if (profileUpdates.role && (profileUpdates.role === 'coach' || profileUpdates.role === 'player')) {
+          supabaseService
+            .adminSetPlayerRole({
+              targetUserId: targetProfile.userId,
+              newRole: profileUpdates.role,
+              reason: reason.trim() || 'Ajuste manual de cargo pelo Administrador',
+            })
+            .then((res) => {
+              if (res.success) {
+                refreshLeagueData().catch(() => {});
+              }
+            })
+            .catch(() => {});
+        }
       }
     }
 
