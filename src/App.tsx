@@ -561,7 +561,7 @@ const MainMobileShell: React.FC = () => {
 
                     {/* Ações Rápidas Disponíveis */}
                     <div className="py-1.5 space-y-1">
-                      {isAdmin && (
+                      {isAdmin ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -579,41 +579,43 @@ const MainMobileShell: React.FC = () => {
                             ADMIN
                           </span>
                         </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              setShowMonthlyFeesPage(false);
+                              if (currentPlayerProfile) {
+                                handleNavigate('squad', undefined, currentPlayerProfile.id);
+                              } else {
+                                handleNavigate('squad');
+                              }
+                            }}
+                            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition text-left cursor-pointer"
+                          >
+                            <UserCircle2 className="h-4 w-4 text-blue-600" />
+                            <span>Meu Perfil & Card</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowProfileMenu(false);
+                              setShowMonthlyFeesPage(true);
+                            }}
+                            className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition text-left cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Wallet className="h-4 w-4 text-emerald-600" />
+                              <span>Mensalidades & Caixa</span>
+                            </div>
+                            <span className="font-mono text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                              Financeiro
+                            </span>
+                          </button>
+                        </>
                       )}
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowProfileMenu(false);
-                          setShowMonthlyFeesPage(false);
-                          if (currentPlayerProfile) {
-                            handleNavigate('squad', undefined, currentPlayerProfile.id);
-                          } else {
-                            handleNavigate('squad');
-                          }
-                        }}
-                        className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition text-left cursor-pointer"
-                      >
-                        <UserCircle2 className="h-4 w-4 text-blue-600" />
-                        <span>Meu Perfil & Card</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowProfileMenu(false);
-                          setShowMonthlyFeesPage(true);
-                        }}
-                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Wallet className="h-4 w-4 text-emerald-600" />
-                          <span>Mensalidades & Caixa</span>
-                        </div>
-                        <span className="font-mono text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                          Financeiro
-                        </span>
-                      </button>
                     </div>
 
                     {/* Ações da Conta: Sair */}

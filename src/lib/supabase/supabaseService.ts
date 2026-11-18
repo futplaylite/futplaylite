@@ -34,7 +34,7 @@ export function generateUUID(): string {
  *  - foto de perfil: em segundo plano, apenas para quem mudou ou ainda não foi baixado
  */
 const PROFILE_LIGHT_COLUMNS =
-  'id, user_id, display_name, city_id, position, dominant_foot, profile_visibility, current_rating, rating_uncertainty, is_provisional, current_division_id, total_validated_matches, created_at, updated_at, team_name, team_city, team_modality, team_invite_code, is_team_owner, role';
+  'id, user_id, display_name, city_id, position, dominant_foot, profile_visibility, current_rating, rating_uncertainty, is_provisional, current_division_id, total_validated_matches, created_at, updated_at, team_name, team_city, team_modality, team_invite_code, is_team_owner';
 const USER_LIGHT_COLUMNS =
   'id, email, whatsapp_number, role, status, created_at, updated_at, team_name, team_city, team_modality, team_invite_code, is_team_owner';
 
@@ -1401,7 +1401,7 @@ export const supabaseService = {
 
     return athleteRows.map((p) => {
       const teamKey = (p.team_name || '').trim().toLowerCase();
-      const isCoachOrOwner = Boolean(p.role === 'coach' || p.is_team_owner);
+      const isCoachOrOwner = Boolean(p.is_team_owner);
       return {
         id: p.id,
         userId: p.user_id,
@@ -1413,7 +1413,7 @@ export const supabaseService = {
         teamInviteCode: p.team_invite_code || undefined,
         isTeamOwner: isCoachOrOwner,
         isCoach: isCoachOrOwner,
-        role: isCoachOrOwner ? 'coach' : ((p.role as UserRole) || 'player'),
+        role: isCoachOrOwner ? 'coach' : 'player',
         avatarColor: '#1D4ED8',
         cityId: p.city_id,
         neighborhood: 'Centro',
