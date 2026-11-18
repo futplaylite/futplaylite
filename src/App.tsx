@@ -148,29 +148,18 @@ const MainMobileShell: React.FC = () => {
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Fecha o menu de opções do perfil ao clicar em qualquer lugar da tela
+  // Fecha o menu de opções do perfil ao pressionar Escape
   useEffect(() => {
     if (!showProfileMenu) return;
 
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node;
-      if (
-        profileMenuRef.current &&
-        !profileMenuRef.current.contains(target) &&
-        profileButtonRef.current &&
-        !profileButtonRef.current.contains(target)
-      ) {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
         setShowProfileMenu(false);
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown, { passive: true });
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
-    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showProfileMenu]);
   const [matchIdToOpen, setMatchIdToOpen] = useState<string | undefined>(() => {
     try {
@@ -337,20 +326,10 @@ const MainMobileShell: React.FC = () => {
 
   return (
     <div className="min-h-dvh w-full bg-slate-50 text-slate-900 relative">
-      {/* Backdrop global para fechar o menu ao clicar em qualquer lugar da tela */}
-      {showProfileMenu && (
-        <div
-          className="fixed inset-0 z-40 bg-black/25 transition-opacity"
-          onClick={() => setShowProfileMenu(false)}
-          onTouchStart={() => setShowProfileMenu(false)}
-          aria-hidden="true"
-        />
-      )}
-
       <div className="mx-auto flex min-h-dvh w-full max-w-[430px] flex-col bg-slate-50">
         {/* Cabeçalho Principal do App */}
         <header
-          className={`sticky top-0 z-30 transition-colors duration-200 ${
+          className={`sticky top-0 z-50 transition-colors duration-200 ${
             sumulaStopwatch.isActive
               ? 'border-b border-slate-800 bg-slate-900 text-white px-3 py-2.5 sm:py-3 shadow-lg'
               : 'border-b border-slate-200 bg-white/95 backdrop-blur-md px-4 py-2.5'
@@ -506,7 +485,7 @@ const MainMobileShell: React.FC = () => {
               <button
                 ref={profileButtonRef}
                 onClick={() => setShowProfileMenu((v) => !v)}
-                className="relative flex items-center justify-center rounded-full p-0.5 hover:ring-2 hover:ring-blue-500 transition focus:outline-none"
+                className="relative z-50 flex items-center justify-center rounded-full p-0.5 hover:ring-2 hover:ring-blue-500 transition focus:outline-none"
                 title={`Meu perfil: ${userDisplayName}`}
                 aria-label="Abrir menu do perfil"
               >
@@ -525,10 +504,20 @@ const MainMobileShell: React.FC = () => {
 
               {/* Menu Suspenso do Perfil (Calibrado para Celular) */}
               {showProfileMenu && (
-                <div
-                  ref={profileMenuRef}
-                  className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xl transition-all text-slate-800"
-                >
+                <>
+                  {/* Backdrop para fechar o menu ao tocar fora */}
+                  <div
+                    className="fixed inset-0 z-40 bg-black/25 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowProfileMenu(false);
+                    }}
+                    aria-hidden="true"
+                  />
+                  <div
+                    ref={profileMenuRef}
+                    className="absolute right-0 top-11 z-50 w-64 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xl transition-all text-slate-800"
+                  >
                   {/* Cabeçalho do Perfil Compacto */}
                   <div className="flex items-center gap-2.5 border-b border-slate-100 pb-2">
                     {userAvatarUrl ? (
@@ -640,7 +629,8 @@ const MainMobileShell: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              )}
+              </>
+            )}
             </div>
           </div>
           )}
