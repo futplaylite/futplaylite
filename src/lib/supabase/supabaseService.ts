@@ -1294,8 +1294,9 @@ export const supabaseService = {
    * Busca perfis esportivos cadastrados no Supabase.
    * Consulta LEVE (sem fotos/escudos em base64): o escudo é baixado 1x por time
    * e as fotos de perfil chegam depois, em segundo plano (getProfileAvatars).
+   * Otimizado: reutiliza adminUserIds se fornecido e busca escudos ausentes em lote.
    */
-  async getProfiles(): Promise<PlayerProfile[] | null> {
+  async getProfiles(cachedAdminIds?: Set<string>): Promise<PlayerProfile[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     const { data, error } = await supabase
       .from('player_profiles')
@@ -1308,32 +1309,56 @@ export const supabaseService = {
     }
 
     // Contas de administradores nunca participam de jogos e não aparecem em listas de atletas
-    const { data: usersData } = await supabase.from('users').select('id, role, email');
-    const adminUserIds = new Set(
-      (usersData || [])
-        .filter(
-          (u) =>
-            u.role === 'admin' ||
-            (u.email && u.email.toLowerCase() === 'futplaylite@gmail.com')
-        )
-        .map((u) => u.id)
-    );
+    let adminUserIds = cachedAdminIds;
+    if (!adminUserIds) {
+      const { data: usersData } = await supabase.from('users').select('id, role, email');
+      adminUserIds = new Set(
+        (usersData || [])
+          .filter(
+            (u) =>
+              u.role === 'admin' ||
+              (u.email && u.email.toLowerCase() === 'futplaylite@gmail.com')
+          )
+          .map((u) => u.id)
+      );
+    }
 
     const athleteRows = data.filter((p) => {
-      if (adminUserIds.has(p.user_id)) return false;
+      if (adminUserIds!.has(p.user_id)) return false;
       if ((p.display_name || '').trim().toUpperCase() === 'ADMIN') return false;
       if (p.id === 'a0000000-0000-4000-8000-000000000002') return false;
       if (p.user_id === 'a0000000-0000-4000-8000-000000000001') return false;
       return true;
     });
 
-    // Escudo: 1 download por time distinto (dinâmico, vale para qualquer time atual ou futuro)
+    // Escudo: 1 download em lote para times ausentes do cache em memória
     const distinctTeamsRaw = new Map<string, string>();
     athleteRows.forEach((p) => {
       const raw = (p.team_name || '') as string;
       const key = raw.trim().toLowerCase();
       if (key && !distinctTeamsRaw.has(key)) distinctTeamsRaw.set(key, raw);
     });
+
+    const missingTeamNames = Array.from(distinctTeamsRaw.values()).filter(
+      (name) => !teamCrestCache.has(name.trim().toLowerCase())
+    );
+
+    if (missingTeamNames.length > 0) {
+      try {
+        const { data: teamsData } = await supabase
+          .from('teams')
+          .select('name, crest_url')
+          .in('name', missingTeamNames);
+
+        if (teamsData) {
+          teamsData.forEach((t) => {
+            const k = (t.name || '').trim().toLowerCase();
+            if (k) teamCrestCache.set(k, { url: t.crest_url || undefined, fetchedAt: Date.now() });
+          });
+        }
+      } catch {}
+    }
+
     const crestEntries = await Promise.all(
       Array.from(distinctTeamsRaw.entries()).map(
         async ([key, raw]) => [key, await this.getTeamCrest(raw)] as const

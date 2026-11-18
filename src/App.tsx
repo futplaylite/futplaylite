@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import {
   LayoutDashboard,
   LogOut,
@@ -17,14 +17,35 @@ import { LeagueProvider, useLeague, NotificationBanner } from './lib/store/Leagu
 import { TeamCrestBadge } from './components/TeamCrestBadge';
 import { AuthLoginView } from './components/AuthLoginView';
 import { DashboardView } from './components/DashboardView';
-import { LeagueRankingView } from './components/LeagueRankingView';
-import { MatchesAndValidationView } from './components/MatchesAndValidationView';
-import { SearchView } from './components/SearchView';
-import { SquadView } from './components/SquadView';
-import { AdminAndHomologationView } from './components/AdminAndHomologationView';
-import { MonthlyFeesView } from './components/MonthlyFeesView';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { CloudSyncSplashScreen } from './components/CloudSyncSplashScreen';
+
+// Carregamento sob demanda (Code-Splitting) para views secundárias e administrativas
+const LeagueRankingView = lazy(() =>
+  import('./components/LeagueRankingView').then((m) => ({ default: m.LeagueRankingView }))
+);
+const MatchesAndValidationView = lazy(() =>
+  import('./components/MatchesAndValidationView').then((m) => ({ default: m.MatchesAndValidationView }))
+);
+const SearchView = lazy(() =>
+  import('./components/SearchView').then((m) => ({ default: m.SearchView }))
+);
+const SquadView = lazy(() =>
+  import('./components/SquadView').then((m) => ({ default: m.SquadView }))
+);
+const AdminAndHomologationView = lazy(() =>
+  import('./components/AdminAndHomologationView').then((m) => ({ default: m.AdminAndHomologationView }))
+);
+const MonthlyFeesView = lazy(() =>
+  import('./components/MonthlyFeesView').then((m) => ({ default: m.MonthlyFeesView }))
+);
+
+const ViewLoadingFallback: React.FC = () => (
+  <div className="flex flex-col items-center justify-center py-16 space-y-3">
+    <div className="h-7 w-7 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+    <span className="text-[11px] font-semibold text-slate-500 animate-pulse">Carregando módulo...</span>
+  </div>
+);
 
 type ActiveTab =
   | 'dashboard'
@@ -630,47 +651,49 @@ const MainMobileShell: React.FC = () => {
 
         {/* Conteúdo Principal */}
         <main className="flex-1 px-4 pt-4 pb-24 space-y-4">
-          {showMonthlyFeesPage ? (
-            <MonthlyFeesView onBack={() => setShowMonthlyFeesPage(false)} />
-          ) : (
-            <>
-              {activeTab === 'dashboard' && (
-                <DashboardView
-                  onNavigate={handleNavigate}
-                  onOpenMonthlyFees={() => setShowMonthlyFeesPage(true)}
-                  onOpenFinancial={() => setShowMonthlyFeesPage(true)}
-                />
-              )}
-              {activeTab === 'matches' && (
-                <MatchesAndValidationView
-                  initialMatchId={matchIdToOpen}
-                  onNavigateToAdmin={(mid) => handleNavigate('admin', mid)}
-                />
-              )}
-              {activeTab === 'search' && (
-                <SearchView
-                  onSelectPlayer={(pid) => handleNavigate('squad', undefined, pid)}
-                  onSelectMatch={(mid) => handleNavigate('matches', mid)}
-                />
-              )}
-              {activeTab === 'squad' && (
-                <SquadView
-                  key={playerIdToOpen || 'elenco-list'}
-                  initialPlayerId={playerIdToOpen}
-                />
-              )}
-              {activeTab === 'ranking' && (
-                <LeagueRankingView
-                  onInspectPlayer={(pid) =>
-                    handleNavigate('squad', undefined, pid)
-                  }
-                />
-              )}
-              {activeTab === 'admin' && (
-                <AdminAndHomologationView initialMatchId={matchIdToOpen} />
-              )}
-            </>
-          )}
+          <Suspense fallback={<ViewLoadingFallback />}>
+            {showMonthlyFeesPage ? (
+              <MonthlyFeesView onBack={() => setShowMonthlyFeesPage(false)} />
+            ) : (
+              <>
+                {activeTab === 'dashboard' && (
+                  <DashboardView
+                    onNavigate={handleNavigate}
+                    onOpenMonthlyFees={() => setShowMonthlyFeesPage(true)}
+                    onOpenFinancial={() => setShowMonthlyFeesPage(true)}
+                  />
+                )}
+                {activeTab === 'matches' && (
+                  <MatchesAndValidationView
+                    initialMatchId={matchIdToOpen}
+                    onNavigateToAdmin={(mid) => handleNavigate('admin', mid)}
+                  />
+                )}
+                {activeTab === 'search' && (
+                  <SearchView
+                    onSelectPlayer={(pid) => handleNavigate('squad', undefined, pid)}
+                    onSelectMatch={(mid) => handleNavigate('matches', mid)}
+                  />
+                )}
+                {activeTab === 'squad' && (
+                  <SquadView
+                    key={playerIdToOpen || 'elenco-list'}
+                    initialPlayerId={playerIdToOpen}
+                  />
+                )}
+                {activeTab === 'ranking' && (
+                  <LeagueRankingView
+                    onInspectPlayer={(pid) =>
+                      handleNavigate('squad', undefined, pid)
+                    }
+                  />
+                )}
+                {activeTab === 'admin' && (
+                  <AdminAndHomologationView initialMatchId={matchIdToOpen} />
+                )}
+              </>
+            )}
+          </Suspense>
         </main>
 
         {/* Menu Inferior Fixo e Padrão (Sem transparência, sem mexer, sem contador) */}

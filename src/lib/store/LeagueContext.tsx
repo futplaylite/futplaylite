@@ -262,21 +262,6 @@ interface LeagueContextValue extends LeagueState {
     },
     evaluatorId?: string
   ) => boolean;
-  saveUserWhatsapp: (whatsappNumber: string) => boolean;
-  saveOnboardingStep1: (params: {
-    displayName: string;
-    avatarUrl?: string;
-  }) => boolean;
-  saveOnboardingStep2: (params: {
-    mode: 'create' | 'join';
-    teamName: string;
-    teamCity: string;
-    teamCrestUrl?: string;
-    teamModality: TeamModality;
-    teamInviteCode?: string;
-    position?: PlayerPosition;
-  }) => boolean;
-  saveOnboardingStep3: () => boolean;
   createCommunityMatch: (params: {
     venueName: string;
     neighborhood: string;
@@ -907,6 +892,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       const activeUser = state.users.find((u) => u.id === currentUserId);
       const activeProfile = state.profiles.find((p) => p.userId === currentUserId || p.id === currentUserId);
       const userTeam = activeUser?.teamName || activeProfile?.teamName;
+      const isPlatformAdmin = activeUser?.role === 'admin' || currentUserId === 'a0000000-0000-4000-8000-000000000001';
 
       const [
         remoteUsers,
@@ -924,7 +910,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         supabaseService.getMonthlyPayments(),
         supabaseService.getTeamTransactions(),
         supabaseService.getMonthlyConfig(userTeam),
-        supabaseService.getAuditLogs(),
+        isPlatformAdmin ? supabaseService.getAuditLogs() : Promise.resolve(null),
         supabaseService.getPeerEvaluations(),
       ]);
 
@@ -1674,7 +1660,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     window.addEventListener('focus', handleFocusCheck);
     document.addEventListener('visibilitychange', handleFocusCheck);
-    const pollTimer = setInterval(verifyActiveSession, 12000);
+    const pollTimer = setInterval(verifyActiveSession, 45000);
 
     return () => {
       clearInterval(pollTimer);
@@ -1841,21 +1827,23 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           (rawCurrentUser.email && completedSet.has(rawCurrentUser.email.toLowerCase())) ||
           (digits && (completedSet.has(digits) || completedSet.has(`${digits}@celular.futplay.com`))))));
 
-  const currentUser: User = isAlreadyCompleted
-    ? {
-        ...rawCurrentUser,
-        isTeamOwner: isAdminUser ? false : isOwnerOrCoach ? true : false,
-        role: isAdminUser ? 'admin' : isOwnerOrCoach ? 'coach' : 'player',
-        onboardingCompleted: true,
-        onboardingStep: 4,
-      }
-    : {
-        ...rawCurrentUser,
-        isTeamOwner: isAdminUser ? false : isOwnerOrCoach ? true : false,
-        role: isAdminUser ? 'admin' : isOwnerOrCoach ? 'coach' : 'player',
-        onboardingCompleted: false,
-        onboardingStep: rawCurrentUser.onboardingStep || 1,
-      };
+  const currentUser: User = useMemo(() => {
+    return isAlreadyCompleted
+      ? {
+          ...rawCurrentUser,
+          isTeamOwner: isAdminUser ? false : isOwnerOrCoach ? true : false,
+          role: isAdminUser ? 'admin' : isOwnerOrCoach ? 'coach' : 'player',
+          onboardingCompleted: true,
+          onboardingStep: 4,
+        }
+      : {
+          ...rawCurrentUser,
+          isTeamOwner: isAdminUser ? false : isOwnerOrCoach ? true : false,
+          role: isAdminUser ? 'admin' : isOwnerOrCoach ? 'coach' : 'player',
+          onboardingCompleted: false,
+          onboardingStep: rawCurrentUser.onboardingStep || 1,
+        };
+  }, [rawCurrentUser, isAdminUser, isOwnerOrCoach, isAlreadyCompleted]);
 
   // Contas de administradores nunca participam de jogos e não aparecem em nenhuma lista de atletas
   const adminUserIds = useMemo(() => {
@@ -4548,349 +4536,6 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     return true;
   };
 
-  const saveUserWhatsapp: LeagueContextValue['saveUserWhatsapp'] = (
-    whatsappNumber
-  ) => {
-    const cleaned = whatsappNumber.trim();
-    if (cleaned.length < 8) {
-      notify(
-        'error',
-        'Número inválido',
-        'Informe um número de WhatsApp válido com DDD.'
-      );
-      return false;
-    }
-
-    const now = new Date().toISOString();
-    const wppLog: AuditLog = {
-      id: `audit-wpp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      actorUserId: currentUser.id,
-      actorName: currentPlayerProfile?.displayName || currentUser.email || 'Usuário',
-      actorRole: currentUser.role,
-      actionType: 'CONTATO_WHATSAPP_ATUALIZADO',
-      entityType: 'users',
-      entityId: currentUser.id,
-      reason: `Número de WhatsApp atualizado para: ${cleaned}.`,
-      createdAt: now,
-    };
-    setState((prev) => ({
-      ...prev,
-      users: prev.users.map((u) =>
-        u.id === currentUser.id ? { ...u, whatsappNumber: cleaned } : u
-      ),
-      profiles: prev.profiles.map((p) =>
-        p.userId === currentUser.id
-          ? { ...p, whatsappNumber: cleaned, updatedAt: now }
-          : p
-      ),
-      auditLogs: [wppLog, ...(prev.auditLogs || [])],
-    }));
-
-    notify(
-      'success',
-      'WhatsApp Conectado!',
-      `Você receberá notificações de partidas e ranking no WhatsApp ${cleaned}.`
-    );
-    return true;
-  };
-
-  const saveOnboardingStep1: LeagueContextValue['saveOnboardingStep1'] = ({
-    displayName,
-    avatarUrl,
-  }) => {
-    const trimmedName = displayName.trim();
-    if (trimmedName.length < 2) {
-      notify(
-        'error',
-        'Nome inválido',
-        'Informe seu nome ou apelido esportivo (mínimo 2 letras).'
-      );
-      return false;
-    }
-
-    const now = new Date().toISOString();
-    setState((prev) => ({
-      ...prev,
-      users: prev.users.map((u) =>
-        u.id === currentUser.id
-          ? {
-              ...u,
-              avatarUrl: avatarUrl ?? u.avatarUrl,
-              onboardingStep: Math.max(u.onboardingStep || 1, 2),
-            }
-          : u
-      ),
-      profiles: prev.profiles.map((p) =>
-        p.userId === currentUser.id
-          ? {
-              ...p,
-              displayName: trimmedName,
-              avatarUrl: avatarUrl ?? p.avatarUrl,
-              updatedAt: now,
-            }
-          : p
-      ),
-    }));
-
-    if (isSupabaseConfigured()) {
-      supabaseService.updateProfile(currentUser.id, {
-        displayName: trimmedName,
-        avatarUrl,
-      });
-    }
-
-    notify(
-      'success',
-      'Passo 1 de 3 Concluído!',
-      `Perfil de ${trimmedName} e foto salvos com sucesso.`
-    );
-    return true;
-  };
-
-  const saveOnboardingStep2: LeagueContextValue['saveOnboardingStep2'] = ({
-    mode,
-    teamName,
-    teamCity,
-    teamCrestUrl,
-    teamModality,
-    teamInviteCode,
-    position,
-  }) => {
-    const trimmedTeam = teamName.trim();
-    const trimmedCity = teamCity.trim() || 'Planalto - BA';
-    if (trimmedTeam.length < 2) {
-      notify(
-        'error',
-        'Nome do time inválido',
-        'Informe o nome da sua equipe (mínimo 2 caracteres).'
-      );
-      return false;
-    }
-
-    const modalityLabel: Record<TeamModality, string> = {
-      society: 'Society',
-      futsal: 'Futsal',
-      futebol_areia: 'Futebol de Areia',
-      futebol_campo: 'Futebol de Campo',
-    };
-
-    const generatedCode =
-      teamInviteCode ||
-      `${trimmedTeam
-        .replace(/[^a-zA-Z0-9]/g, '')
-        .slice(0, 4)
-        .toUpperCase() || 'TIME'}-${Math.floor(100 + Math.random() * 900)}`;
-
-    if (mode === 'join') {
-      markFirstAccessCompletedInStorage(currentUser.id, currentUser.email);
-    }
-
-    const now = new Date().toISOString();
-    const onbLog: AuditLog = {
-      id: `audit-onb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      actorUserId: currentUser.id,
-      actorName: currentPlayerProfile?.displayName || currentUser.email || 'Atleta',
-      actorRole: mode === 'create' ? 'coach' : 'player',
-      actionType: mode === 'create' ? 'TIME_CRIADO' : 'TIME_INGRESSOU',
-      entityType: 'teams',
-      entityId: generatedCode,
-      reason:
-        mode === 'create'
-          ? `Criou a equipe "${trimmedTeam}" (${modalityLabel[teamModality]}, ${trimmedCity}) com código de convite ${generatedCode}.`
-          : `Ingressou na equipe "${trimmedTeam}" (${modalityLabel[teamModality]}, ${trimmedCity}).`,
-      createdAt: now,
-    };
-
-    setState((prev) => {
-      // 1. Atualiza ou adiciona o usuário
-      let userUpdated = false;
-      const updatedUsers = prev.users.map((u) => {
-        if (u.id === currentUser.id) {
-          userUpdated = true;
-          return {
-            ...u,
-            teamName: trimmedTeam,
-            teamCity: trimmedCity,
-            teamCrestUrl: teamCrestUrl ?? u.teamCrestUrl,
-            teamModality,
-            teamInviteCode: generatedCode,
-            isTeamOwner: mode === 'create',
-            role: mode === 'create' ? ('coach' as const) : ('player' as const),
-            onboardingStep:
-              mode === 'join' ? 4 : Math.max(u.onboardingStep || 2, 3),
-            onboardingCompleted:
-              mode === 'join' ? true : u.onboardingCompleted,
-          };
-        }
-        return u;
-      });
-
-      if (!userUpdated && currentUser.id) {
-        updatedUsers.push({
-          ...currentUser,
-          teamName: trimmedTeam,
-          teamCity: trimmedCity,
-          teamCrestUrl,
-          teamModality,
-          teamInviteCode: generatedCode,
-          isTeamOwner: mode === 'create',
-          role: mode === 'create' ? 'coach' : 'player',
-          onboardingStep: mode === 'join' ? 4 : 3,
-          onboardingCompleted: mode === 'join',
-        });
-      }
-
-      // 2. Atualiza ou adiciona o perfil do atleta garantindo persistência do código e dono
-      let profileUpdated = false;
-      const updatedProfiles = prev.profiles.map((p) => {
-        if (p.userId === currentUser.id || p.id === currentUser.id) {
-          profileUpdated = true;
-          return {
-            ...p,
-            teamName: trimmedTeam,
-            teamCity: trimmedCity,
-            teamCrestUrl: teamCrestUrl ?? p.teamCrestUrl,
-            teamModality,
-            teamInviteCode: generatedCode,
-            isTeamOwner: mode === 'create',
-            position: position ?? p.position,
-            updatedAt: now,
-          };
-        }
-        return p;
-      });
-
-      if (!profileUpdated && currentUser.id) {
-        updatedProfiles.push({
-          id: `profile-${currentUser.id}`,
-          userId: currentUser.id,
-          displayName: currentPlayerProfile?.displayName || currentUser.email?.split('@')[0] || 'Atleta',
-          avatarUrl: currentUser.avatarUrl,
-          avatarColor: '#126B46',
-          cityId: '11111111-1111-4111-8111-111111111101',
-          neighborhood: 'Centro',
-          position: position || 'atacante',
-          dominantFoot: 'direito',
-          profileVisibility: 'publico',
-          teamName: trimmedTeam,
-          teamCity: trimmedCity,
-          teamCrestUrl,
-          teamModality,
-          teamInviteCode: generatedCode,
-          isTeamOwner: mode === 'create',
-          currentRating: 1000,
-          ratingUncertainty: 100,
-          isProvisional: true,
-          currentDivisionId: 'div-geral',
-          totalValidatedMatches: 0,
-          experimentalPositionScore: null,
-          badges: [],
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-
-      return {
-        ...prev,
-        users: updatedUsers,
-        profiles: updatedProfiles,
-        auditLogs: [onbLog, ...(prev.auditLogs || [])],
-      };
-    });
-
-    // 3. Persistência imediata e dedicada do time em localStorage para reconhecimento instantâneo
-    try {
-      const TEAMS_KEY = 'futplay_registered_teams_v1';
-      const storedRaw = localStorage.getItem(TEAMS_KEY);
-      const storedList = storedRaw ? JSON.parse(storedRaw) : [];
-      const newEntry = {
-        id: `custom-${generatedCode}`,
-        inviteCode: generatedCode.toUpperCase(),
-        name: trimmedTeam,
-        city: trimmedCity,
-        neighborhood: 'Centro',
-        foundedYear: '2026',
-        crestUrl: teamCrestUrl,
-        crestColor: '#1D4ED8',
-        modality: teamModality,
-        modalityLabel: modalityLabel[teamModality],
-        ownerName:
-          currentPlayerProfile?.displayName ||
-          currentUser.email?.split('@')[0] ||
-          'Dono do Time',
-        ownerUserId: currentUser.id,
-        roster: [],
-      };
-      const filtered = (storedList || []).filter(
-        (t: any) =>
-          (t.inviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() !==
-          generatedCode.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
-      );
-      localStorage.setItem(TEAMS_KEY, JSON.stringify([newEntry, ...filtered]));
-
-      if (teamCrestUrl) {
-        try {
-          const rawC = localStorage.getItem('futplay_team_crests_v1');
-          const parsedC = rawC ? JSON.parse(rawC) : {};
-          parsedC[trimmedTeam.toLowerCase()] = teamCrestUrl;
-          localStorage.setItem('futplay_team_crests_v1', JSON.stringify(parsedC));
-        } catch {}
-      }
-    } catch (e) {
-      console.warn('Erro ao salvar time na chave dedicada:', e);
-    }
-
-    if (isSupabaseConfigured()) {
-      supabaseService.recordAuditLogInSupabase(onbLog).catch(() => {});
-      if (currentUser?.id) {
-        supabaseService.updateProfile(currentUser.id, {
-          position: position || undefined,
-          teamName: trimmedTeam,
-          teamCity: trimmedCity,
-          teamCrestUrl: teamCrestUrl || undefined,
-          teamModality,
-          teamInviteCode: generatedCode,
-          isTeamOwner: mode === 'create',
-        });
-      }
-    }
-
-    notify(
-      'success',
-      mode === 'create'
-        ? `Time "${trimmedTeam}" Criado! Código: ${generatedCode}`
-        : `Entrada Confirmada no "${trimmedTeam}"!`,
-      mode === 'create'
-        ? `Agora convide seus jogadores compartilhando o código ${generatedCode} ou o link do time.`
-        : `Bem-vindo ao elenco do ${trimmedTeam} · ${modalityLabel[teamModality]} (${trimmedCity}).`
-    );
-    return true;
-  };
-
-  const saveOnboardingStep3: LeagueContextValue['saveOnboardingStep3'] = () => {
-    markFirstAccessCompletedInStorage(currentUser.id, currentUser.email);
-
-    setState((prev) => ({
-      ...prev,
-      users: prev.users.map((u) =>
-        u.id === currentUser.id
-          ? {
-              ...u,
-              onboardingStep: 4,
-              onboardingCompleted: true,
-            }
-          : u
-      ),
-    }));
-
-    notify(
-      'success',
-      'Primeiro Acesso Concluído!',
-      'Seu perfil e sua equipe estão prontos na Liga de Planalto - BA.'
-    );
-    return true;
-  };
-
   const updatePlayerStatsManually: LeagueContextValue['updatePlayerStatsManually'] = (params) => {
     const { playerId, statsUpdates, profileUpdates, reason, actorUserId, actorName } = params;
 
@@ -5171,10 +4816,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     return true;
   };
 
-  return (
-    <LeagueContext.Provider
-      value={{
-        ...state,
+    const contextValue = useMemo<LeagueContextValue>(() => ({
+    ...state,
         profiles: athleteProfiles,
         seasonEntries: athleteSeasonEntries,
         currentUser,
@@ -5195,10 +4838,6 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         updateTeamInfo,
         deleteUserAccount,
         updatePlayerSkills,
-        saveUserWhatsapp,
-        saveOnboardingStep1,
-        saveOnboardingStep2,
-        saveOnboardingStep3,
         createCommunityMatch,
         submitMatchScoreAndEvents,
         confirmMatchResult,
@@ -5219,8 +4858,21 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         recordAuditLog,
         updatePlayerStatsManually,
         playerAdjustments: state.playerAdjustments || [],
-      }}
-    >
+  }), [
+    state,
+    athleteProfiles,
+    athleteSeasonEntries,
+    currentUser,
+    currentPlayerProfile,
+    selectedCityId,
+    selectedSeasonId,
+    notification,
+    isCloudSyncReady,
+    sumulaStopwatch,
+  ]);
+
+  return (
+    <LeagueContext.Provider value={contextValue}>
       {children}
     </LeagueContext.Provider>
   );
