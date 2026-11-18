@@ -189,6 +189,12 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
   });
 
   useEffect(() => {
+    if (initialPlayerId !== undefined) {
+      setInspectingPlayerId(initialPlayerId);
+    }
+  }, [initialPlayerId]);
+
+  useEffect(() => {
     try {
       if (inspectingPlayerId) {
         sessionStorage.setItem('futplay_squad_inspecting_id_v1', inspectingPlayerId);

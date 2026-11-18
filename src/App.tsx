@@ -148,21 +148,9 @@ const MainMobileShell: React.FC = () => {
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Fecha o menu de opções do perfil ao clicar fora ou pressionar Escape
+  // Fecha o menu de opções do perfil ao pressionar Escape
   useEffect(() => {
     if (!showProfileMenu) return;
-
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node;
-      if (
-        profileMenuRef.current &&
-        !profileMenuRef.current.contains(target) &&
-        profileButtonRef.current &&
-        !profileButtonRef.current.contains(target)
-      ) {
-        setShowProfileMenu(false);
-      }
-    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -170,13 +158,8 @@ const MainMobileShell: React.FC = () => {
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown, { passive: true });
     window.addEventListener('keydown', handleKeyDown);
-
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [showProfileMenu]);
@@ -521,79 +504,88 @@ const MainMobileShell: React.FC = () => {
                 )}
               </button>
 
-              {/* Menu Suspenso do Perfil (Calibrado para Celular) */}
+              {/* Menu Suspenso do Perfil (Com backdrop invisível de alta sensibilidade) */}
               {showProfileMenu && (
-                <div
-                  ref={profileMenuRef}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute right-0 top-12 z-[100] w-64 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-2xl ring-1 ring-black/10 transition-all text-slate-800"
-                  style={{
-                    backgroundColor: '#ffffff',
-                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.15)',
-                  }}
-                >
-                  {/* Cabeçalho do Perfil Compacto */}
-                  <div className="flex items-center gap-2.5 border-b border-slate-100 pb-2">
-                    {userAvatarUrl ? (
-                      <img
-                        src={userAvatarUrl}
-                        alt={userDisplayName}
-                        className="h-9 w-9 rounded-full object-cover border border-blue-600 shrink-0"
-                      />
-                    ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-white font-bold text-xs shrink-0">
-                        {userDisplayName.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-xs text-slate-900 truncate">
-                          {userDisplayName}
-                        </span>
-                        <span
-                          className={`inline-block rounded px-1 py-0.2 text-[9px] font-bold ${
-                            isCoach
-                              ? 'bg-amber-100 text-amber-800'
-                              : isAdmin
-                                ? 'bg-purple-100 text-purple-800'
-                                : 'bg-blue-100 text-blue-800'
-                          }`}
-                        >
-                          {isCoach ? 'Técnico' : isAdmin ? 'Admin' : 'Jogador'}
-                        </span>
-                      </div>
-                      <span className="block text-[10px] text-slate-500 truncate">
-                        {userTeamName}
-                      </span>
-                    </div>
-                  </div>
+                <>
+                  {/* Backdrop invisível fixo: garante fechamento suave ao clicar fora sem conflito de touchstart */}
+                  <div
+                    className="fixed inset-0 z-40 bg-transparent"
+                    onClick={() => setShowProfileMenu(false)}
+                    onTouchStart={() => setShowProfileMenu(false)}
+                    aria-hidden="true"
+                  />
 
-                  {/* Ações Rápidas Reorganizadas */}
-                  <div className="py-1.5 space-y-1">
-                    {isAdmin ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowProfileMenu(false);
-                          handleNavigate('admin');
-                        }}
-                        className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 active:bg-purple-200 transition text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2">
-                          <ShieldCheck className="h-4 w-4 text-purple-600" />
-                          <span>Painel do Administrador</span>
+                  <div
+                    ref={profileMenuRef}
+                    className="absolute right-0 top-12 z-50 w-64 rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-2xl ring-1 ring-black/10 transition-all text-slate-800"
+                    style={{
+                      backgroundColor: '#ffffff',
+                      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.15)',
+                    }}
+                  >
+                    {/* Cabeçalho do Perfil Compacto */}
+                    <div className="flex items-center gap-2.5 border-b border-slate-100 pb-2">
+                      {userAvatarUrl ? (
+                        <img
+                          src={userAvatarUrl}
+                          alt={userDisplayName}
+                          className="h-9 w-9 rounded-full object-cover border border-blue-600 shrink-0"
+                        />
+                      ) : (
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-white font-bold text-xs shrink-0">
+                          {userDisplayName.slice(0, 2).toUpperCase()}
                         </div>
-                        <span className="font-mono text-[9px] font-black text-purple-700 bg-purple-200/80 px-1.5 py-0.5 rounded-full">
-                          ADMIN
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-xs text-slate-900 truncate">
+                            {userDisplayName}
+                          </span>
+                          <span
+                            className={`inline-block rounded px-1 py-0.2 text-[9px] font-bold ${
+                              isCoach
+                                ? 'bg-amber-100 text-amber-800'
+                                : isAdmin
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            {isCoach ? 'Técnico' : isAdmin ? 'Admin' : 'Jogador'}
+                          </span>
+                        </div>
+                        <span className="block text-[10px] text-slate-500 truncate">
+                          {userTeamName}
                         </span>
-                      </button>
-                    ) : (
+                      </div>
+                    </div>
+
+                    {/* Ações Rápidas Disponíveis */}
+                    <div className="py-1.5 space-y-1">
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowProfileMenu(false);
+                            setShowMonthlyFeesPage(false);
+                            handleNavigate('admin');
+                          }}
+                          className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 active:bg-purple-200 transition text-left cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className="h-4 w-4 text-purple-600" />
+                            <span>Painel do Administrador</span>
+                          </div>
+                          <span className="font-mono text-[9px] font-black text-purple-700 bg-purple-200/80 px-1.5 py-0.5 rounded-full">
+                            ADMIN
+                          </span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => {
                           setShowProfileMenu(false);
+                          setShowMonthlyFeesPage(false);
                           if (currentPlayerProfile) {
                             handleNavigate('squad', undefined, currentPlayerProfile.id);
                           } else {
@@ -605,9 +597,7 @@ const MainMobileShell: React.FC = () => {
                         <UserCircle2 className="h-4 w-4 text-blue-600" />
                         <span>Meu Perfil & Card</span>
                       </button>
-                    )}
 
-                    {!isAdmin && (
                       <button
                         type="button"
                         onClick={() => {
@@ -618,33 +608,33 @@ const MainMobileShell: React.FC = () => {
                       >
                         <div className="flex items-center gap-2">
                           <Wallet className="h-4 w-4 text-emerald-600" />
-                          <span>Financeiro</span>
+                          <span>Mensalidades & Caixa</span>
                         </div>
                         <span className="font-mono text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                          Caixa & Extrato
+                          Financeiro
                         </span>
                       </button>
-                    )}
-                  </div>
+                    </div>
 
-                  {/* Ações da Conta: Sair */}
-                  <div className="border-t border-slate-100 pt-1 mt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        logoutUser();
-                        setShowMonthlyFeesPage(false);
-                        setActiveTab('dashboard');
-                        setIsAuthenticated(false);
-                        setShowProfileMenu(false);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 active:bg-rose-100 transition text-left cursor-pointer"
-                    >
-                      <LogOut className="h-4 w-4 text-rose-500" />
-                      <span>Sair da Conta</span>
-                    </button>
+                    {/* Ações da Conta: Sair */}
+                    <div className="border-t border-slate-100 pt-1 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          logoutUser();
+                          setShowMonthlyFeesPage(false);
+                          setActiveTab('dashboard');
+                          setIsAuthenticated(false);
+                          setShowProfileMenu(false);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 active:bg-rose-100 transition text-left cursor-pointer"
+                      >
+                        <LogOut className="h-4 w-4 text-rose-500" />
+                        <span>Sair da Conta</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>

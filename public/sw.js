@@ -1,5 +1,5 @@
 // FUTPLAY LITE — Service Worker Oficial PWA
-const CACHE_NAME = 'futplay-lite-v14';
+const CACHE_NAME = 'futplay-lite-v15';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
