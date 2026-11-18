@@ -155,23 +155,6 @@ export const AdminAndHomologationView: React.FC<
     if (masterKeys.includes(trimmed.toLowerCase())) {
       return true;
     }
-    try {
-      const stored = JSON.parse(
-        localStorage.getItem('futplay_user_passwords') || '{}'
-      );
-      const expected =
-        stored[currentUser.id] ||
-        (currentUser.email ? stored[currentUser.email.toLowerCase()] : undefined) ||
-        (currentUser.whatsappNumber
-          ? stored[currentUser.whatsappNumber.replace(/\D/g, '')]
-          : undefined);
-
-      if (expected && expected === trimmed) {
-        return true;
-      }
-    } catch {
-      // Ignora erro
-    }
     return false;
   };
 
