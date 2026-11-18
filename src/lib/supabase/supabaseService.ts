@@ -1687,14 +1687,35 @@ export const supabaseService = {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
       const nowIso = new Date().toISOString();
-      const { error } = await supabase.from('team_schedules').upsert(
-        {
-          scheduled_date: config.date,
-          start_time: config.time,
-          venue_name: config.venueName,
-          neighborhood: config.neighborhood,
-          updated_at: nowIso,
+      let teamId: string | null = null;
+      const cleanName = (teamName || '').trim();
+      if (cleanName && cleanName !== 'Meu Time' && cleanName !== 'Sem Time') {
+        const { data: teamData } = await supabase
+          .from('teams')
+          .select('id')
+          .ilike('name', cleanName)
+          .limit(1)
+          .maybeSingle();
+        if (teamData?.id) {
+          teamId = teamData.id;
         }
+      }
+
+      const payload: Record<string, any> = {
+        scheduled_date: config.date,
+        start_time: config.time,
+        venue_name: config.venueName,
+        neighborhood: config.neighborhood,
+        updated_at: nowIso,
+      };
+
+      if (teamId) {
+        payload.team_id = teamId;
+      }
+
+      const { error } = await supabase.from('team_schedules').upsert(
+        payload,
+        teamId ? { onConflict: 'team_id' } : undefined
       );
       return !error;
     } catch (err) {

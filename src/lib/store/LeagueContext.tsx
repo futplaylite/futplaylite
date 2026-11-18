@@ -548,9 +548,9 @@ function getInitialState(): LeagueState {
         .map((p) => {
           const tKey = (p.teamName || '').trim().toLowerCase();
           const ro = (p.userId ? roleOverrides[p.userId] : undefined) || roleOverrides[p.id];
-          const isCoach = Boolean(
+          const isExplicitPlayer = ro?.role === 'player' || ro?.role === 'athlete';
+          const isCoach = !isExplicitPlayer && Boolean(
             ro?.role === 'coach' ||
-            ro?.isTeamOwner ||
             p.role === 'coach' ||
             p.isCoach ||
             p.isTeamOwner
@@ -558,7 +558,7 @@ function getInitialState(): LeagueState {
           return {
             ...p,
             teamCrestUrl: p.teamCrestUrl || (tKey ? cachedCrests[tKey] : undefined),
-            role: isCoach ? ('coach' as UserRole) : ((ro?.role || p.role || 'player') as UserRole),
+            role: isCoach ? ('coach' as UserRole) : ('player' as UserRole),
             isCoach,
             isTeamOwner: isCoach,
           };
@@ -567,11 +567,12 @@ function getInitialState(): LeagueState {
       const cleanUsers = (parsed.users || []).map((u) => {
         const tKey = (u.teamName || '').trim().toLowerCase();
         const ro = roleOverrides[u.id];
-        const isCoach = Boolean(ro?.role === 'coach' || ro?.isTeamOwner || u.role === 'coach' || u.isTeamOwner);
+        const isExplicitPlayer = ro?.role === 'player' || ro?.role === 'athlete';
+        const isCoach = !isExplicitPlayer && Boolean(ro?.role === 'coach' || u.role === 'coach' || u.isTeamOwner);
         return {
           ...u,
           teamCrestUrl: u.teamCrestUrl || (tKey ? cachedCrests[tKey] : undefined),
-          role: u.role === 'admin' ? ('admin' as UserRole) : isCoach ? ('coach' as UserRole) : ((ro?.role || u.role || 'player') as UserRole),
+          role: u.role === 'admin' ? ('admin' as UserRole) : isCoach ? ('coach' as UserRole) : ('player' as UserRole),
           isTeamOwner: u.role === 'admin' ? false : isCoach,
         };
       });
@@ -1000,19 +1001,21 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
             const roleOverrides = getStoredRoleOverrides();
             const ro = (ru.id ? roleOverrides[ru.id] : undefined) || (loc?.id ? roleOverrides[loc.id] : undefined);
+            const isExplicitPlayer = ro?.role === 'player' || ro?.role === 'athlete';
             const isOwner =
-              ro?.role === 'coach' ||
-              ro?.isTeamOwner === true ||
-              loc?.isTeamOwner === true ||
-              ru.isTeamOwner === true ||
-              ru.role === 'coach' ||
-              loc?.role === 'coach';
-            const role =
-              loc?.role === 'admin' || ru.role === 'admin'
+              !isExplicitPlayer &&
+              (ro?.role === 'coach' ||
+                ro?.isTeamOwner === true ||
+                ru.role === 'coach' ||
+                ru.isTeamOwner === true ||
+                loc?.role === 'coach' ||
+                loc?.isTeamOwner === true);
+            const role: UserRole =
+              ru.role === 'admin' || loc?.role === 'admin' || ro?.role === 'admin'
                 ? 'admin'
                 : isOwner
                 ? 'coach'
-                : ru.role || loc?.role || 'player';
+                : 'player';
 
             // Se o usuário local tinha ID temporário mas foi vinculado ao Supabase pelo e-mail,
             // migra o currentUserId para o ID oficial do Supabase
@@ -1216,24 +1219,26 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               (loc?.id ? roleOverrides[loc.id] : undefined) ||
               (loc?.userId ? roleOverrides[loc.userId] : undefined);
 
+            const isExplicitPlayer = profOverride?.role === 'player' || profOverride?.role === 'athlete';
             const isCoachOrOwner =
-              profOverride?.role === 'coach' ||
-              profOverride?.isTeamOwner === true ||
-              loc?.isCoach === true ||
-              loc?.role === 'coach' ||
-              rp.isCoach === true ||
-              rp.role === 'coach' ||
-              rp.isTeamOwner === true ||
-              matchingUser?.role === 'coach' ||
-              matchingUser?.isTeamOwner === true ||
-              loc?.isTeamOwner === true;
+              !isExplicitPlayer &&
+              (profOverride?.role === 'coach' ||
+                profOverride?.isTeamOwner === true ||
+                rp.role === 'coach' ||
+                rp.isCoach === true ||
+                rp.isTeamOwner === true ||
+                matchingUser?.role === 'coach' ||
+                matchingUser?.isTeamOwner === true ||
+                loc?.role === 'coach' ||
+                loc?.isCoach === true ||
+                loc?.isTeamOwner === true);
 
             const effectiveRole: UserRole =
-              loc?.role === 'admin' || matchingUser?.role === 'admin'
+              loc?.role === 'admin' || matchingUser?.role === 'admin' || profOverride?.role === 'admin'
                 ? 'admin'
                 : isCoachOrOwner
                 ? 'coach'
-                : rp.role || loc?.role || 'player';
+                : 'player';
 
             return {
               ...loc,
@@ -1811,13 +1816,16 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const roleOverrides = getStoredRoleOverrides();
   const userOverride = effectiveAuthId ? roleOverrides[effectiveAuthId] : undefined;
+  const isExplicitPlayer = userOverride?.role === 'player' || userOverride?.role === 'athlete';
 
-  const isOwnerOrCoach = Boolean(
-    userOverride?.role === 'coach' ||
-    userOverride?.isTeamOwner ||
-    rawCurrentUser.isTeamOwner ||
-    rawCurrentUser.role === 'coach'
-  );
+  const isOwnerOrCoach =
+    !isExplicitPlayer &&
+    Boolean(
+      userOverride?.role === 'coach' ||
+        userOverride?.isTeamOwner ||
+        rawCurrentUser.isTeamOwner ||
+        rawCurrentUser.role === 'coach'
+    );
   const isAdminUser = rawCurrentUser.role === 'admin' || userOverride?.role === 'admin';
 
   // Um usuário só pula o onboarding se for admin, dono de time/treinador, ou tiver time vinculado.
@@ -1836,25 +1844,15 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
   const currentUser: User = isAlreadyCompleted
     ? {
         ...rawCurrentUser,
-        isTeamOwner: isAdminUser ? false : isOwnerOrCoach ? true : Boolean(rawCurrentUser.isTeamOwner),
-        role:
-          isAdminUser
-            ? 'admin'
-            : isOwnerOrCoach
-            ? 'coach'
-            : rawCurrentUser.role || 'player',
+        isTeamOwner: isAdminUser ? false : isOwnerOrCoach ? true : false,
+        role: isAdminUser ? 'admin' : isOwnerOrCoach ? 'coach' : 'player',
         onboardingCompleted: true,
         onboardingStep: 4,
       }
     : {
         ...rawCurrentUser,
-        isTeamOwner: isAdminUser ? false : isOwnerOrCoach ? true : Boolean(rawCurrentUser.isTeamOwner),
-        role:
-          isAdminUser
-            ? 'admin'
-            : isOwnerOrCoach
-            ? 'coach'
-            : rawCurrentUser.role || 'player',
+        isTeamOwner: isAdminUser ? false : isOwnerOrCoach ? true : false,
+        role: isAdminUser ? 'admin' : isOwnerOrCoach ? 'coach' : 'player',
         onboardingCompleted: false,
         onboardingStep: rawCurrentUser.onboardingStep || 1,
       };
@@ -1889,15 +1887,18 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       .map((p) => {
         const matchingUser = p.userId ? userByUserId.get(p.userId) : undefined;
         const override = (p.userId ? activeOverrides[p.userId] : undefined) || activeOverrides[p.id];
-        const isCoach = Boolean(
-          override?.role === 'coach' ||
-          override?.isTeamOwner ||
-          p.role === 'coach' ||
-          p.isCoach ||
-          p.isTeamOwner ||
-          matchingUser?.role === 'coach' ||
-          matchingUser?.isTeamOwner
-        );
+        const isExplicitPlayer = override?.role === 'player' || override?.role === 'athlete';
+        const isCoach =
+          !isExplicitPlayer &&
+          Boolean(
+            override?.role === 'coach' ||
+              override?.isTeamOwner ||
+              p.role === 'coach' ||
+              p.isCoach ||
+              p.isTeamOwner ||
+              matchingUser?.role === 'coach' ||
+              matchingUser?.isTeamOwner
+          );
 
         if (isCoach) {
           return {
@@ -1907,7 +1908,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             isTeamOwner: true,
           };
         }
-        return p;
+        return {
+          ...p,
+          role: 'player' as UserRole,
+          isCoach: false,
+          isTeamOwner: false,
+        };
       });
   }, [state.profiles, state.users, adminUserIds]);
 
@@ -1932,16 +1938,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       (p: PlayerProfile) => p.userId === currentUser.id || p.id === currentUser.id
     );
     if (!base) return undefined;
-    const isCoachOrOwner = Boolean(
-      currentUser.role === 'coach' ||
-      currentUser.isTeamOwner ||
-      base.role === 'coach' ||
-      base.isTeamOwner ||
-      base.isCoach
-    );
+    const isCoachOrOwner = currentUser.role === 'coach';
     return {
       ...base,
-      role: isCoachOrOwner ? ('coach' as UserRole) : base.role,
+      role: isCoachOrOwner ? ('coach' as UserRole) : ('player' as UserRole),
       isCoach: isCoachOrOwner,
       isTeamOwner: isCoachOrOwner,
     };

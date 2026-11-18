@@ -1,4 +1,4 @@
-export type UserRole = 'player' | 'coach' | 'admin' | 'moderator';
+export type UserRole = 'player' | 'athlete' | 'coach' | 'admin' | 'moderator';
 export type AccountStatus = 'ativa' | 'suspensa' | 'encerrada';
 export type PlayerPosition = 'goleiro' | 'defensor' | 'meio-campista' | 'atacante' | 'multiplas';
 export type DominantFoot = 'direito' | 'esquerdo' | 'ambos';

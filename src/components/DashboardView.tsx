@@ -354,14 +354,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   });
 
-  const isCoach =
-    currentUser?.role === 'coach' ||
-    currentUser?.role === 'admin' ||
-    currentUser?.isTeamOwner === true ||
-    currentPlayerProfile?.isTeamOwner === true ||
-    currentUser?.id === 'user-paredao';
+  const isCoach = currentUser?.role === 'coach';
   const isAdmin = currentUser?.role === 'admin';
-  const canRenewSuperCapasPhoto = isCoach || isAdmin;
+  const isCoachOrAdmin = isCoach || isAdmin;
+  const canRenewSuperCapasPhoto = isCoachOrAdmin;
 
   const normalizeText = (text: string) =>
     (text || '')
@@ -1615,8 +1611,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span>{compactTodayFormatted}</span>
           </div>
 
-          {/* Botão para o Treinador Ajustar Data e Dia Semanal do Baba */}
-          {isCoach && (
+          {/* Botão para o Treinador ou Administrador Ajustar Data e Dia Semanal do Baba */}
+          {isCoachOrAdmin && (
             <button
               type="button"
               onClick={() => {

@@ -716,19 +716,23 @@ export const AuthLoginView: React.FC<AuthLoginViewProps> = ({
         (localUser?.id ? roleOverrides[localUser.id] : undefined) ||
         (matchedProfile?.id ? roleOverrides[matchedProfile.id] : undefined);
 
-      const isOwner =
-        ro?.role === 'coach' ||
-        ro?.isTeamOwner === true ||
-        existingUser.role === 'coach' ||
-        existingUser.isTeamOwner === true ||
-        Boolean(localUser?.isTeamOwner || localUser?.role === 'coach' || matchedProfile?.isTeamOwner || matchedProfile?.role === 'coach' || localProfile?.isTeamOwner);
+      const isExplicitPlayer = ro?.role === 'player' || ro?.role === 'athlete';
+      let finalRole: UserRole = 'player';
+      if (existingUser.role === 'admin' || localUser?.role === 'admin' || ro?.role === 'admin') {
+        finalRole = 'admin';
+      } else if (
+        !isExplicitPlayer &&
+        (ro?.role === 'coach' ||
+          existingUser.role === 'coach' ||
+          localUser?.role === 'coach' ||
+          matchedProfile?.role === 'coach')
+      ) {
+        finalRole = 'coach';
+      } else {
+        finalRole = 'player';
+      }
 
-      const finalRole: UserRole =
-        existingUser.role === 'admin' || localUser?.role === 'admin'
-          ? 'admin'
-          : isOwner || existingUser.role === 'coach' || ro?.role === 'coach'
-          ? 'coach'
-          : existingUser.role || localUser?.role || 'player';
+      const isOwner = finalRole === 'coach';
 
       const finalTeamName = existingUser.teamName || localUser?.teamName || matchedProfile?.teamName || localProfile?.teamName;
       const finalTeamCode = existingUser.teamInviteCode || localUser?.teamInviteCode || matchedProfile?.teamInviteCode || localProfile?.teamInviteCode;

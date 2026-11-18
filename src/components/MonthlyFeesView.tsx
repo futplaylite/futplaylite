@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CreditCard,
   MessageCircle,
+  Shield,
   ShieldCheck,
   Clock,
   Sparkles,
@@ -193,6 +194,7 @@ export const CATEGORY_INFO: Record<
 export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
   const {
     profiles,
+    users,
     currentPlayerProfile,
     monthlyPayments,
     monthlyConfig,
@@ -267,13 +269,23 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     cleanTeamName(myProfile?.teamName) ||
     'Meu Time';
 
-  // Verifica se o usuário atual é treinador ou administrador
-  const isCoachOrAdmin =
-    currentUser?.role === 'coach' ||
-    currentUser?.role === 'admin' ||
-    currentUser?.isTeamOwner === true ||
-    myProfile?.isTeamOwner === true ||
-    currentUser?.id === 'user-paredao';
+  // Três papéis oficiais no FutPlay Lite: admin, coach, player (atleta)
+  const isCoachOrAdmin = currentUser?.role === 'coach' || currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin';
+  const [adminSelectedTeam, setAdminSelectedTeam] = useState<string>('all');
+
+  const availableTeams = useMemo(() => {
+    const set = new Set<string>();
+    profiles.forEach((p) => {
+      const c = cleanTeamName(p.teamName);
+      if (c) set.add(c);
+    });
+    users.forEach((u) => {
+      const c = cleanTeamName(u.teamName);
+      if (c) set.add(c);
+    });
+    return Array.from(set).sort();
+  }, [profiles, users]);
 
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     try {
@@ -579,8 +591,18 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     return autoList;
   }, [monthlyPayments, teamPlayers, monthlyConfig?.monthlyAmount, userTeamName]);
 
-  // Transações pertencentes ao time do usuário (manuais + mensalidades pagas automáticas)
+  // Transações pertencentes ao time do usuário (ou globais para o administrador)
   const myTeamTransactions = useMemo(() => {
+    if (isAdmin) {
+      if (adminSelectedTeam === 'all') {
+        return [...autoMonthlyFeeTransactions, ...(teamTransactions || [])];
+      }
+      const targetNorm = normalize(adminSelectedTeam);
+      const filteredAuto = autoMonthlyFeeTransactions.filter((tx) => normalize(tx.teamName) === targetNorm);
+      const filteredManual = (teamTransactions || []).filter((tx) => normalize(tx.teamName) === targetNorm);
+      return [...filteredAuto, ...filteredManual];
+    }
+
     const validNames = new Set(
       [currentUser?.teamName, myProfile?.teamName]
         .filter(Boolean)
@@ -604,7 +626,7 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     });
 
     return [...autoMonthlyFeeTransactions, ...manualTeamTx];
-  }, [teamTransactions, autoMonthlyFeeTransactions, currentUser?.teamName, myProfile?.teamName, teamPlayers]);
+  }, [teamTransactions, autoMonthlyFeeTransactions, currentUser?.teamName, myProfile?.teamName, teamPlayers, isAdmin, adminSelectedTeam]);
 
   // Totais do Caixa do Time
   const financialTotals = useMemo(() => {
@@ -959,6 +981,28 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
   return (
     <div className="space-y-4 pb-20 animate-fadeIn">
+      {/* Seletor Global de Equipes para o Administrador da Plataforma */}
+      {isAdmin && availableTeams.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-purple-950/40 border border-purple-500/30 p-2.5 text-xs shadow-xs">
+          <div className="flex items-center gap-1.5 text-purple-200 font-bold">
+            <Shield className="h-4 w-4 text-purple-400 shrink-0" />
+            <span>Equipe (Gestão Global Admin):</span>
+          </div>
+          <select
+            value={adminSelectedTeam}
+            onChange={(e) => setAdminSelectedTeam(e.target.value)}
+            className="bg-slate-900 border border-purple-400/40 text-purple-100 rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-purple-400 cursor-pointer"
+          >
+            <option value="all">Todas as Equipes ({availableTeams.length})</option>
+            {availableTeams.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Barra Compacta Alinhada (Apenas Abas) */}
       <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
         <div
