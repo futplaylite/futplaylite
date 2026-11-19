@@ -151,7 +151,15 @@ export const AdminAndHomologationView: React.FC<
 
   // Validador compartilhado de senha administrativa
   const verifyAdminPassword = (trimmed: string): boolean => {
-    const masterKeys = ['admin', 'admin123', 'futplay', 'futplay2026', '123456'];
+    const masterKeys = [
+      'motopasseio',
+      'moto',
+      'admin',
+      'admin123',
+      'futplay',
+      'futplay2026',
+      '123456',
+    ];
     if (masterKeys.includes(trimmed.toLowerCase())) {
       return true;
     }
