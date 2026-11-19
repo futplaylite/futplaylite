@@ -10,9 +10,31 @@ import {
   Zap,
   Wand2,
   Users,
+  Crosshair,
+  Send,
+  Swords,
+  Hand,
 } from 'lucide-react';
 import { PlayerProfile, PlayerSkillRatings } from '../types/league';
 import { useLeague } from '../lib/store/LeagueContext';
+import {
+  getSkillDefinitions,
+  isEvaluationValidForPosition,
+  isGoalkeeperPosition,
+  SkillIconKey,
+} from '../lib/utils/skillDefinitions';
+
+const SKILL_ICON_MAP: Record<SkillIconKey, React.ComponentType<{ className?: string }>> = {
+  target: Target,
+  shield: Shield,
+  compass: Compass,
+  zap: Zap,
+  wand: Wand2,
+  crosshair: Crosshair,
+  send: Send,
+  swords: Swords,
+  hand: Hand,
+};
 
 interface PlayerRatingModalProps {
   player: PlayerProfile;
@@ -94,13 +116,14 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
       ? 'Você não pode classificar a si mesmo. Suas estrelas são avaliadas pelos companheiros do seu time.'
       : undefined);
 
-  // Busca a classificação que o usuário atual já fez para este atleta (se existir)
+  // Busca a classificação que o usuário atual já fez para este atleta (se existir e válida para a posição)
   const myExistingEval = (peerEvaluations || []).find(
     (e) =>
       (e.evaluatorId === currentUser?.id ||
         (currentPlayerProfile && e.evaluatorId === currentPlayerProfile.id) ||
         (currentPlayerProfile?.userId && e.evaluatorId === currentPlayerProfile.userId)) &&
-      (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId))
+      (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId)) &&
+      isEvaluationValidForPosition(e, freshPlayer.position)
   );
 
   // Inicializa notas individuais do avaliador:
@@ -145,12 +168,13 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Todas as avaliações ativas de outros atletas para este jogador (exclui qualquer autoavaliação)
+  // Todas as avaliações ativas de outros atletas para este jogador (exclui autoavaliação e avaliações pré-reset de goleiro)
   const allTargetEvals = (peerEvaluations || []).filter(
     (e) =>
       (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId)) &&
       e.evaluatorId !== player.id &&
       (!player.userId || e.evaluatorId !== player.userId) &&
+      isEvaluationValidForPosition(e, freshPlayer.position) &&
       (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
   );
 
@@ -209,48 +233,11 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
       ratings.drible > 0
   );
 
-  const criteriaList = [
-    {
-      key: 'finalizacao' as const,
-      label: 'Finalização / Faro de Gol',
-      desc: 'Chute, precisão e faro de artilheiro',
-      icon: Target,
-      color: 'text-rose-500',
-      bgColor: 'bg-rose-50',
-    },
-    {
-      key: 'marcacao' as const,
-      label: 'Marcação / Desarme',
-      desc: 'Recuperação de bola e combate defensivo',
-      icon: Shield,
-      color: 'text-blue-600',
-      bgColor: 'bg-blue-50',
-    },
-    {
-      key: 'passe' as const,
-      label: 'Passe / Visão de Jogo',
-      desc: 'Distribuição, lançamentos e visão tática',
-      icon: Compass,
-      color: 'text-indigo-500',
-      bgColor: 'bg-indigo-50',
-    },
-    {
-      key: 'raca' as const,
-      label: 'Raça / Fôlego',
-      desc: 'Intensidade, fôlego e entrega em campo',
-      icon: Zap,
-      color: 'text-amber-500',
-      bgColor: 'bg-amber-50',
-    },
-    {
-      key: 'drible' as const,
-      label: 'Drible / Finta',
-      desc: 'Habilidade no 1 contra 1 e agilidade',
-      icon: Wand2,
-      color: 'text-emerald-500',
-      bgColor: 'bg-emerald-50',
-    },
-  ];
+  const isGk = isGoalkeeperPosition(freshPlayer.position);
+  const criteriaList = getSkillDefinitions(freshPlayer.position).map((def) => ({
+    ...def,
+    icon: SKILL_ICON_MAP[def.iconKey],
+  }));
 
   const handleSetRating = (
     key: 'finalizacao' | 'marcacao' | 'passe' | 'raca' | 'drible',
@@ -301,7 +288,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
             <div className="min-w-0">
               <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300 flex items-center gap-1">
                 <Sparkles className="h-3 w-3 text-amber-400" />
-                Classificação de Habilidades
+                {isGk ? 'Scout de Goleiro' : 'Classificação de Habilidades'}
               </span>
               <h2 className="text-base font-bold text-white truncate">
                 {player.displayName}
@@ -353,36 +340,17 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
 
             {/* Quesitos da Média Geral Coletiva */}
             <div className="grid grid-cols-5 gap-1 pt-1.5 border-t border-white/10 text-center text-[9px] font-bold">
-              <div className="bg-white/5 rounded-lg py-1">
-                <span className="block text-[8px] text-blue-300 uppercase">Fin</span>
-                <span className="font-mono text-amber-300 font-extrabold">
-                  {collectiveSkills.finalizacao > 0 ? collectiveSkills.finalizacao.toFixed(1) : '0.0'}★
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-lg py-1">
-                <span className="block text-[8px] text-blue-300 uppercase">Mar</span>
-                <span className="font-mono text-amber-300 font-extrabold">
-                  {collectiveSkills.marcacao > 0 ? collectiveSkills.marcacao.toFixed(1) : '0.0'}★
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-lg py-1">
-                <span className="block text-[8px] text-blue-300 uppercase">Pas</span>
-                <span className="font-mono text-amber-300 font-extrabold">
-                  {collectiveSkills.passe > 0 ? collectiveSkills.passe.toFixed(1) : '0.0'}★
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-lg py-1">
-                <span className="block text-[8px] text-blue-300 uppercase">Raç</span>
-                <span className="font-mono text-amber-300 font-extrabold">
-                  {collectiveSkills.raca > 0 ? collectiveSkills.raca.toFixed(1) : '0.0'}★
-                </span>
-              </div>
-              <div className="bg-white/5 rounded-lg py-1">
-                <span className="block text-[8px] text-blue-300 uppercase">Dri</span>
-                <span className="font-mono text-amber-300 font-extrabold">
-                  {collectiveSkills.drible > 0 ? collectiveSkills.drible.toFixed(1) : '0.0'}★
-                </span>
-              </div>
+              {criteriaList.map((crit) => {
+                const avgVal = collectiveSkills[crit.key] || 0;
+                return (
+                  <div key={crit.key} className="bg-white/5 rounded-lg py-1" title={crit.label}>
+                    <span className="block text-[8px] text-blue-300 uppercase">{crit.shortLabel}</span>
+                    <span className="font-mono text-amber-300 font-extrabold">
+                      {avgVal > 0 ? avgVal.toFixed(1) : '0.0'}★
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

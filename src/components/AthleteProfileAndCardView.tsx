@@ -21,6 +21,7 @@ import { TeamCrestBadge } from './TeamCrestBadge';
 import { getStoredSumulas } from './SumulaPeladaView';
 import { supabase, isSupabaseConfigured } from '../lib/supabase/client';
 import { supabaseService } from '../lib/supabase/supabaseService';
+import { getSkillDefinitions } from '../lib/utils/skillDefinitions';
 import {
   DominantFoot,
   PlayerPosition,
@@ -897,26 +898,12 @@ export const AthleteProfileAndCardView: React.FC<
               {/* Quesitos de Habilidade (Se já avaliado) */}
               {overallStars > 0 && (
                 <div className="mt-2 grid grid-cols-5 gap-1 text-center text-[9px] font-bold text-blue-100/90 bg-white/10 border border-white/15 rounded-lg p-1.5">
-                  <div>
-                    <span className="block text-[8px] text-blue-300 uppercase">Fin</span>
-                    <span className="font-mono text-amber-300">{skills.finalizacao}★</span>
-                  </div>
-                  <div>
-                    <span className="block text-[8px] text-blue-300 uppercase">Mar</span>
-                    <span className="font-mono text-amber-300">{skills.marcacao}★</span>
-                  </div>
-                  <div>
-                    <span className="block text-[8px] text-blue-300 uppercase">Pas</span>
-                    <span className="font-mono text-amber-300">{skills.passe}★</span>
-                  </div>
-                  <div>
-                    <span className="block text-[8px] text-blue-300 uppercase">Raç</span>
-                    <span className="font-mono text-amber-300">{skills.raca}★</span>
-                  </div>
-                  <div>
-                    <span className="block text-[8px] text-blue-300 uppercase">Dri</span>
-                    <span className="font-mono text-amber-300">{skills.drible}★</span>
-                  </div>
+                  {getSkillDefinitions(targetProfile.position).map((def) => (
+                    <div key={def.key} title={def.label}>
+                      <span className="block text-[8px] text-blue-300 uppercase">{def.shortLabel}</span>
+                      <span className="font-mono text-amber-300">{skills[def.key]}★</span>
+                    </div>
+                  ))}
                 </div>
               )}
 

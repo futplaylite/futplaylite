@@ -61,6 +61,11 @@ import {
 } from '../engine/eloEngine';
 import { inspectMatchForFraudSignals } from '../engine/antiFraud';
 import { isSupabaseConfigured, supabaseService, supabase, generateUUID } from '../supabase';
+import {
+  GOALKEEPER_SCOUT_RESET_MS,
+  isEvaluationValidForPosition,
+  isGoalkeeperPosition,
+} from '../utils/skillDefinitions';
 
 const STORAGE_KEY = 'futplay_lite_planalto_ba_v3_clean';
 const ACTIVE_USER_STORAGE_KEY = 'futplay_lite_active_user_id_v3';
@@ -480,17 +485,31 @@ export function computeProfilesWithPeerEvaluations(
   profiles: PlayerProfile[],
   evaluations: PeerEvaluation[]
 ): PlayerProfile[] {
-  if (!evaluations || evaluations.length === 0) return profiles;
+  const safeEvals = Array.isArray(evaluations) ? evaluations : [];
 
   return profiles.map((prof) => {
-    const targetEvals = evaluations.filter(
+    const isGk = isGoalkeeperPosition(prof.position);
+    const targetEvals = safeEvals.filter(
       (e) =>
         (e.targetPlayerId === prof.id || (prof.userId && e.targetPlayerId === prof.userId)) &&
         e.evaluatorId !== prof.id &&
         (!prof.userId || e.evaluatorId !== prof.userId) &&
+        isEvaluationValidForPosition(e, prof.position) &&
         (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
     );
-    if (targetEvals.length === 0) return prof;
+    if (targetEvals.length === 0) {
+      if (isGk) {
+        const lastRatedMs = new Date(prof.skills?.lastRatedAt || 0).getTime();
+        if (!prof.skills?.lastRatedAt || lastRatedMs < GOALKEEPER_SCOUT_RESET_MS) {
+          return {
+            ...prof,
+            skills: undefined,
+            overallStars: 0,
+          };
+        }
+      }
+      return prof;
+    }
 
     const totalVotes = targetEvals.length;
     const avgFin = Number(
@@ -1142,7 +1161,22 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           needsUpload = true;
         }
 
-        mergedPeerEvals = Array.from(evalsMap.values());
+        // Identifica IDs de goleiros para purgar avaliações pré-reset do cache local e nunca reenviá-las à nuvem
+        const goalkeeperIds = new Set<string>();
+        [...(prev.profiles || []), ...(remoteProfiles || [])].forEach((prof) => {
+          if (prof && isGoalkeeperPosition(prof.position)) {
+            if (prof.id) goalkeeperIds.add(prof.id);
+            if (prof.userId) goalkeeperIds.add(prof.userId);
+          }
+        });
+
+        mergedPeerEvals = Array.from(evalsMap.values()).filter((ev) => {
+          if (!ev || !ev.targetPlayerId) return false;
+          if (goalkeeperIds.has(ev.targetPlayerId)) {
+            return isEvaluationValidForPosition(ev, 'goleiro');
+          }
+          return true;
+        });
 
         // Se o aparelho tiver avaliações locais que ainda não foram para o Supabase, envia agora para a nuvem
         if (needsUpload && mergedPeerEvals.length > 0 && isSupabaseConfigured()) {
@@ -3196,10 +3230,13 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           ? currentEvals.map((e, idx) => (idx === existingIdx ? evaluationRecord : e))
           : [...currentEvals, evaluationRecord];
 
-      // Filtra todas as avaliações feitas para este jogador específico (apenas avaliações ativas)
+      // Filtra todas as avaliações feitas para este jogador específico (apenas avaliações ativas, sem autoavaliação e válidas para a posição)
       const targetEvals = updatedEvals.filter(
         (e) =>
-          e.targetPlayerId === playerId &&
+          (e.targetPlayerId === playerId || (p.userId && e.targetPlayerId === p.userId)) &&
+          e.evaluatorId !== p.id &&
+          (!p.userId || e.evaluatorId !== p.userId) &&
+          isEvaluationValidForPosition(e, p.position) &&
           (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
       );
       const totalVotes = targetEvals.length;

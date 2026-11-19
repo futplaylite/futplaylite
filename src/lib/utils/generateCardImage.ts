@@ -1,3 +1,5 @@
+import { getSkillDefinitions } from './skillDefinitions';
+
 export interface CardImageData {
   displayName: string;
   position: string;
@@ -503,13 +505,10 @@ export async function generateCard9x16(data: CardImageData): Promise<{
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    const skillsItems = [
-      { label: 'FIN', val: data.skills.finalizacao },
-      { label: 'MAR', val: data.skills.marcacao },
-      { label: 'PAS', val: data.skills.passe },
-      { label: 'RAÇ', val: data.skills.raca },
-      { label: 'DRI', val: data.skills.drible },
-    ];
+    const skillsItems = getSkillDefinitions(data.position).map((def) => ({
+      label: def.shortLabel,
+      val: data.skills![def.key],
+    }));
 
     const colW = skillsBoxW / 5;
     skillsItems.forEach((sk, idx) => {

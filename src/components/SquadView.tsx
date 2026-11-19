@@ -19,6 +19,7 @@ import { PlayerRatingModal } from './PlayerRatingModal';
 import { TeamCrestBadge } from './TeamCrestBadge';
 import { PlayerProfile, TeamModality } from '../types/league';
 import { processCrestTransparentPng } from '../lib/utils/imageProcessors';
+import { isEvaluationValidForPosition } from '../lib/utils/skillDefinitions';
 
 interface SquadViewProps {
   initialPlayerId?: string;
@@ -645,7 +646,8 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                           (e.evaluatorId === currentUser.id ||
                             (currentPlayerProfile && e.evaluatorId === currentPlayerProfile.id) ||
                             (currentPlayerProfile?.userId && e.evaluatorId === currentPlayerProfile.userId)) &&
-                          (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId))
+                          (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId)) &&
+                          isEvaluationValidForPosition(e, player.position)
                       );
                       const stars = getPlayerDisplayStars(player);
                       const votesCount = player.skills?.totalVotes || 0;
@@ -891,7 +893,8 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
                   (currentPlayerProfile && e.evaluatorId === currentPlayerProfile.id) ||
                   (currentPlayerProfile?.userId && e.evaluatorId === currentPlayerProfile.userId)) &&
                 (e.targetPlayerId === ratingModalPlayer.id ||
-                  (ratingModalPlayer.userId && e.targetPlayerId === ratingModalPlayer.userId))
+                  (ratingModalPlayer.userId && e.targetPlayerId === ratingModalPlayer.userId)) &&
+                isEvaluationValidForPosition(e, ratingModalPlayer.position)
             );
 
         const initialSkills = myEval
