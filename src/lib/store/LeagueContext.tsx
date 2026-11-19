@@ -1766,6 +1766,28 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
                     monthlyConfig: rowData.config || prev.monthlyConfig,
                   }));
                 }
+              } else if (newRow && newRow.data && newRow.status === 'schedule_ledger') {
+                const schedData = newRow.data as { schedule?: unknown; teamName?: string };
+                if (schedData?.schedule && typeof window !== 'undefined') {
+                  const slug = (schedData.teamName || newRow.team_name || '')
+                    .trim()
+                    .toLowerCase()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[^a-z0-9]+/g, '_')
+                    .replace(/^_+|_+$/g, '');
+                  try {
+                    if (slug && slug !== 'meu_time' && slug !== 'sem_time') {
+                      localStorage.setItem(`futplay_pelada_schedule_${slug}`, JSON.stringify(schedData.schedule));
+                    }
+                    localStorage.setItem('futplay_pelada_schedule_v1', JSON.stringify(schedData.schedule));
+                  } catch {}
+                  window.dispatchEvent(
+                    new CustomEvent('futplay_pelada_schedule_changed', {
+                      detail: { schedule: schedData.schedule, teamName: schedData.teamName || newRow.team_name },
+                    })
+                  );
+                }
               } else if (
                 newRow &&
                 newRow.data &&
@@ -1847,7 +1869,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const curLocal = localStorage.getItem(ACTIVE_SESSION_TOKEN_KEY);
         if (!curLocal || !currentUserId) return;
-        const check = await supabaseService.validateActiveSession(curLocal);
+        const check = await supabaseService.validateActiveSession(curLocal, currentUserId);
         if (!check.valid) {
           logoutUser('concurrent_session');
           notify(
