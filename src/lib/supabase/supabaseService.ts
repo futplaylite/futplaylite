@@ -1395,26 +1395,45 @@ export const supabaseService = {
   },
 
   /**
-   * Baixa as fotos de perfil (pesadas) em lotes pequenos, apenas dos perfis pedidos.
-   * Deve rodar em segundo plano, sem bloquear a exibição da lista de atletas.
+   * Baixa as fotos de perfil em lotes pequenos (com retry automático e callback progressivo).
+   * Reporta exatamente quais IDs responderam sem erro para nunca marcar falhas de rede como "sem foto".
    */
-  async getProfileAvatars(profileIds: string[]): Promise<Record<string, string>> {
+  async getProfileAvatars(
+    profileIds: string[],
+    onChunk?: (chunkAvatars: Record<string, string>, chunkSucceededIds: string[]) => void
+  ): Promise<Record<string, string>> {
     const result: Record<string, string> = {};
     if (!isSupabaseConfigured() || !supabase || profileIds.length === 0) return result;
 
-    const CHUNK = 4;
+    const CHUNK = 2;
     for (let i = 0; i < profileIds.length; i += CHUNK) {
       const chunk = profileIds.slice(i, i + CHUNK);
-      try {
-        const { data } = await supabase
-          .from('player_profiles')
-          .select('id, avatar_path')
-          .in('id', chunk);
-        (data || []).forEach((row: { id: string; avatar_path: string | null }) => {
-          if (row.avatar_path) result[row.id] = row.avatar_path;
-        });
-      } catch {
-        // Ignora falha do lote; será tentado novamente na próxima sincronização
+      let chunkOk = false;
+      const chunkAvatars: Record<string, string> = {};
+
+      for (let attempt = 0; attempt < 2 && !chunkOk; attempt++) {
+        try {
+          const { data, error } = await supabase
+            .from('player_profiles')
+            .select('id, avatar_path')
+            .in('id', chunk);
+
+          if (!error && Array.isArray(data)) {
+            chunkOk = true;
+            data.forEach((row: { id: string; avatar_path: string | null }) => {
+              if (row.avatar_path && row.avatar_path.trim().length > 10) {
+                result[row.id] = row.avatar_path;
+                chunkAvatars[row.id] = row.avatar_path;
+              }
+            });
+          }
+        } catch {
+          // Tenta mais uma vez antes de desistir deste lote
+        }
+      }
+
+      if (chunkOk && onChunk) {
+        onChunk(chunkAvatars, chunk);
       }
     }
     return result;

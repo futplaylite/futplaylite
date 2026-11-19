@@ -894,52 +894,117 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // Fotos de perfil são pesadas (~300 KB cada): baixadas em segundo plano, DEPOIS que a lista de
-  // atletas já apareceu, e só para quem ainda não foi baixado ou teve a foto alterada.
-  const AVATAR_SYNC_KEY = 'futplay_avatar_sync_v1';
-  const loadAvatarsInBackground = async (remoteProfiles: PlayerProfile[]) => {
+  // Salva o estado no localStorage sem duplicar escudos base64 nem estourar o limite de 5 MB
+  const persistLeagueStateSafely = (nextState: LeagueState) => {
+    try {
+      const slimForStorage: LeagueState = {
+        ...nextState,
+        // Escudos já ficam 1x por time em futplay_team_crests_v1 (restaurados em getInitialState)
+        users: (nextState.users || []).map((u) =>
+          u.teamCrestUrl && u.teamCrestUrl.startsWith('data:')
+            ? { ...u, teamCrestUrl: undefined }
+            : u
+        ),
+        profiles: (nextState.profiles || []).map((p) =>
+          p.teamCrestUrl && p.teamCrestUrl.startsWith('data:')
+            ? { ...p, teamCrestUrl: undefined }
+            : p
+        ),
+        // Mantém no máximo 150 logs em cache local (o histórico completo fica no Supabase)
+        auditLogs: (nextState.auditLogs || []).slice(0, 150),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(slimForStorage));
+    } catch {
+      // Se ainda exceder a cota do navegador (muitas fotos base64), salva sem os avatares
+      // (as fotos continuam em memória e recarregam do Supabase ao abrir o app)
+      try {
+        const ultraSlim: LeagueState = {
+          ...nextState,
+          users: (nextState.users || []).map((u) => ({ ...u, teamCrestUrl: undefined })),
+          profiles: (nextState.profiles || []).map((p) => ({
+            ...p,
+            teamCrestUrl: undefined,
+            avatarUrl: p.avatarUrl && p.avatarUrl.startsWith('data:') ? undefined : p.avatarUrl,
+          })),
+          auditLogs: (nextState.auditLogs || []).slice(0, 80),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(ultraSlim));
+      } catch {}
+    }
+  };
+
+  // Fotos de perfil são baixadas em segundo plano, em pares, atualizando a tela progressivamente.
+  // v2 invalida caches antigos que marcaram falhas de rede como "sem foto" (|0).
+  const AVATAR_SYNC_KEY = 'futplay_avatar_sync_v2';
+  const isLoadingAvatarsRef = useRef<boolean>(false);
+  const loadAvatarsInBackground = async (
+    remoteProfiles: PlayerProfile[],
+    mergedSnapshot?: PlayerProfile[]
+  ) => {
+    if (isLoadingAvatarsRef.current) return;
+    isLoadingAvatarsRef.current = true;
     try {
       let tracked: Record<string, string> = {};
       try {
         tracked = JSON.parse(localStorage.getItem(AVATAR_SYNC_KEY) || '{}') || {};
       } catch {}
 
-      const localById = new Map(state.profiles.map((p) => [p.id, p]));
+      const currentProfiles = mergedSnapshot || state.profiles;
+      const localById = new Map(currentProfiles.map((p) => [p.id, p]));
+      const myProf = currentProfiles.find((p) => p.userId === currentUserId || p.id === currentUserId);
+      const myTeamNorm = (myProf?.teamName || '').trim().toLowerCase();
+
       const pending = remoteProfiles.filter((rp) => {
+        const localHasAvatar = Boolean(localById.get(rp.id)?.avatarUrl);
         const mark = tracked[rp.id];
         if (!mark) return true;
         const [markedAt, hadAvatar] = mark.split('|');
         if (markedAt !== (rp.updatedAt || '')) return true;
-        if (hadAvatar === '1' && !localById.get(rp.id)?.avatarUrl) return true;
+        if (hadAvatar === '1' && !localHasAvatar) return true;
         return false;
       });
       if (pending.length === 0) return;
 
-      // O próprio usuário logado primeiro
-      pending.sort((a, b) => Number(b.userId === currentUserId) - Number(a.userId === currentUserId));
-
-      const avatars = await supabaseService.getProfileAvatars(pending.map((p) => p.id));
-
-      pending.forEach((rp) => {
-        tracked[rp.id] = `${rp.updatedAt || ''}|${avatars[rp.id] ? '1' : '0'}`;
+      // Prioriza: 1) próprio usuário, 2) colegas do mesmo time, 3) demais atletas
+      pending.sort((a, b) => {
+        const aSelf = a.userId === currentUserId ? 2 : 0;
+        const bSelf = b.userId === currentUserId ? 2 : 0;
+        const aTeam = myTeamNorm && (a.teamName || '').trim().toLowerCase() === myTeamNorm ? 1 : 0;
+        const bTeam = myTeamNorm && (b.teamName || '').trim().toLowerCase() === myTeamNorm ? 1 : 0;
+        return bSelf + bTeam - (aSelf + aTeam);
       });
-      try {
-        localStorage.setItem(AVATAR_SYNC_KEY, JSON.stringify(tracked));
-      } catch {}
 
-      if (Object.keys(avatars).length === 0) return;
-      setState((prev) => {
-        const next = {
-          ...prev,
-          profiles: prev.profiles.map((p) => (avatars[p.id] ? { ...p, avatarUrl: avatars[p.id] } : p)),
-        };
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {}
-        return next;
-      });
+      const remoteById = new Map(remoteProfiles.map((rp) => [rp.id, rp]));
+
+      await supabaseService.getProfileAvatars(
+        pending.map((p) => p.id),
+        (chunkAvatars, chunkSucceededIds) => {
+          // Só marca no cache os IDs cujo lote realmente respondeu sem erro
+          chunkSucceededIds.forEach((id) => {
+            const rp = remoteById.get(id);
+            tracked[id] = `${rp?.updatedAt || ''}|${chunkAvatars[id] ? '1' : '0'}`;
+          });
+          try {
+            localStorage.setItem(AVATAR_SYNC_KEY, JSON.stringify(tracked));
+          } catch {}
+
+          if (Object.keys(chunkAvatars).length === 0) return;
+          setState((prev) => {
+            const next = {
+              ...prev,
+              profiles: prev.profiles.map((p) =>
+                chunkAvatars[p.id] ? { ...p, avatarUrl: chunkAvatars[p.id] } : p
+              ),
+            };
+            persistLeagueStateSafely(next);
+            return next;
+          });
+        }
+      );
     } catch (err) {
       console.warn('Aviso ao carregar fotos de perfil em segundo plano:', err);
+    } finally {
+      isLoadingAvatarsRef.current = false;
     }
   };
 
@@ -986,7 +1051,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         reconcileSumulas(remoteSumulas);
       }
 
-      setState((prev) => {
+        let mergedProfilesForAvatars: PlayerProfile[] | undefined;
+        setState((prev) => {
         // 1. Catálogo unificado de escudos por nome de time (minúsculas)
         const crestCatalog = new Map<string, string>();
         try {
@@ -1475,7 +1541,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
               team.ownerName = ownerProf.displayName;
             }
 
-            team.roster = teamProfiles;
+            // Armazena roster leve (sem base64 de fotos/escudos) para não estourar a cota de 5 MB do localStorage
+            team.roster = teamProfiles.map((p) => ({
+              ...p,
+              avatarUrl: p.avatarUrl && p.avatarUrl.startsWith('data:') ? undefined : p.avatarUrl,
+              teamCrestUrl: undefined,
+            }));
           });
 
           const syncedTeams = Array.from(teamsByCode.values());
@@ -1578,16 +1649,15 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           monthlyConfig: remoteCfg || prev.monthlyConfig,
         };
 
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {}
+        mergedProfilesForAvatars = mergedProfiles;
+        persistLeagueStateSafely(next);
 
         return next;
       });
 
-      // Lista de atletas já está na tela: agora baixa as fotos em segundo plano
+      // Lista de atletas já está na tela: agora baixa as fotos em segundo plano (com snapshot atualizado)
       if (remoteProfiles && remoteProfiles.length > 0) {
-        loadAvatarsInBackground(remoteProfiles);
+        loadAvatarsInBackground(remoteProfiles, mergedProfilesForAvatars);
       }
     } catch (err) {
       console.warn('Erro ao atualizar dados da liga com o Supabase:', err);
