@@ -245,9 +245,15 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
         syncWithThrottle();
       }
     };
+    const pollInterval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshMonthlyData();
+      }
+    }, 15000);
     window.addEventListener('focus', handleSyncOnVisible);
     document.addEventListener('visibilitychange', handleSyncOnVisible);
     return () => {
+      clearInterval(pollInterval);
       window.removeEventListener('focus', handleSyncOnVisible);
       document.removeEventListener('visibilitychange', handleSyncOnVisible);
     };
@@ -347,19 +353,37 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
 
   const userTeamNormalized = normalize(userTeamName);
 
-  // Atletas que pertencem EXCLUSIVAMENTE ao time do usuário
+  const normalizeCode = (c?: string) => (c || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const userTeamInviteCode = normalizeCode(currentUser?.teamInviteCode || myProfile?.teamInviteCode);
+
+  // Atletas que pertencem EXCLUSIVAMENTE ao time do usuário (ou ao time selecionado pelo Admin)
   const teamPlayers = useMemo(() => {
-    if (!userTeamNormalized || userTeamNormalized === 'meu time' || userTeamNormalized === 'sem time') {
-      return profiles.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    if (isAdmin) {
+      if (adminSelectedTeam === 'all') {
+        return [...profiles].sort((a, b) => a.displayName.localeCompare(b.displayName));
+      }
+      const targetNorm = normalize(adminSelectedTeam);
+      return profiles
+        .filter((p) => normalize(p.teamName || '') === targetNorm)
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
     }
-    const matches = profiles.filter(
-      (p) => normalize(p.teamName || '') === userTeamNormalized
-    );
+
+    if (
+      (!userTeamNormalized || userTeamNormalized === 'meu time' || userTeamNormalized === 'sem time') &&
+      !userTeamInviteCode
+    ) {
+      return [...profiles].sort((a, b) => a.displayName.localeCompare(b.displayName));
+    }
+    const matches = profiles.filter((p) => {
+      const sameName = Boolean(userTeamNormalized && normalize(p.teamName || '') === userTeamNormalized);
+      const sameCode = Boolean(userTeamInviteCode && normalizeCode(p.teamInviteCode) === userTeamInviteCode);
+      return sameName || sameCode;
+    });
     if (matches.length === 0) {
       return myProfile ? [myProfile] : profiles;
     }
     return matches.sort((a, b) => a.displayName.localeCompare(b.displayName));
-  }, [profiles, userTeamNormalized, myProfile]);
+  }, [profiles, userTeamNormalized, userTeamInviteCode, myProfile, isAdmin, adminSelectedTeam]);
 
   // Localiza o treinador/responsável do time para envio do comprovante via WhatsApp
   const coachProfile = useMemo(() => {
@@ -604,15 +628,28 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
     }
 
     const validNames = new Set(
-      [currentUser?.teamName, myProfile?.teamName]
+      [currentUser?.teamName, myProfile?.teamName, ...teamPlayers.map((p) => p.teamName)]
         .filter(Boolean)
         .map((s) => normalize(s as string))
         .filter((s) => s && s !== 'meu time' && s !== 'sem time')
     );
 
-    const teamMemberUserIds = new Set(
-      teamPlayers.map((p) => p.userId).filter(Boolean)
-    );
+    const teamMemberIds = new Set<string>();
+    teamPlayers.forEach((p) => {
+      if (p.userId) teamMemberIds.add(p.userId);
+      if (p.id) teamMemberIds.add(p.id);
+    });
+    // Inclui também treinadores/usuários vinculados ao mesmo time na tabela users (mesmo sem player_profile)
+    users.forEach((u) => {
+      const uTeamNorm = normalize(u.teamName || '');
+      const uCode = normalizeCode(u.teamInviteCode);
+      if (
+        (uTeamNorm && validNames.has(uTeamNorm)) ||
+        (userTeamInviteCode && uCode && uCode === userTeamInviteCode)
+      ) {
+        if (u.id) teamMemberIds.add(u.id);
+      }
+    });
 
     const manualTeamTx = (teamTransactions || []).filter((tx) => {
       if (validNames.size === 0) {
@@ -620,13 +657,13 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       }
       const txTeamNorm = normalize(tx.teamName);
       if (validNames.has(txTeamNorm)) return true;
-      // Garante exibição caso tenha sido lançado por um integrante/treinador do mesmo time
-      if (tx.createdByUserId && teamMemberUserIds.has(tx.createdByUserId)) return true;
+      // Garante exibição caso tenha sido lançado por qualquer integrante/treinador do mesmo time
+      if (tx.createdByUserId && teamMemberIds.has(tx.createdByUserId)) return true;
       return false;
     });
 
     return [...autoMonthlyFeeTransactions, ...manualTeamTx];
-  }, [teamTransactions, autoMonthlyFeeTransactions, currentUser?.teamName, myProfile?.teamName, teamPlayers, isAdmin, adminSelectedTeam]);
+  }, [teamTransactions, autoMonthlyFeeTransactions, currentUser?.teamName, myProfile?.teamName, teamPlayers, users, userTeamInviteCode, isAdmin, adminSelectedTeam]);
 
   // Totais do Caixa do Time
   const financialTotals = useMemo(() => {
@@ -696,8 +733,11 @@ export const MonthlyFeesView: React.FC<MonthlyFeesViewProps> = () => {
       return;
     }
 
+    const targetTeamName =
+      isAdmin && adminSelectedTeam !== 'all' ? adminSelectedTeam : userTeamName;
+
     addTeamTransaction({
-      teamName: userTeamName,
+      teamName: targetTeamName,
       type: txType,
       category: txCategory,
       description: txDescription.trim(),

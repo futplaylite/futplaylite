@@ -68,6 +68,53 @@ const COMPLETED_FIRST_ACCESS_KEY = 'futplay_lite_completed_first_access_v3';
 const ACTIVE_SESSION_TOKEN_KEY = 'futplay_lite_active_session_token_v1';
 const SESSION_CONFLICT_NOTICE_KEY = 'futplay_session_conflict_notice';
 const ROLE_OVERRIDES_STORAGE_KEY = 'futplay_role_overrides_v1';
+const PENDING_TX_SYNC_KEY = 'futplay_pending_tx_sync_v1';
+const PENDING_PAY_SYNC_KEY = 'futplay_pending_pay_sync_v1';
+const FINANCE_RECOVERY_DONE_KEY = 'futplay_finance_cloud_recovery_v1';
+
+function readPendingList<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePendingList<T>(key: string, items: T[]) {
+  try {
+    if (items.length === 0) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, JSON.stringify(items));
+    }
+  } catch {}
+}
+
+function enqueuePendingTx(tx: TeamTransaction) {
+  const list = readPendingList<TeamTransaction>(PENDING_TX_SYNC_KEY);
+  writePendingList(PENDING_TX_SYNC_KEY, [tx, ...list.filter((i) => i && i.id !== tx.id)]);
+}
+
+function removePendingTx(txId: string) {
+  const list = readPendingList<TeamTransaction>(PENDING_TX_SYNC_KEY);
+  writePendingList(PENDING_TX_SYNC_KEY, list.filter((i) => i && i.id !== txId));
+}
+
+function enqueuePendingPayment(rec: MonthlyPaymentRecord) {
+  const list = readPendingList<MonthlyPaymentRecord>(PENDING_PAY_SYNC_KEY);
+  writePendingList(PENDING_PAY_SYNC_KEY, [
+    rec,
+    ...list.filter((i) => i && i.id !== rec.id && !(i.playerId === rec.playerId && i.yearMonth === rec.yearMonth)),
+  ]);
+}
+
+function removePendingPayment(paymentId: string) {
+  const list = readPendingList<MonthlyPaymentRecord>(PENDING_PAY_SYNC_KEY);
+  writePendingList(PENDING_PAY_SYNC_KEY, list.filter((i) => i && i.id !== paymentId));
+}
 
 export function getStoredRoleOverrides(): Record<string, { role: UserRole; isTeamOwner: boolean; updatedAt?: string }> {
   try {
@@ -1401,13 +1448,37 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           console.warn('Erro ao sincronizar times registrados:', teamSyncErr);
         }
 
-        // 7. Sincroniza mensalidades remotas
+        // 7. Sincroniza mensalidades remotas (nuvem é a fonte oficial, preservando pendências locais)
         let mergedPayments = prev.monthlyPayments || [];
         if (remotePayments) {
           const payMap = new Map<string, MonthlyPaymentRecord>();
-          remotePayments.forEach((p) => payMap.set(p.id, p));
+          remotePayments.forEach((p) => {
+            if (p && p.playerId && p.yearMonth) {
+              payMap.set(`${p.playerId}_${p.yearMonth.trim()}`, p);
+            }
+          });
+          const pendingPayKeys = new Set(
+            readPendingList<MonthlyPaymentRecord>(PENDING_PAY_SYNC_KEY).map(
+              (p) => `${p.playerId}_${(p.yearMonth || '').trim()}`
+            )
+          );
+          const payRecoveryPending =
+            typeof window !== 'undefined' &&
+            localStorage.getItem(`${FINANCE_RECOVERY_DONE_KEY}_pay`) !== 'done';
+          const nowMs = Date.now();
           (prev.monthlyPayments || []).forEach((locP) => {
-            if (!payMap.has(locP.id)) payMap.set(locP.id, locP);
+            if (!locP || !locP.playerId || !locP.yearMonth) return;
+            const key = `${locP.playerId}_${locP.yearMonth.trim()}`;
+            const remP = payMap.get(key);
+            const locTime = new Date(locP.updatedAt || locP.paidAt || 0).getTime();
+            if (!remP) {
+              if (pendingPayKeys.has(key) || payRecoveryPending || nowMs - locTime < 60000) {
+                payMap.set(key, locP);
+              }
+            } else if (pendingPayKeys.has(key) || payRecoveryPending) {
+              const remTime = new Date(remP.updatedAt || remP.paidAt || 0).getTime();
+              if (locTime > remTime) payMap.set(key, locP);
+            }
           });
           mergedPayments = Array.from(payMap.values());
           try {
@@ -1415,18 +1486,31 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           } catch {}
         }
 
-        // 8. Sincroniza transações financeiras remotas
+        // 8. Sincroniza transações financeiras remotas (nuvem é a fonte oficial, preservando pendências locais)
         let mergedTx = prev.teamTransactions || [];
         if (remoteTx) {
           const txMap = new Map<string, TeamTransaction>();
           remoteTx.forEach((tx) => txMap.set(tx.id, tx));
+          const pendingTxIds = new Set(
+            readPendingList<TeamTransaction>(PENDING_TX_SYNC_KEY).map((t) => t.id)
+          );
+          const txRecoveryPending =
+            typeof window !== 'undefined' &&
+            localStorage.getItem(FINANCE_RECOVERY_DONE_KEY) !== 'done';
+          const nowMs = Date.now();
           (prev.teamTransactions || []).forEach((locTx) => {
-            if (!txMap.has(locTx.id)) txMap.set(locTx.id, locTx);
+            if (!txMap.has(locTx.id)) {
+              const ageMs = nowMs - new Date(locTx.createdAt || 0).getTime();
+              if (pendingTxIds.has(locTx.id) || txRecoveryPending || ageMs < 60000) {
+                txMap.set(locTx.id, locTx);
+              }
+            }
           });
           mergedTx = Array.from(txMap.values()).sort((a, b) => {
             const tA = new Date(a.date || a.createdAt || 0).getTime();
             const tB = new Date(b.date || b.createdAt || 0).getTime();
-            return tB - tA;
+            if (tB !== tA) return tB - tA;
+            return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
           });
           try {
             localStorage.setItem('futplay_team_financial_transactions_v1', JSON.stringify(mergedTx));
@@ -1557,7 +1641,96 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const newRow = payload.new as { data?: unknown; id?: string; status?: string; team_name?: string };
 
-              if (
+              if (newRow && newRow.data && newRow.status === 'financial_ledger') {
+                const rowId = newRow.id || '';
+                const rowData = newRow.data as {
+                  payments?: MonthlyPaymentRecord[];
+                  transactions?: TeamTransaction[];
+                  config?: PeladaMonthlyConfig;
+                };
+
+                if (rowId === 'monthly_payments_ledger_v1' && Array.isArray(rowData.payments)) {
+                  const incomingPayments = rowData.payments;
+                  const pendingPays = readPendingList<MonthlyPaymentRecord>(PENDING_PAY_SYNC_KEY);
+                  setState((prev) => {
+                    const mergedMap = new Map<string, MonthlyPaymentRecord>();
+                    incomingPayments.forEach((p) => {
+                      if (p && p.playerId && p.yearMonth) {
+                        mergedMap.set(`${p.playerId}_${p.yearMonth.trim()}`, p);
+                      }
+                    });
+                    pendingPays.forEach((p) => {
+                      if (p && p.playerId && p.yearMonth) {
+                        const key = `${p.playerId}_${p.yearMonth.trim()}`;
+                        const existing = mergedMap.get(key);
+                        const pTime = new Date(p.updatedAt || p.paidAt || 0).getTime();
+                        const exTime = new Date(existing?.updatedAt || existing?.paidAt || 0).getTime();
+                        if (!existing || pTime >= exTime) {
+                          mergedMap.set(key, p);
+                        }
+                      }
+                    });
+                    const nextPayments = Array.from(mergedMap.values());
+                    try {
+                      localStorage.setItem('futplay_monthly_payments_v1', JSON.stringify(nextPayments));
+                    } catch {}
+                    return { ...prev, monthlyPayments: nextPayments };
+                  });
+                } else if (rowId.startsWith('finance_ledger_') && Array.isArray(rowData.transactions)) {
+                  const incomingTx = rowData.transactions;
+                  const ledgerTeamNorm = (newRow.team_name || '')
+                    .trim()
+                    .toLowerCase()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '');
+                  const pendingTxs = readPendingList<TeamTransaction>(PENDING_TX_SYNC_KEY);
+                  setState((prev) => {
+                    const mergedMap = new Map<string, TeamTransaction>();
+                    // Mantém transações de outros times
+                    (prev.teamTransactions || []).forEach((tx) => {
+                      const txNorm = (tx.teamName || '')
+                        .trim()
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '');
+                      if (ledgerTeamNorm && txNorm !== ledgerTeamNorm) {
+                        mergedMap.set(tx.id, tx);
+                      }
+                    });
+                    // Aplica a versão oficial da nuvem para o time atualizado
+                    incomingTx.forEach((tx) => {
+                      if (tx && tx.id) {
+                        mergedMap.set(tx.id, {
+                          ...tx,
+                          teamName: tx.teamName || newRow.team_name || 'Meu Time',
+                          amount: Number(tx.amount) || 0,
+                        });
+                      }
+                    });
+                    // Preserva pendências locais ainda em envio
+                    pendingTxs.forEach((tx) => {
+                      if (tx && tx.id && !mergedMap.has(tx.id)) {
+                        mergedMap.set(tx.id, tx);
+                      }
+                    });
+                    const nextList = Array.from(mergedMap.values()).sort((a, b) => {
+                      const tA = new Date(a.date || a.createdAt || 0).getTime();
+                      const tB = new Date(b.date || b.createdAt || 0).getTime();
+                      if (tB !== tA) return tB - tA;
+                      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+                    });
+                    try {
+                      localStorage.setItem('futplay_team_financial_transactions_v1', JSON.stringify(nextList));
+                    } catch {}
+                    return { ...prev, teamTransactions: nextList };
+                  });
+                } else if (rowId.startsWith('monthly_config_ledger_') && rowData.config) {
+                  setState((prev) => ({
+                    ...prev,
+                    monthlyConfig: rowData.config || prev.monthlyConfig,
+                  }));
+                }
+              } else if (
                 newRow &&
                 newRow.data &&
                 (newRow.status === 'em_andamento' || newRow.status === 'finalizada' || newRow.status === 'cancelada')
@@ -1669,19 +1842,81 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [currentUserId]);
 
+  const flushPendingFinanceSync = async () => {
+    if (!isSupabaseConfigured()) return;
+
+    const pendingTxs = readPendingList<TeamTransaction>(PENDING_TX_SYNC_KEY);
+    for (const tx of pendingTxs) {
+      const ok = await supabaseService.saveTeamTransaction(tx);
+      if (ok) removePendingTx(tx.id);
+    }
+
+    const pendingPays = readPendingList<MonthlyPaymentRecord>(PENDING_PAY_SYNC_KEY);
+    for (const rec of pendingPays) {
+      const ok = await supabaseService.upsertMonthlyPayment(rec);
+      if (ok) removePendingPayment(rec.id);
+    }
+  };
+
   const refreshTeamTransactions: LeagueContextValue['refreshTeamTransactions'] = async () => {
     if (!isSupabaseConfigured()) return;
-    const remoteTx = await supabaseService.getTeamTransactions();
+    await flushPendingFinanceSync();
+
+    let remoteTx = await supabaseService.getTeamTransactions();
     if (!remoteTx) return;
+
+    // Recuperação única de lançamentos feitos localmente antes da correção de sincronização
+    const activeUser = state.users.find((u) => u.id === currentUserId);
+    const activeProfile = state.profiles.find((p) => p.userId === currentUserId || p.id === currentUserId);
+    const canManage = Boolean(
+      activeUser?.role === 'coach' ||
+        activeUser?.role === 'admin' ||
+        activeUser?.isTeamOwner ||
+        activeProfile?.isTeamOwner
+    );
+
+    if (canManage && typeof window !== 'undefined' && localStorage.getItem(FINANCE_RECOVERY_DONE_KEY) !== 'done') {
+      const remoteIds = new Set(remoteTx.map((t) => t.id));
+      const localStored = readPendingList<TeamTransaction>('futplay_team_financial_transactions_v1');
+      const toRecover = localStored.filter(
+        (loc) =>
+          loc &&
+          loc.id &&
+          !loc.id.startsWith('auto-fee-') &&
+          !remoteIds.has(loc.id) &&
+          (!loc.createdByUserId || loc.createdByUserId === currentUserId)
+      );
+
+      let allRecovered = true;
+      for (const tx of toRecover) {
+        const ok = await supabaseService.saveTeamTransaction(tx);
+        if (!ok) {
+          allRecovered = false;
+          enqueuePendingTx(tx);
+        }
+      }
+      if (toRecover.length > 0 && allRecovered) {
+        const updatedRemote = await supabaseService.getTeamTransactions();
+        if (updatedRemote) remoteTx = updatedRemote;
+      }
+      if (allRecovered) {
+        try {
+          localStorage.setItem(FINANCE_RECOVERY_DONE_KEY, 'done');
+        } catch {}
+      }
+    }
+
+    const pendingTxIds = new Set(readPendingList<TeamTransaction>(PENDING_TX_SYNC_KEY).map((t) => t.id));
+
     setState((prev) => {
       const mergedMap = new Map<string, TeamTransaction>();
-      remoteTx.forEach((tx) => mergedMap.set(tx.id, tx));
+      remoteTx!.forEach((tx) => mergedMap.set(tx.id, tx));
 
       const now = Date.now();
       (prev.teamTransactions || []).forEach((locTx) => {
         if (!mergedMap.has(locTx.id)) {
           const ageMs = now - new Date(locTx.createdAt || 0).getTime();
-          if (ageMs < 60000) {
+          if (pendingTxIds.has(locTx.id) || ageMs < 60000) {
             mergedMap.set(locTx.id, locTx);
           }
         }
@@ -1690,7 +1925,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
         const tA = new Date(a.date || a.createdAt || 0).getTime();
         const tB = new Date(b.date || b.createdAt || 0).getTime();
-        return tB - tA;
+        if (tB !== tA) return tB - tA;
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
       });
 
       try {
@@ -1706,34 +1942,101 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const refreshMonthlyData: LeagueContextValue['refreshMonthlyData'] = async () => {
     if (!isSupabaseConfigured()) return;
+    await flushPendingFinanceSync();
+
     const activeUser = state.users.find((u) => u.id === currentUserId);
     const activeProfile = state.profiles.find((p) => p.userId === currentUserId || p.id === currentUserId);
     const userTeam = activeUser?.teamName || activeProfile?.teamName;
 
-    const [remotePayments, remoteCfg] = await Promise.all([
+    const [remotePaymentsRaw, remoteCfg] = await Promise.all([
       supabaseService.getMonthlyPayments(),
       supabaseService.getMonthlyConfig(userTeam),
       refreshTeamTransactions(),
     ]);
 
+    let remotePayments = remotePaymentsRaw;
+
+    // Recuperação única de mensalidades marcadas localmente por este treinador que ainda não subiram
+    const canManage = Boolean(
+      activeUser?.role === 'coach' ||
+        activeUser?.role === 'admin' ||
+        activeUser?.isTeamOwner ||
+        activeProfile?.isTeamOwner
+    );
+    const PAY_RECOVERY_KEY = `${FINANCE_RECOVERY_DONE_KEY}_pay`;
+    if (
+      canManage &&
+      remotePayments &&
+      typeof window !== 'undefined' &&
+      localStorage.getItem(PAY_RECOVERY_KEY) !== 'done'
+    ) {
+      const remoteByKey = new Map<string, MonthlyPaymentRecord>();
+      remotePayments.forEach((p) => {
+        if (p && p.playerId && p.yearMonth) {
+          remoteByKey.set(`${p.playerId}_${p.yearMonth.trim()}`, p);
+        }
+      });
+      const localPays = readPendingList<MonthlyPaymentRecord>('futplay_monthly_payments_v1');
+      const paysToRecover = localPays.filter((locP) => {
+        if (!locP || !locP.playerId || !locP.yearMonth) return false;
+        if (locP.confirmedBy && currentUserId && locP.confirmedBy !== currentUserId) return false;
+        const key = `${locP.playerId}_${locP.yearMonth.trim()}`;
+        const rem = remoteByKey.get(key);
+        if (!rem) return true;
+        const locTime = new Date(locP.updatedAt || locP.paidAt || 0).getTime();
+        const remTime = new Date(rem.updatedAt || rem.paidAt || 0).getTime();
+        return locTime > remTime;
+      });
+
+      let allOk = true;
+      for (const rec of paysToRecover) {
+        const ok = await supabaseService.upsertMonthlyPayment(rec);
+        if (!ok) {
+          allOk = false;
+          enqueuePendingPayment(rec);
+        }
+      }
+      if (paysToRecover.length > 0 && allOk) {
+        const refreshed = await supabaseService.getMonthlyPayments();
+        if (refreshed) remotePayments = refreshed;
+      }
+      if (allOk) {
+        try {
+          localStorage.setItem(PAY_RECOVERY_KEY, 'done');
+        } catch {}
+      }
+    }
+
+    const pendingPayKeys = new Set(
+      readPendingList<MonthlyPaymentRecord>(PENDING_PAY_SYNC_KEY).map(
+        (p) => `${p.playerId}_${(p.yearMonth || '').trim()}`
+      )
+    );
+
     setState((prev) => {
       let nextPayments = prev.monthlyPayments || [];
       if (remotePayments) {
         const mergedMap = new Map<string, MonthlyPaymentRecord>();
-        remotePayments.forEach((p) => mergedMap.set(p.id, p));
+        remotePayments.forEach((p) => {
+          if (p && p.playerId && p.yearMonth) {
+            mergedMap.set(`${p.playerId}_${p.yearMonth.trim()}`, p);
+          }
+        });
 
         const now = Date.now();
         (prev.monthlyPayments || []).forEach((locP) => {
-          const remP = mergedMap.get(locP.id);
+          if (!locP || !locP.playerId || !locP.yearMonth) return;
+          const key = `${locP.playerId}_${locP.yearMonth.trim()}`;
+          const remP = mergedMap.get(key);
           const locTime = new Date(locP.updatedAt || locP.paidAt || 0).getTime();
           if (!remP) {
-            if (now - locTime < 60000) {
-              mergedMap.set(locP.id, locP);
+            if (pendingPayKeys.has(key) || now - locTime < 60000) {
+              mergedMap.set(key, locP);
             }
           } else {
             const remTime = new Date(remP.updatedAt || remP.paidAt || 0).getTime();
-            if (locTime > remTime) {
-              mergedMap.set(locP.id, locP);
+            if (pendingPayKeys.has(key) && locTime >= remTime) {
+              mergedMap.set(key, locP);
             }
           }
         });
@@ -4153,9 +4456,23 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     if (isSupabaseConfigured()) {
-      supabaseService.upsertMonthlyPayment(record).catch((err) => {
-        console.warn('Falha assíncrona ao sincronizar mensalidade com Supabase:', err);
-      });
+      enqueuePendingPayment(record);
+      supabaseService
+        .upsertMonthlyPayment(record)
+        .then((ok) => {
+          if (ok) {
+            removePendingPayment(record.id);
+          } else {
+            notify(
+              'warning',
+              'Sincronização Pendente',
+              'A mensalidade foi salva neste aparelho, mas houve falha ao enviar para a nuvem. Tentaremos sincronizar automaticamente.'
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('Falha assíncrona ao sincronizar mensalidade com Supabase:', err);
+        });
     }
 
     notify(
@@ -4471,9 +4788,23 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       };
     });
     if (isSupabaseConfigured()) {
-      supabaseService.saveTeamTransaction(newTx).catch((err) => {
-        console.warn('Falha assíncrona ao salvar transação no Supabase:', err);
-      });
+      enqueuePendingTx(newTx);
+      supabaseService
+        .saveTeamTransaction(newTx)
+        .then((ok) => {
+          if (ok) {
+            removePendingTx(newTx.id);
+          } else {
+            notify(
+              'warning',
+              'Sincronização Pendente',
+              'O lançamento foi salvo neste aparelho, mas houve falha ao enviar para a nuvem. Tentaremos sincronizar automaticamente.'
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('Falha assíncrona ao salvar transação no Supabase:', err);
+        });
     }
     notify(
       'success',
@@ -4527,10 +4858,22 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         auditLogs: [delTxLog, ...(prev.auditLogs || [])],
       };
     });
+    removePendingTx(id);
     if (isSupabaseConfigured()) {
-      supabaseService.deleteTeamTransaction(id, targetTx?.teamName).catch((err) => {
-        console.warn('Falha assíncrona ao excluir transação no Supabase:', err);
-      });
+      supabaseService
+        .deleteTeamTransaction(id, targetTx?.teamName)
+        .then((ok) => {
+          if (!ok) {
+            notify(
+              'warning',
+              'Atenção na Exclusão',
+              'Não foi possível confirmar a exclusão na nuvem. Verifique sua conexão e atualize a página.'
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('Falha assíncrona ao excluir transação no Supabase:', err);
+        });
     }
     notify('info', 'Lançamento Removido', 'A movimentação foi excluída com sucesso.');
     return true;

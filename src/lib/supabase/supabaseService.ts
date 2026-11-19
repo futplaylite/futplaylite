@@ -43,8 +43,34 @@ const TEAM_CREST_TTL_MS = 10 * 60 * 1000;
 const teamCrestCache = new Map<string, { url: string | undefined; fetchedAt: number }>();
 
 let monthlyLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
+let financialLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
 let auditLedgerWriteQueue: Promise<boolean> = Promise.resolve(true);
 let peerEvaluationsWriteQueue: Promise<boolean> = Promise.resolve(true);
+
+// Cache leve em memória para evitar chamadas 404 repetitivas caso a tabela opcional ainda não exista no banco
+let hasDedicatedFinancialTxTable: boolean | null = null;
+
+function buildTeamSlug(teamName?: string): string {
+  return (teamName || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function isMissingTableError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || '').toLowerCase();
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('could not find the table') ||
+    msg.includes('does not exist')
+  );
+}
 
 /**
  * Serviço de sincronização e comunicação com a API do Supabase.
@@ -1589,30 +1615,79 @@ export const supabaseService = {
   },
 
   /**
-   * Busca os registros mensais de mensalidades exclusivamente da tabela oficial monthly_payments
+   * Busca os registros mensais de mensalidades (mesclando tabela oficial monthly_payments + livro sincronizado em pelada_sumulas)
    */
   async getMonthlyPayments(): Promise<MonthlyPaymentRecord[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
-      const { data, error } = await supabase
-        .from('monthly_payments')
-        .select('*')
-        .order('updated_at', { ascending: false });
+      const mergedByKey = new Map<string, MonthlyPaymentRecord>();
+      let hadSuccess = false;
 
-      if (error || !data) {
-        return null;
+      const upsertIntoMap = (rec: MonthlyPaymentRecord) => {
+        if (!rec || !rec.playerId || !rec.yearMonth) return;
+        const ym = rec.yearMonth.trim();
+        const normalized: MonthlyPaymentRecord = {
+          ...rec,
+          id: rec.id || `${rec.playerId}_${ym}`,
+          yearMonth: ym,
+          isPaid: Boolean(rec.isPaid),
+          amount: Number(rec.amount) || 30,
+        };
+        const key = `${normalized.playerId}_${ym}`;
+        const existing = mergedByKey.get(key);
+        if (!existing) {
+          mergedByKey.set(key, normalized);
+          return;
+        }
+        const existingTime = new Date(existing.updatedAt || existing.paidAt || 0).getTime();
+        const incomingTime = new Date(normalized.updatedAt || normalized.paidAt || 0).getTime();
+        if (incomingTime >= existingTime) {
+          mergedByKey.set(key, normalized);
+        }
+      };
+
+      const [tableRes, ledgerRes] = await Promise.all([
+        supabase
+          .from('monthly_payments')
+          .select('*')
+          .order('updated_at', { ascending: false }),
+        supabase
+          .from('pelada_sumulas')
+          .select('id, data, last_updated')
+          .eq('id', 'monthly_payments_ledger_v1')
+          .maybeSingle(),
+      ]);
+
+      if (!tableRes.error && Array.isArray(tableRes.data)) {
+        hadSuccess = true;
+        for (const item of tableRes.data) {
+          upsertIntoMap({
+            id: item.id,
+            playerId: item.player_id,
+            yearMonth: (item.year_month || '').trim(),
+            isPaid: Boolean(item.is_paid),
+            paidAt: item.paid_at || undefined,
+            amount: Number(item.amount),
+            confirmedBy: item.confirmed_by || undefined,
+            updatedAt: item.updated_at || item.paid_at || undefined,
+          });
+        }
       }
 
-      return data.map((item) => ({
-        id: item.id,
-        playerId: item.player_id,
-        yearMonth: (item.year_month || '').trim(),
-        isPaid: Boolean(item.is_paid),
-        paidAt: item.paid_at || undefined,
-        amount: Number(item.amount),
-        confirmedBy: item.confirmed_by || undefined,
-        updatedAt: item.updated_at || item.paid_at || undefined,
-      }));
+      if (!ledgerRes.error) {
+        hadSuccess = true;
+        const ledgerData = ledgerRes.data?.data as unknown as {
+          payments?: MonthlyPaymentRecord[];
+        } | null;
+        if (Array.isArray(ledgerData?.payments)) {
+          for (const item of ledgerData.payments) {
+            upsertIntoMap(item);
+          }
+        }
+      }
+
+      if (!hadSuccess) return null;
+      return Array.from(mergedByKey.values());
     } catch (err) {
       console.warn('Exceção ao buscar mensalidades do Supabase:', err);
       return null;
@@ -1620,11 +1695,17 @@ export const supabaseService = {
   },
 
   /**
-   * Salva ou atualiza o status de mensalidade de um atleta exclusivamente na tabela oficial monthly_payments
+   * Salva ou atualiza o status de mensalidade de um atleta online no Supabase.
+   * Tenta a tabela oficial monthly_payments e garante persistência + broadcast realtime no livro monthly_payments_ledger_v1.
    */
   async upsertMonthlyPayment(record: MonthlyPaymentRecord): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     const nowIso = record.updatedAt || new Date().toISOString();
+    const recordWithUpdated: MonthlyPaymentRecord = {
+      ...record,
+      yearMonth: (record.yearMonth || '').trim(),
+      updatedAt: nowIso,
+    };
 
     try {
       const isUuid = Boolean(
@@ -1634,21 +1715,83 @@ export const supabaseService = {
           )
       );
 
-      const { error } = await supabase.from('monthly_payments').upsert(
-        {
-          id: record.id,
-          player_id: record.playerId,
-          year_month: record.yearMonth,
-          is_paid: record.isPaid,
-          paid_at: record.paidAt || null,
-          amount: record.amount || 30.0,
-          confirmed_by: isUuid ? (record.confirmedBy as string) : null,
-          updated_at: nowIso,
-        },
-        { onConflict: 'id' }
-      );
+      // 1. Tenta salvar na tabela oficial monthly_payments (quando disponível e autorizada pela RLS)
+      let tableSaved = false;
+      try {
+        const { error } = await supabase.from('monthly_payments').upsert(
+          {
+            id: recordWithUpdated.id,
+            player_id: recordWithUpdated.playerId,
+            year_month: recordWithUpdated.yearMonth,
+            is_paid: recordWithUpdated.isPaid,
+            paid_at: recordWithUpdated.paidAt || null,
+            amount: recordWithUpdated.amount || 30.0,
+            confirmed_by: isUuid ? (recordWithUpdated.confirmedBy as string) : null,
+            updated_at: nowIso,
+          },
+          { onConflict: 'id' }
+        );
+        tableSaved = !error;
+      } catch {
+        tableSaved = false;
+      }
 
-      return !error;
+      // 2. Persiste de forma enfileirada no livro sincronizado em pelada_sumulas
+      //    (garante leitura por todos os atletas/treinadores e dispara Realtime instantâneo)
+      const writeLedger = async (): Promise<boolean> => {
+        if (!supabase) return false;
+        const { data: existingRow, error: readErr } = await supabase
+          .from('pelada_sumulas')
+          .select('id, data')
+          .eq('id', 'monthly_payments_ledger_v1')
+          .maybeSingle();
+
+        if (readErr) {
+          console.warn('Erro ao ler livro de mensalidades no Supabase:', readErr.message);
+          return false;
+        }
+
+        const existingData =
+          (existingRow?.data as unknown as { payments?: MonthlyPaymentRecord[] }) || {};
+        const existingList = Array.isArray(existingData.payments) ? existingData.payments : [];
+        const updatedList = [
+          recordWithUpdated,
+          ...existingList.filter(
+            (item) =>
+              item &&
+              item.id !== recordWithUpdated.id &&
+              !(
+                item.playerId === recordWithUpdated.playerId &&
+                (item.yearMonth || '').trim() === recordWithUpdated.yearMonth
+              )
+          ),
+        ];
+
+        const { error: upsertErr } = await supabase.from('pelada_sumulas').upsert(
+          {
+            id: 'monthly_payments_ledger_v1',
+            team_name: 'Mensalidades',
+            status: 'financial_ledger',
+            match_date: null,
+            start_time: null,
+            data: { payments: updatedList } as unknown as Record<string, unknown>,
+            last_updated: nowIso,
+          },
+          { onConflict: 'id' }
+        );
+
+        if (upsertErr) {
+          console.error('Erro ao salvar livro de mensalidades no Supabase:', upsertErr.message);
+          return false;
+        }
+        return true;
+      };
+
+      const queuedWrite = monthlyLedgerWriteQueue.then(writeLedger, writeLedger);
+      monthlyLedgerWriteQueue = queuedWrite.catch(() => false);
+      const ledgerSaved = await queuedWrite;
+
+      return tableSaved || ledgerSaved;
     } catch (err) {
       console.error('Exceção ao sincronizar mensalidade com Supabase:', err);
       return false;
@@ -1656,11 +1799,31 @@ export const supabaseService = {
   },
 
   /**
-   * Busca as configurações da pelada (valor e chave PIX) da tabela pelada_monthly_configs
+   * Busca as configurações da pelada (valor e chave PIX), isoladas por time quando informado.
    */
   async getMonthlyConfig(teamName?: string): Promise<PeladaMonthlyConfig | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
+      const slug = buildTeamSlug(teamName);
+
+      // 1. Se informou o time, busca primeiro a config específica deste time em pelada_sumulas
+      if (slug && slug !== 'meu_time' && slug !== 'sem_time') {
+        const teamLedgerId = `monthly_config_ledger_${slug}`;
+        const { data: teamRow } = await supabase
+          .from('pelada_sumulas')
+          .select('data, last_updated')
+          .eq('id', teamLedgerId)
+          .maybeSingle();
+
+        const teamData = teamRow?.data as unknown as { config?: PeladaMonthlyConfig } | null;
+        if (teamData?.config) {
+          return teamData.config;
+        }
+      }
+
+      let tableCfg: PeladaMonthlyConfig | null = null;
+      let tableUpdated = 0;
+
       const { data, error } = await supabase
         .from('pelada_monthly_configs')
         .select('*')
@@ -1668,22 +1831,40 @@ export const supabaseService = {
         .limit(1)
         .maybeSingle();
 
-      if (error || !data) return null;
+      if (!error && data) {
+        tableCfg = {
+          monthlyAmount: Number(data.monthly_amount),
+          dueDay: data.due_day,
+          pixKey: data.pix_key,
+          pixKeyType: data.pix_key_type,
+          pixReceiverName: data.pix_receiver_name,
+        };
+        tableUpdated = new Date(data.updated_at || 0).getTime();
+      }
 
-      return {
-        monthlyAmount: Number(data.monthly_amount),
-        dueDay: data.due_day,
-        pixKey: data.pix_key,
-        pixKeyType: data.pix_key_type,
-        pixReceiverName: data.pix_receiver_name,
-      };
+      // 2. Verifica também o livro global de config em pelada_sumulas
+      const { data: ledgerRow } = await supabase
+        .from('pelada_sumulas')
+        .select('data, last_updated')
+        .eq('id', 'monthly_config_ledger_v1')
+        .maybeSingle();
+
+      const ledgerData = ledgerRow?.data as unknown as { config?: PeladaMonthlyConfig } | null;
+      if (ledgerData?.config) {
+        const ledgerUpdated = new Date(ledgerRow?.last_updated || 0).getTime();
+        if (!tableCfg || ledgerUpdated >= tableUpdated) {
+          return ledgerData.config;
+        }
+      }
+
+      return tableCfg;
     } catch {
       return null;
     }
   },
 
   /**
-   * Salva a configuração financeira da pelada (PIX e valor mensal) na tabela pelada_monthly_configs
+   * Salva a configuração financeira da pelada (PIX e valor mensal), isolando por time.
    */
   async saveMonthlyConfig(config: PeladaMonthlyConfig, teamName?: string): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
@@ -1698,21 +1879,47 @@ export const supabaseService = {
           : 'aleatoria';
 
       const nowIso = new Date().toISOString();
+      const slug = buildTeamSlug(teamName);
+      const ledgerId =
+        slug && slug !== 'meu_time' && slug !== 'sem_time'
+          ? `monthly_config_ledger_${slug}`
+          : 'monthly_config_ledger_v1';
 
-      const { error } = await supabase.from('pelada_monthly_configs').upsert(
+      // 1. Tenta salvar na tabela pelada_monthly_configs
+      let tableSaved = false;
+      try {
+        const { error } = await supabase.from('pelada_monthly_configs').upsert(
+          {
+            id: '33333333-3333-4333-8333-333333333301',
+            monthly_amount: config.monthlyAmount,
+            due_day: config.dueDay,
+            pix_key: config.pixKey,
+            pix_key_type: normalizedKeyType,
+            pix_receiver_name: config.pixReceiverName,
+            updated_at: nowIso,
+          },
+          { onConflict: 'id' }
+        );
+        tableSaved = !error;
+      } catch {
+        tableSaved = false;
+      }
+
+      // 2. Salva no livro de configuração por time em pelada_sumulas
+      const { error: fallbackErr } = await supabase.from('pelada_sumulas').upsert(
         {
-          id: '33333333-3333-4333-8333-333333333301',
-          monthly_amount: config.monthlyAmount,
-          due_day: config.dueDay,
-          pix_key: config.pixKey,
-          pix_key_type: normalizedKeyType,
-          pix_receiver_name: config.pixReceiverName,
-          updated_at: nowIso,
+          id: ledgerId,
+          team_name: teamName || 'Config PIX',
+          status: 'financial_ledger',
+          match_date: null,
+          start_time: null,
+          data: { config, teamName: teamName || '' } as unknown as Record<string, unknown>,
+          last_updated: nowIso,
         },
         { onConflict: 'id' }
       );
 
-      return !error;
+      return !fallbackErr || tableSaved;
     } catch (err) {
       console.error('Erro ao salvar configuração de mensalidade no Supabase:', err);
       return false;
@@ -1949,31 +2156,77 @@ export const supabaseService = {
   },
 
   /**
-   * Busca todas as transações financeiras exclusivamente da tabela dedicada team_financial_transactions
+   * Busca todas as transações financeiras (tabela dedicada team_financial_transactions + livro-caixa sincronizado em pelada_sumulas)
    */
   async getTeamTransactions(): Promise<TeamTransaction[] | null> {
     if (!isSupabaseConfigured() || !supabase) return null;
     try {
-      const { data, error } = await supabase
-        .from('team_financial_transactions')
-        .select('*')
-        .order('date', { ascending: false });
+      const collectedMap = new Map<string, TeamTransaction>();
+      let hadSuccess = false;
 
-      if (error || !data) return null;
+      // 1. Consulta tabela dedicada team_financial_transactions quando ela existir no banco
+      if (hasDedicatedFinancialTxTable !== false) {
+        const { data, error } = await supabase
+          .from('team_financial_transactions')
+          .select('*');
 
-      return data.map((item) => ({
-        id: item.id,
-        teamName: item.team_name,
-        type: item.type,
-        category: item.category,
-        description: item.description,
-        amount: Number(item.amount),
-        date: item.date,
-        notes: item.notes || undefined,
-        createdByName: item.created_by_name || undefined,
-        createdByUserId: item.created_by_user_id || undefined,
-        createdAt: item.created_at,
-      }));
+        if (error) {
+          if (isMissingTableError(error)) {
+            hasDedicatedFinancialTxTable = false;
+          }
+        } else if (Array.isArray(data)) {
+          hasDedicatedFinancialTxTable = true;
+          hadSuccess = true;
+          for (const item of data as any[]) {
+            if (!item?.id) continue;
+            collectedMap.set(item.id, {
+              id: item.id,
+              teamName: item.team_name || 'Meu Time',
+              type: item.type,
+              category: item.category || 'outro',
+              description: item.description,
+              amount: Number(item.amount) || 0,
+              date: item.transaction_date || item.date || (item.created_at || '').split('T')[0],
+              notes: item.notes || undefined,
+              createdByName: item.created_by_name || undefined,
+              createdByUserId: item.created_by_user_id || undefined,
+              createdAt: item.created_at,
+            });
+          }
+        }
+      }
+
+      // 2. Consulta livro-caixa sincronizado em pelada_sumulas (status = 'financial_ledger')
+      const { data: ledgerRows, error: ledgerErr } = await supabase
+        .from('pelada_sumulas')
+        .select('id, team_name, data, last_updated')
+        .eq('status', 'financial_ledger');
+
+      if (!ledgerErr && Array.isArray(ledgerRows)) {
+        hadSuccess = true;
+        for (const row of ledgerRows) {
+          const rawData = row.data as unknown as { transactions?: TeamTransaction[] } | null;
+          const list = Array.isArray(rawData?.transactions) ? rawData.transactions : [];
+          for (const tx of list) {
+            if (tx && tx.id && !collectedMap.has(tx.id)) {
+              collectedMap.set(tx.id, {
+                ...tx,
+                teamName: tx.teamName || row.team_name || 'Meu Time',
+                amount: Number(tx.amount) || 0,
+              });
+            }
+          }
+        }
+      }
+
+      if (!hadSuccess) return null;
+
+      return Array.from(collectedMap.values()).sort((a, b) => {
+        const tA = new Date(a.date || a.createdAt || 0).getTime();
+        const tB = new Date(b.date || b.createdAt || 0).getTime();
+        if (tB !== tA) return tB - tA;
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      });
     } catch (err) {
       console.warn('Exceção ao buscar transações financeiras no Supabase:', err);
       return null;
@@ -1981,29 +2234,100 @@ export const supabaseService = {
   },
 
   /**
-   * Salva uma transação financeira exclusivamente na tabela dedicada team_financial_transactions
+   * Salva uma transação financeira online no Supabase (tabela dedicada quando existir + livro-caixa enfileirado em pelada_sumulas)
    */
   async saveTeamTransaction(tx: TeamTransaction): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      const { error } = await supabase.from('team_financial_transactions').upsert(
-        {
-          id: tx.id,
-          team_name: tx.teamName || 'Meu Time',
-          type: tx.type,
-          category: tx.category,
-          description: tx.description,
-          amount: Number(tx.amount) || 0,
-          date: tx.date,
-          notes: tx.notes || null,
-          created_by_name: tx.createdByName || null,
-          created_by_user_id: tx.createdByUserId || null,
-          created_at: tx.createdAt || new Date().toISOString(),
-        },
-        { onConflict: 'id' }
-      );
+      let tableSaved = false;
 
-      return !error;
+      // 1. Tenta salvar na tabela dedicada quando existir no banco
+      if (hasDedicatedFinancialTxTable !== false) {
+        const { error } = await supabase.from('team_financial_transactions').upsert(
+          {
+            id: tx.id,
+            team_name: tx.teamName || 'Meu Time',
+            type: tx.type,
+            category: tx.category,
+            description: tx.description,
+            amount: Number(tx.amount) || 0,
+            date: tx.date,
+            notes: tx.notes || null,
+            created_by_name: tx.createdByName || null,
+            created_by_user_id: tx.createdByUserId || null,
+            created_at: tx.createdAt || new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+
+        if (error) {
+          if (isMissingTableError(error)) {
+            hasDedicatedFinancialTxTable = false;
+          }
+        } else {
+          hasDedicatedFinancialTxTable = true;
+          tableSaved = true;
+        }
+      }
+
+      // 2. Salva de forma enfileirada no livro-caixa do time em pelada_sumulas
+      //    (garante visibilidade para todos os atletas/treinadores e dispara Realtime instantâneo)
+      const slug = buildTeamSlug(tx.teamName) || 'meu_time';
+      const ledgerId = `finance_ledger_${slug}`;
+      const normalizedTx: TeamTransaction = {
+        ...tx,
+        teamName: tx.teamName || 'Meu Time',
+        amount: Number(tx.amount) || 0,
+        createdAt: tx.createdAt || new Date().toISOString(),
+      };
+
+      const writeFinancialLedger = async (): Promise<boolean> => {
+        if (!supabase) return false;
+        const { data: existingRow, error: readErr } = await supabase
+          .from('pelada_sumulas')
+          .select('id, team_name, data')
+          .eq('id', ledgerId)
+          .maybeSingle();
+
+        if (readErr) {
+          console.error('Erro ao ler livro-caixa no Supabase:', readErr.message);
+          return false;
+        }
+
+        const existingData =
+          (existingRow?.data as unknown as { transactions?: TeamTransaction[] }) || {};
+        const existingList = Array.isArray(existingData.transactions)
+          ? existingData.transactions
+          : [];
+        const merged = [normalizedTx, ...existingList.filter((item) => item && item.id !== normalizedTx.id)];
+
+        const { error: upsertErr } = await supabase.from('pelada_sumulas').upsert(
+          {
+            id: ledgerId,
+            team_name: normalizedTx.teamName,
+            status: 'financial_ledger',
+            match_date: null,
+            start_time: null,
+            created_by_user_id: normalizedTx.createdByUserId || null,
+            created_by_name: normalizedTx.createdByName || null,
+            data: { transactions: merged } as unknown as Record<string, unknown>,
+            last_updated: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+
+        if (upsertErr) {
+          console.error('Erro ao salvar livro-caixa no Supabase:', upsertErr.message);
+          return false;
+        }
+        return true;
+      };
+
+      const queuedWrite = financialLedgerWriteQueue.then(writeFinancialLedger, writeFinancialLedger);
+      financialLedgerWriteQueue = queuedWrite.catch(() => false);
+      const ledgerSaved = await queuedWrite;
+
+      return tableSaved || ledgerSaved;
     } catch (err) {
       console.warn('Exceção ao salvar transação financeira no Supabase:', err);
       return false;
@@ -2019,7 +2343,7 @@ export const supabaseService = {
     }
     try {
       const { error } = await supabase.rpc('reverse_team_financial_transaction_authenticated', {
-        p_original_tx_id: txId,
+        p_transaction_id: txId,
         p_reason: reason.trim(),
       });
       if (error) {
@@ -2032,19 +2356,97 @@ export const supabaseService = {
   },
 
   /**
-   * Remove uma transação financeira (ou estorna de forma auditada)
+   * Remove uma transação financeira (tabela dedicada quando existir + livro-caixa enfileirado em pelada_sumulas)
    */
   async deleteTeamTransaction(txId: string, teamName?: string): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
     try {
-      const revRes = await this.reverseTeamTransaction(txId, 'Exclusão solicitada pelo gestor financeiro');
-      if (revRes.success) return true;
+      let tableDeleted = false;
 
-      const { error } = await supabase
-        .from('team_financial_transactions')
-        .delete()
-        .eq('id', txId);
-      return !error;
+      if (hasDedicatedFinancialTxTable !== false) {
+        const revRes = await this.reverseTeamTransaction(
+          txId,
+          'Exclusão solicitada pelo gestor financeiro'
+        );
+        if (revRes.success) {
+          tableDeleted = true;
+        } else {
+          const { error } = await supabase
+            .from('team_financial_transactions')
+            .delete()
+            .eq('id', txId);
+          if (error) {
+            if (isMissingTableError(error)) {
+              hasDedicatedFinancialTxTable = false;
+            }
+          } else {
+            tableDeleted = true;
+          }
+        }
+      }
+
+      const removeFromFinancialLedger = async (): Promise<boolean> => {
+        if (!supabase) return false;
+        const slug = buildTeamSlug(teamName);
+        const preferredLedgerId = slug ? `finance_ledger_${slug}` : '';
+
+        // Busca todos os livros-caixa para garantir a remoção mesmo se o nome do time tiver mudado
+        const { data: ledgerRows, error: readErr } = await supabase
+          .from('pelada_sumulas')
+          .select('id, team_name, data')
+          .eq('status', 'financial_ledger');
+
+        if (readErr) {
+          console.error('Erro ao ler livro-caixa para exclusão:', readErr.message);
+          return false;
+        }
+
+        const candidateRows = (ledgerRows || []).filter((row) => {
+          const rawData = row.data as unknown as { transactions?: TeamTransaction[] } | null;
+          if (!Array.isArray(rawData?.transactions)) return false;
+          return (
+            row.id === preferredLedgerId ||
+            rawData.transactions.some((item) => item && item.id === txId)
+          );
+        });
+
+        if (candidateRows.length === 0) return true;
+
+        let allOk = true;
+        for (const row of candidateRows) {
+          const rawData = (row.data as unknown as { transactions?: TeamTransaction[] }) || {};
+          const existingList = Array.isArray(rawData.transactions) ? rawData.transactions : [];
+          if (!existingList.some((item) => item && item.id === txId)) continue;
+
+          const remaining = existingList.filter((item) => item && item.id !== txId);
+          const { error: upsertErr } = await supabase.from('pelada_sumulas').upsert(
+            {
+              id: row.id,
+              team_name: teamName || row.team_name || 'Meu Time',
+              status: 'financial_ledger',
+              data: { transactions: remaining } as unknown as Record<string, unknown>,
+              last_updated: new Date().toISOString(),
+            },
+            { onConflict: 'id' }
+          );
+
+          if (upsertErr) {
+            console.error('Erro ao excluir lançamento do livro-caixa:', upsertErr.message);
+            allOk = false;
+          }
+        }
+
+        return allOk;
+      };
+
+      const queuedDelete = financialLedgerWriteQueue.then(
+        removeFromFinancialLedger,
+        removeFromFinancialLedger
+      );
+      financialLedgerWriteQueue = queuedDelete.catch(() => false);
+      const ledgerDeleted = await queuedDelete;
+
+      return tableDeleted || ledgerDeleted;
     } catch {
       return false;
     }
