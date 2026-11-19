@@ -1872,10 +1872,14 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       activeUser?.role === 'coach' ||
         activeUser?.role === 'admin' ||
         activeUser?.isTeamOwner ||
-        activeProfile?.isTeamOwner
+        activeProfile?.isTeamOwner ||
+        activeProfile?.isCoach ||
+        activeProfile?.role === 'coach'
     );
+    const recoveryAlreadyDone =
+      typeof window !== 'undefined' && localStorage.getItem(FINANCE_RECOVERY_DONE_KEY) === 'done';
 
-    if (canManage && typeof window !== 'undefined' && localStorage.getItem(FINANCE_RECOVERY_DONE_KEY) !== 'done') {
+    if (canManage && !recoveryAlreadyDone) {
       const remoteIds = new Set(remoteTx.map((t) => t.id));
       const localStored = readPendingList<TeamTransaction>('futplay_team_financial_transactions_v1');
       const toRecover = localStored.filter(
@@ -1884,7 +1888,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           loc.id &&
           !loc.id.startsWith('auto-fee-') &&
           !remoteIds.has(loc.id) &&
-          (!loc.createdByUserId || loc.createdByUserId === currentUserId)
+          (!loc.createdByUserId ||
+            loc.createdByUserId === currentUserId ||
+            loc.createdByUserId === activeProfile?.id)
       );
 
       let allRecovered = true;
@@ -1907,6 +1913,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     const pendingTxIds = new Set(readPendingList<TeamTransaction>(PENDING_TX_SYNC_KEY).map((t) => t.id));
+    const stillWaitingRecovery =
+      typeof window !== 'undefined' &&
+      localStorage.getItem(FINANCE_RECOVERY_DONE_KEY) !== 'done' &&
+      !activeUser;
 
     setState((prev) => {
       const mergedMap = new Map<string, TeamTransaction>();
@@ -1916,7 +1926,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       (prev.teamTransactions || []).forEach((locTx) => {
         if (!mergedMap.has(locTx.id)) {
           const ageMs = now - new Date(locTx.createdAt || 0).getTime();
-          if (pendingTxIds.has(locTx.id) || ageMs < 60000) {
+          if (pendingTxIds.has(locTx.id) || stillWaitingRecovery || ageMs < 60000) {
             mergedMap.set(locTx.id, locTx);
           }
         }
@@ -1961,7 +1971,9 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       activeUser?.role === 'coach' ||
         activeUser?.role === 'admin' ||
         activeUser?.isTeamOwner ||
-        activeProfile?.isTeamOwner
+        activeProfile?.isTeamOwner ||
+        activeProfile?.isCoach ||
+        activeProfile?.role === 'coach'
     );
     const PAY_RECOVERY_KEY = `${FINANCE_RECOVERY_DONE_KEY}_pay`;
     if (
@@ -1979,7 +1991,15 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       const localPays = readPendingList<MonthlyPaymentRecord>('futplay_monthly_payments_v1');
       const paysToRecover = localPays.filter((locP) => {
         if (!locP || !locP.playerId || !locP.yearMonth) return false;
-        if (locP.confirmedBy && currentUserId && locP.confirmedBy !== currentUserId) return false;
+        if (
+          locP.confirmedBy &&
+          currentUserId &&
+          locP.confirmedBy !== currentUserId &&
+          locP.confirmedBy !== activeProfile?.id &&
+          locP.confirmedBy !== 'admin-pelada'
+        ) {
+          return false;
+        }
         const key = `${locP.playerId}_${locP.yearMonth.trim()}`;
         const rem = remoteByKey.get(key);
         if (!rem) return true;
@@ -2012,6 +2032,10 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         (p) => `${p.playerId}_${(p.yearMonth || '').trim()}`
       )
     );
+    const stillWaitingPayRecovery =
+      typeof window !== 'undefined' &&
+      localStorage.getItem(PAY_RECOVERY_KEY) !== 'done' &&
+      !activeUser;
 
     setState((prev) => {
       let nextPayments = prev.monthlyPayments || [];
@@ -2030,12 +2054,12 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
           const remP = mergedMap.get(key);
           const locTime = new Date(locP.updatedAt || locP.paidAt || 0).getTime();
           if (!remP) {
-            if (pendingPayKeys.has(key) || now - locTime < 60000) {
+            if (pendingPayKeys.has(key) || stillWaitingPayRecovery || now - locTime < 60000) {
               mergedMap.set(key, locP);
             }
           } else {
             const remTime = new Date(remP.updatedAt || remP.paidAt || 0).getTime();
-            if (pendingPayKeys.has(key) && locTime >= remTime) {
+            if ((pendingPayKeys.has(key) || stillWaitingPayRecovery) && locTime >= remTime) {
               mergedMap.set(key, locP);
             }
           }
