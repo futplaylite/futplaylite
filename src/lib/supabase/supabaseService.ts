@@ -852,15 +852,14 @@ export const supabaseService = {
       if (updates.teamCity !== undefined) payload.team_city = updates.teamCity;
       if (updates.teamModality !== undefined) payload.team_modality = updates.teamModality;
       if (updates.teamInviteCode !== undefined) payload.team_invite_code = updates.teamInviteCode;
-      if (updates.role !== undefined) payload.role = updates.role;
-      if (updates.isTeamOwner !== undefined || updates.role === 'coach') {
+      if (updates.isTeamOwner !== undefined || updates.role !== undefined) {
         payload.is_team_owner = updates.role === 'coach' ? true : Boolean(updates.isTeamOwner);
       }
 
       const { error: pError } = await supabase
         .from('player_profiles')
         .update(payload)
-        .eq('user_id', userId);
+        .or(`id.eq.${userId},user_id.eq.${userId}`);
 
       if (pError) {
         // Fallback sem colunas de time caso a migração ainda não tenha sido rodada
@@ -870,8 +869,13 @@ export const supabaseService = {
         if (updates.position !== undefined) basePayload.position = updates.position;
         if (updates.dominantFoot !== undefined) basePayload.dominant_foot = updates.dominantFoot;
         if (updates.profileVisibility !== undefined) basePayload.profile_visibility = updates.profileVisibility;
-        if (updates.role !== undefined) basePayload.role = updates.role;
-        await supabase.from('player_profiles').update(basePayload).eq('user_id', userId);
+        if (updates.isTeamOwner !== undefined || updates.role !== undefined) {
+          basePayload.is_team_owner = updates.role === 'coach' ? true : Boolean(updates.isTeamOwner);
+        }
+        await supabase
+          .from('player_profiles')
+          .update(basePayload)
+          .or(`id.eq.${userId},user_id.eq.${userId}`);
       }
 
       // Atualiza também na tabela users
@@ -952,6 +956,21 @@ export const supabaseService = {
 
       // 3. Fallback direto nas tabelas públicas com Supabase Client caso a migration 015 ainda esteja pendente
       const now = new Date().toISOString();
+      let realUserId = params.targetUserId;
+      let realProfileId = params.targetUserId;
+      try {
+        const { data: profMatch } = await supabase
+          .from('player_profiles')
+          .select('id, user_id')
+          .or(`id.eq.${params.targetUserId},user_id.eq.${params.targetUserId}`)
+          .limit(1)
+          .maybeSingle();
+        if (profMatch) {
+          if (profMatch.user_id) realUserId = profMatch.user_id;
+          if (profMatch.id) realProfileId = profMatch.id;
+        }
+      } catch {}
+
       await Promise.allSettled([
         supabase
           .from('users')
@@ -960,23 +979,14 @@ export const supabaseService = {
             is_team_owner: isCoach,
             updated_at: now,
           })
-          .eq('id', params.targetUserId),
+          .eq('id', realUserId),
         supabase
           .from('player_profiles')
           .update({
-            role: params.newRole,
             is_team_owner: isCoach,
             updated_at: now,
           })
-          .eq('user_id', params.targetUserId),
-        supabase
-          .from('player_profiles')
-          .update({
-            role: params.newRole,
-            is_team_owner: isCoach,
-            updated_at: now,
-          })
-          .eq('id', params.targetUserId),
+          .or(`id.eq.${realProfileId},user_id.eq.${realUserId}`),
         supabase
           .from('team_memberships')
           .update({
@@ -985,7 +995,7 @@ export const supabaseService = {
             can_manage_finance: isCoach,
             updated_at: now,
           })
-          .eq('user_id', params.targetUserId),
+          .eq('user_id', realUserId),
       ]);
 
       return { success: true };
