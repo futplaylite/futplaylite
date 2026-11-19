@@ -2168,7 +2168,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           player={activeProfile}
           isOpen={showRatingModal}
           onClose={() => setShowRatingModal(false)}
-          readOnly={activeProfile.userId === currentUser.id}
+          readOnly={
+            activeProfile.userId === currentUser.id ||
+            activeProfile.id === currentUser.id ||
+            (Boolean(currentPlayerProfile?.id) && activeProfile.id === currentPlayerProfile?.id)
+          }
           readOnlyMessage="Você está visualizando seu próprio cartão. Não é permitido avaliar a si mesmo."
           onSave={(playerId, newSkills) => {
             updatePlayerSkills(playerId, newSkills);

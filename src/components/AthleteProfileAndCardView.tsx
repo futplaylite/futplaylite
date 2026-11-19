@@ -1129,8 +1129,12 @@ export const AthleteProfileAndCardView: React.FC<
 
       {/* Modal de Avaliação dos 5 Quesitos */}
       {showRatingModal && (() => {
-        const isSelf = isOwnProfile;
-        const isSelfReadOnly = isSelf && currentUser.role === 'player';
+        const isSelf = Boolean(
+          isOwnProfile ||
+            (currentUser?.id && (targetProfile.userId === currentUser.id || targetProfile.id === currentUser.id)) ||
+            (currentPlayerProfile?.userId && targetProfile.userId === currentPlayerProfile.userId)
+        );
+        const isSelfReadOnly = isSelf;
 
         const myTeam = (currentUser?.teamName || currentPlayerProfile?.teamName || '').trim().toLowerCase();
         const myCode = (currentUser?.teamInviteCode || currentPlayerProfile?.teamInviteCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();

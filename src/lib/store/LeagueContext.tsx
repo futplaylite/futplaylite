@@ -486,6 +486,8 @@ export function computeProfilesWithPeerEvaluations(
     const targetEvals = evaluations.filter(
       (e) =>
         (e.targetPlayerId === prof.id || (prof.userId && e.targetPlayerId === prof.userId)) &&
+        e.evaluatorId !== prof.id &&
+        (!prof.userId || e.evaluatorId !== prof.userId) &&
         (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
     );
     if (targetEvals.length === 0) return prof;
@@ -3103,12 +3105,17 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       (evaluatorId ? state.profiles.find((prof) => prof.id === evaluatorId || prof.userId === evaluatorId) : undefined) ||
       currentPlayerProfile;
 
-    const isSelf = p.id === evaluatorProfile?.id || p.userId === evaluatorUser?.id;
-    if (isSelf && evaluatorUser?.role === 'player') {
+    const isSelf = Boolean(
+      (evaluatorProfile?.id && p.id === evaluatorProfile.id) ||
+        (evaluatorUser?.id && (p.userId === evaluatorUser.id || p.id === evaluatorUser.id)) ||
+        (evaluatorProfile?.userId && p.userId === evaluatorProfile.userId) ||
+        (evaluatorId && (p.id === evaluatorId || p.userId === evaluatorId))
+    );
+    if (isSelf) {
       notify(
         'error',
         'Autoavaliação bloqueada',
-        'Você não pode classificar a si mesmo. Suas estrelas são avaliadas pelos companheiros do seu time.'
+        'Nenhum atleta ou treinador pode avaliar a si mesmo. Suas estrelas são avaliadas pelos companheiros do seu time.'
       );
       return false;
     }

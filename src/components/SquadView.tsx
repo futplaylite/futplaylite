@@ -876,18 +876,23 @@ export const SquadView: React.FC<SquadViewProps> = ({ initialPlayerId }) => {
 
       {/* Modal de Avaliação dos 5 Quesitos */}
       {ratingModalPlayer && (() => {
-        const isSelf = currentPlayerProfile?.id === ratingModalPlayer.id;
-        const isUserPlayer = currentUser.role === 'player';
-        const isSelfReadOnly = isSelf && isUserPlayer;
-
-        const myEval = (peerEvaluations || []).find(
-          (e) =>
-            (e.evaluatorId === currentUser.id ||
-              (currentPlayerProfile && e.evaluatorId === currentPlayerProfile.id) ||
-              (currentPlayerProfile?.userId && e.evaluatorId === currentPlayerProfile.userId)) &&
-            (e.targetPlayerId === ratingModalPlayer.id ||
-              (ratingModalPlayer.userId && e.targetPlayerId === ratingModalPlayer.userId))
+        const isSelf = Boolean(
+          (currentPlayerProfile?.id && ratingModalPlayer.id === currentPlayerProfile.id) ||
+            (currentUser?.id && (ratingModalPlayer.userId === currentUser.id || ratingModalPlayer.id === currentUser.id)) ||
+            (currentPlayerProfile?.userId && ratingModalPlayer.userId === currentPlayerProfile.userId)
         );
+        const isSelfReadOnly = isSelf;
+
+        const myEval = isSelf
+          ? undefined
+          : (peerEvaluations || []).find(
+              (e) =>
+                (e.evaluatorId === currentUser.id ||
+                  (currentPlayerProfile && e.evaluatorId === currentPlayerProfile.id) ||
+                  (currentPlayerProfile?.userId && e.evaluatorId === currentPlayerProfile.userId)) &&
+                (e.targetPlayerId === ratingModalPlayer.id ||
+                  (ratingModalPlayer.userId && e.targetPlayerId === ratingModalPlayer.userId))
+            );
 
         const initialSkills = myEval
           ? {

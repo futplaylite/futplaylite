@@ -2558,6 +2558,10 @@ export const supabaseService = {
     allEvalsForPlayer?: PeerEvaluation[]
   ): Promise<boolean> {
     if (!isSupabaseConfigured() || !supabase) return false;
+    if (evaluation.evaluatorId && evaluation.targetPlayerId && evaluation.evaluatorId === evaluation.targetPlayerId) {
+      console.warn('Autoavaliação bloqueada na camada de serviço.');
+      return false;
+    }
     try {
       if (
         evaluation.targetPlayerId &&

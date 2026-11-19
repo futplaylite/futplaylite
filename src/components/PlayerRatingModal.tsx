@@ -47,9 +47,11 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
   // Garante que usamos a versão mais recente do perfil com as notas recalculadas
   const freshPlayer = profiles.find((p) => p.id === player.id) || player;
 
-  const isSelf =
-    freshPlayer.id === currentPlayerProfile?.id ||
-    freshPlayer.userId === currentUser?.id;
+  const isSelf = Boolean(
+    (currentPlayerProfile?.id && freshPlayer.id === currentPlayerProfile.id) ||
+      (currentUser?.id && (freshPlayer.userId === currentUser.id || freshPlayer.id === currentUser.id)) ||
+      (currentPlayerProfile?.userId && freshPlayer.userId === currentPlayerProfile.userId)
+  );
 
   // Resolução do time do usuário logado
   let myTeam = (currentUser?.teamName || currentPlayerProfile?.teamName || '').trim().toLowerCase();
@@ -83,7 +85,7 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
 
   const isDifferentTeam = !isSelf && !isSameTeam && currentUser?.role !== 'admin';
 
-  const effectiveReadOnly = readOnly || isDifferentTeam || (isSelf && currentUser?.role === 'player');
+  const effectiveReadOnly = readOnly || isDifferentTeam || isSelf;
   const effectiveReadOnlyMessage =
     readOnlyMessage ||
     (isDifferentTeam
@@ -143,10 +145,12 @@ export const PlayerRatingModal: React.FC<PlayerRatingModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Todas as avaliações ativas de outros atletas para este jogador
+  // Todas as avaliações ativas de outros atletas para este jogador (exclui qualquer autoavaliação)
   const allTargetEvals = (peerEvaluations || []).filter(
     (e) =>
       (e.targetPlayerId === player.id || (player.userId && e.targetPlayerId === player.userId)) &&
+      e.evaluatorId !== player.id &&
+      (!player.userId || e.evaluatorId !== player.userId) &&
       (e.finalizacao > 0 || e.marcacao > 0 || e.passe > 0 || e.raca > 0 || e.drible > 0)
   );
 
