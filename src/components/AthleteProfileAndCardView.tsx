@@ -82,6 +82,7 @@ export const AthleteProfileAndCardView: React.FC<
     updateOwnProfile,
     deleteUserAccount,
     updatePlayerSkills,
+    recordAuditLog,
   } = useLeague();
 
   const [inspectedPlayerId, setInspectedPlayerId] = useState<string>(
@@ -414,6 +415,12 @@ export const AthleteProfileAndCardView: React.FC<
           setEditError(updateRes.error || 'A senha atual informada está incorreta.');
           return;
         }
+        recordAuditLog({
+          actionType: 'SENHA_ALTERADA',
+          entityType: 'users',
+          entityId: currentUser.id,
+          reason: `Senha de acesso alterada pelo próprio usuário (${targetProfile.displayName || currentUser.email}).`,
+        });
       }
     }
 

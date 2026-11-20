@@ -39,6 +39,7 @@ export const MatchesAndValidationView: React.FC<
     submitMatchScoreAndEvents,
     confirmMatchResult,
     contestMatchResult,
+    recordAuditLog,
     notify,
   } = useLeague();
 
@@ -1071,6 +1072,12 @@ export const MatchesAndValidationView: React.FC<
                 type="button"
                 onClick={() => {
                   deleteSumulaFromList(sumulaToDelete.id);
+                  recordAuditLog({
+                    actionType: 'SUMULA_PELADA_EXCLUIDA',
+                    entityType: 'pelada_sumulas',
+                    entityId: sumulaToDelete.id,
+                    reason: `Súmula "${sumulaToDelete.teamName || sumulaToDelete.matchDate || sumulaToDelete.id}" (${sumulaToDelete.status}) excluída.`,
+                  });
                   setSumulaToDelete(null);
                   setSumulasVersion((v) => v + 1);
                 }}

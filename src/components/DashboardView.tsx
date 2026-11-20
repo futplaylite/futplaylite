@@ -288,6 +288,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     selectedCityId,
     selectedSeasonId,
     updatePlayerSkills,
+    recordAuditLog,
     notify,
   } = useLeague();
 
@@ -1089,6 +1090,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       if (isSupabaseConfigured()) {
         await supabaseService.saveTeamPeladaSchedule(resolvedTeamName, updated);
       }
+
+      recordAuditLog({
+        actionType: 'AGENDAMENTO_PELADA_ATUALIZADO',
+        entityType: 'team_schedules',
+        entityId: slug || 'global',
+        reason: `Próxima pelada de "${resolvedTeamName}" agendada para ${updated.date} às ${updated.time} em ${updated.venueName} (${updated.neighborhood}).`,
+        afterData: updated as unknown as Record<string, unknown>,
+      });
 
       notify(
         'success',

@@ -1858,6 +1858,24 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
                     })
                   );
                 }
+              } else if (newRow && newRow.data && newRow.status === 'audit_ledger') {
+                const auditData = newRow.data as { logs?: AuditLog[] };
+                if (Array.isArray(auditData?.logs)) {
+                  const incomingLogs = auditData.logs;
+                  setState((prev) => {
+                    const logMap = new Map<string, AuditLog>();
+                    incomingLogs.forEach((l) => {
+                      if (l && l.id) logMap.set(l.id, l);
+                    });
+                    (prev.auditLogs || []).forEach((l) => {
+                      if (l && l.id && !logMap.has(l.id)) logMap.set(l.id, l);
+                    });
+                    const mergedLogs = Array.from(logMap.values()).sort(
+                      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+                    );
+                    return { ...prev, auditLogs: mergedLogs };
+                  });
+                }
               } else if (
                 newRow &&
                 newRow.data &&
@@ -2390,6 +2408,24 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [currentUser, athleteProfiles]);
 
+  const syncAuditLogToCloud = (log: AuditLog): AuditLog => {
+    const nowIso = log.createdAt || new Date().toISOString();
+    const enriched: AuditLog = {
+      ...log,
+      clientApp: log.clientApp || 'FutPlay Lite PWA v1.0',
+      legalRetentionPolicy:
+        log.legalRetentionPolicy || 'Marco Civil da Internet (Art. 15, Lei 12.965/2014) & LGPD',
+      retentionUntil:
+        log.retentionUntil ||
+        new Date(new Date(nowIso).getTime() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: nowIso,
+    };
+    if (isSupabaseConfigured()) {
+      supabaseService.recordAuditLogInSupabase(enriched).catch(() => {});
+    }
+    return enriched;
+  };
+
   const recordAuditLog: LeagueContextValue['recordAuditLog'] = (params) => {
     const now = new Date().toISOString();
     const actorUser = params.actorUserId
@@ -2466,7 +2502,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setState((prev) => ({
         ...prev,
-        auditLogs: [loginLog, ...(prev.auditLogs || [])],
+        auditLogs: [syncAuditLogToCloud(loginLog), ...(prev.auditLogs || [])],
       }));
 
       notify(
@@ -2479,6 +2515,29 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logoutUser: LeagueContextValue['logoutUser'] = (reason = 'manual') => {
     const prevId = currentUserId;
+    const prevUser = state.users.find((u) => u.id === prevId);
+    const prevProf = state.profiles.find((p) => p.userId === prevId || p.id === prevId);
+    if (prevId) {
+      const logoutLog: AuditLog = {
+        id: `audit-logout-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        actorUserId: prevId,
+        actorName: prevProf?.displayName || prevUser?.email || 'Usuário',
+        actorRole: prevUser?.role || 'player',
+        actionType: 'LOGOUT_SESSAO',
+        entityType: 'users',
+        entityId: prevId,
+        reason:
+          reason === 'concurrent_session'
+            ? `Sessão encerrada automaticamente (login simultâneo em outro aparelho) para ${prevProf?.displayName || prevUser?.email || prevId}.`
+            : `Logout realizado por ${prevProf?.displayName || prevUser?.email || prevId}.`,
+        createdAt: new Date().toISOString(),
+      };
+      const enrichedLogout = syncAuditLogToCloud(logoutLog);
+      setState((prev) => ({
+        ...prev,
+        auditLogs: [enrichedLogout, ...(prev.auditLogs || [])],
+      }));
+    }
     setCurrentUserId('');
     try {
       localStorage.removeItem('futplay_lite_auth_session_v1');
@@ -2520,6 +2579,8 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       reason: `Login realizado por ${profile?.displayName || user.email} (${user.role.toUpperCase()}).`,
       createdAt: now,
     };
+
+    const enrichedLoginLog = syncAuditLogToCloud(loginLog);
 
     setState((prev) => {
       const userIdx = prev.users.findIndex((u) => u.id === user.id);
@@ -2622,7 +2683,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         ...prev,
         users: newUsers,
         profiles: newProfiles,
-        auditLogs: [loginLog, ...(prev.auditLogs || [])],
+        auditLogs: [enrichedLoginLog, ...(prev.auditLogs || [])],
       };
     });
 
@@ -2959,7 +3020,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           : p
       ),
-      auditLogs: [profLog, ...(prev.auditLogs || [])],
+      auditLogs: [syncAuditLogToCloud(profLog), ...(prev.auditLogs || [])],
     }));
 
     if (isSupabaseConfigured() && currentUser?.id) {
@@ -3069,7 +3130,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         ...prev,
         users: updatedUsers,
         profiles: updatedProfiles,
-        auditLogs: [teamLog, ...(prev.auditLogs || [])],
+        auditLogs: [syncAuditLogToCloud(teamLog), ...(prev.auditLogs || [])],
       };
     });
 
@@ -3192,7 +3253,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         users: remainingUsers,
         profiles: remainingProfiles,
         seasonEntries: remainingSeasonEntries,
-        auditLogs: [delLog, ...(prev.auditLogs || [])],
+        auditLogs: [syncAuditLogToCloud(delLog), ...(prev.auditLogs || [])],
       };
 
       try {
@@ -3532,7 +3593,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       ...prev,
       matches: [draftMatch, ...prev.matches],
       matchPlayers: [...prev.matchPlayers, ...newMatchPlayers],
-      auditLogs: [audit, ...prev.auditLogs],
+      auditLogs: [syncAuditLogToCloud(audit), ...prev.auditLogs],
     }));
 
     notify(
@@ -3858,7 +3919,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       matchEvents: updatedEvents,
       pointTransactions: [...newTransactions, ...draftState.pointTransactions],
       ratingLogs: [...newRatingLogs, ...draftState.ratingLogs],
-      auditLogs: [audit, ...draftState.auditLogs],
+      auditLogs: [syncAuditLogToCloud(audit), ...draftState.auditLogs],
     };
   };
 
@@ -4009,7 +4070,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
         evidenceFiles: newEvidence
           ? [newEvidence, ...prev.evidenceFiles]
           : prev.evidenceFiles,
-        auditLogs: [scoreLog, ...(prev.auditLogs || [])],
+        auditLogs: [syncAuditLogToCloud(scoreLog), ...(prev.auditLogs || [])],
       }));
 
       notify(
@@ -4154,7 +4215,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       ),
       confirmations: [newConf, ...prev.confirmations],
       disputes: [newDispute, ...prev.disputes],
-      auditLogs: [audit, ...prev.auditLogs],
+      auditLogs: [syncAuditLogToCloud(audit), ...prev.auditLogs],
     }));
 
     notify(
@@ -4338,7 +4399,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
                   }
                 : d
             ),
-            auditLogs: [auditAnnul, ...workingState.auditLogs],
+            auditLogs: [syncAuditLogToCloud(auditAnnul), ...workingState.auditLogs],
           };
         }
 
@@ -4463,7 +4524,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setState((prev) => ({
       ...prev,
-      auditLogs: [audit, ...prev.auditLogs],
+      auditLogs: [syncAuditLogToCloud(audit), ...prev.auditLogs],
     }));
 
     notify(
@@ -4611,7 +4672,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         ...prev,
         monthlyPayments: updatedPayments,
-        auditLogs: [payLog, ...(prev.auditLogs || [])],
+        auditLogs: [syncAuditLogToCloud(payLog), ...(prev.auditLogs || [])],
       };
     });
 
@@ -4666,7 +4727,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
     setState((prev) => ({
       ...prev,
       monthlyConfig: updatedConfig,
-      auditLogs: [cfgLog, ...(prev.auditLogs || [])],
+      auditLogs: [syncAuditLogToCloud(cfgLog), ...(prev.auditLogs || [])],
     }));
     if (isSupabaseConfigured()) {
       const userTeam = currentUser?.teamName || currentPlayerProfile?.teamName || '';
@@ -4886,7 +4947,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         ...prev,
         seasonEntries: updatedEntries,
-        auditLogs: [sumulaLog, ...(prev.auditLogs || [])],
+        auditLogs: [syncAuditLogToCloud(sumulaLog), ...(prev.auditLogs || [])],
       };
     });
 
@@ -4944,7 +5005,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         ...prev,
         teamTransactions: updated,
-        auditLogs: [txLog, ...(prev.auditLogs || [])],
+        auditLogs: [syncAuditLogToCloud(txLog), ...(prev.auditLogs || [])],
       };
     });
     if (isSupabaseConfigured()) {
@@ -5015,7 +5076,7 @@ export const LeagueProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         ...prev,
         teamTransactions: updated,
-        auditLogs: [delTxLog, ...(prev.auditLogs || [])],
+        auditLogs: [syncAuditLogToCloud(delTxLog), ...(prev.auditLogs || [])],
       };
     });
     removePendingTx(id);

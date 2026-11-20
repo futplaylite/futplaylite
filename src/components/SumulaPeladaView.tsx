@@ -286,6 +286,7 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
     profiles,
     currentPlayerProfile,
     finalizePeladaSumula,
+    recordAuditLog,
     notify,
   } = useLeague();
   const isCoachOrAdmin =
@@ -315,6 +316,12 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
       setIsReopening(false);
       setShowReopenModal(false);
       setSumula((prev) => ({ ...prev, status: 'em_andamento' }));
+      recordAuditLog({
+        actionType: 'SUMULA_PELADA_REABERTA',
+        entityType: 'pelada_sumulas',
+        entityId: sumula.id,
+        reason: `Súmula "${sumula.teamName || sumula.matchDate || sumula.id}" reaberta. Motivo: ${reopenReason.trim()}.`,
+      });
       notify('success', 'Súmula Reaberta', 'A súmula foi reaberta com registro de auditoria e retornou ao modo de edição.');
     } catch (err) {
       setIsReopening(false);
@@ -548,6 +555,12 @@ export const SumulaPeladaView: React.FC<SumulaPeladaViewProps> = ({
   const handleDeleteCurrentSumula = () => {
     isDeletedRef.current = true;
     deleteSumulaFromList(sumula.id);
+    recordAuditLog({
+      actionType: 'SUMULA_PELADA_EXCLUIDA',
+      entityType: 'pelada_sumulas',
+      entityId: sumula.id,
+      reason: `Súmula "${sumula.teamName || sumula.matchDate || sumula.id}" (${sumula.status}) excluída.`,
+    });
     setShowDeleteModal(false);
     sumulaStopwatch.close();
     onBack();
